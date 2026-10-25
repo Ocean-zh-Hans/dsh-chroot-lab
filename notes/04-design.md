@@ -113,9 +113,12 @@ L0 宿主模块  KSU 模块：service.sh 非阻塞 → bootstrap → s6 监督 �
 ## 8. 规则与审计（已定，详见 [research/dsh-extension-surface.md](research/dsh-extension-surface.md)）
 
 - 预设 `root-full`：`sandbox: danger-full-access` + `approval: ask`（出厂 danger-full-access 预设会把 approval 设成 never）。
-- `dsh-hooks-claude-code` + `hooks.json`；`PreToolUse` 钩子读 `deny.txt`/`ask.txt`，deny → exit 2 + 理由，ask → 走批准 seam。
-- `PostToolUse` 钩子写 `logs/audit/YYYY-MM-DD.log`（时间/cwd/工具/输入）。
-- **钩子 fail open**（崩了命令照跑）→ 零依赖 sh 脚本 + 启动自检 + 文档写明"护栏不是边界"。
+- `dsh-hooks-claude-code`，`configPath` 指向 `hooks.json`：
+  `PreToolUse`（matcher 先 `*`，脚本内按 `tool_name` 分支）读 `deny.txt`/`ask.txt`；
+  输出 `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny|ask","permissionDecisionReason":"…"}}` 或 exit 2（stderr 为理由）。
+- `PostToolUse` 写 JSONL 审计 `logs/audit/YYYY-MM-DD.jsonl`（时间/session_id/tool_name/tool_input/结果摘要）。
+- 契约细节：`timeout` 单位秒（默认 600s）；配置启动只读一次；多钩子 **deny>ask>allow**；**非 2 退出码 fail open**。
+- 因此：零依赖 `/system/bin/sh` 脚本 + 5–10s 超时 + 启动自检（喂已知坏命令必须被 deny）。
 
 ## 9. 版本策略
 
