@@ -8,7 +8,7 @@
 - `03-rules-and-safety.md` 规则层 / 可逆层 / 审计层设计
 - `analysis/<项目名>.md` 逐项目深挖（六节结构）
   - ✅ [dsh-alpine-ksu.md](analysis/dsh-alpine-ksu.md) —— 真 chroot KSU 模块，骨架蓝本（2026-10-26）
-  - ⬜ chroot-distro（最该复用的 rootfs 轮子）
+  - ✅ [chroot-distro.md](analysis/chroot-distro.md) —— 最该当依赖用的 rootfs 轮子（2026-10-26）
   - ⬜ SunsetRNE/DSH-Chroot（决策记录/pitfalls）
   - ⬜ DSHA（proot 工程化天花板）
   - ⬜ dsh-termux（现有环境的 9 个补丁）
