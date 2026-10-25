@@ -10,4 +10,5 @@
 | 2026-10-26 | mount 传播/locked/umount | man7 mount_namespaces(7)、umount(2) | A | raw 摘录见 W3 笔记 | 部分（unshare -m 实测） |
 | 2026-10-26 | subreaper | prctl(2) PR_SET_CHILD_SUBREAPER | A | W3 笔记引用 | 否 |
 | 2026-10-26 | s6-supervise | skarnet s6 官方文档 | A | W3 笔记引用 | 否 |
-| 2026-10-26 | service.sh 阻塞 | KernelSU bootstages.rs（B 级转述） | B | research/chroot-supervision… | 否 |
+| 2026-10-26 | service.sh 阻塞 | KernelSU bootstages.rs（B 级转述） | B | research/chroot-supervision… | 否 || 2026-10-26 | DSH hooks 契约 | 本机安装包源码/README | A | dsh-hooks-and-permissions.md | 待验证工具名/ask 行为 |
+| 2026-10-26 | 权限预设/批准 | 本机安装包 README | A | dsh-extension-surface.md | 否 |
