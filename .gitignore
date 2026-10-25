@@ -1,0 +1,5 @@
+sources/
+experiments/artifacts/
+*.img
+*.tar.zst
+*.log
