@@ -9,7 +9,7 @@
 - `analysis/<项目名>.md` 逐项目深挖（六节结构）
   - ✅ [dsh-alpine-ksu.md](analysis/dsh-alpine-ksu.md) —— 真 chroot KSU 模块，骨架蓝本（2026-10-26）
   - ✅ [chroot-distro.md](analysis/chroot-distro.md) —— 最该当依赖用的 rootfs 轮子（2026-10-26）
-  - ⬜ SunsetRNE/DSH-Chroot（决策记录/pitfalls）
+  - ✅ [dsh-chroot.md](analysis/dsh-chroot.md) —— 设计密度最高：25+ 反例、威胁模型、内核极限（2026-10-26）
   - ⬜ DSHA（proot 工程化天花板）
   - ⬜ dsh-termux（现有环境的 9 个补丁）
 - `_repo-list.txt` 已 clone 的第三方项目清单

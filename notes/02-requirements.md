@@ -7,6 +7,20 @@
   2. **可逆性层**：快照、回收站、卸载前强制 umount —— 因为规则可能被绕过或被注入内容误导，唯一可靠的兜底是"能回滚"。
 - 本机实测 PID ns / user ns 不可用，**不再视为损失**（本来也不打算用在隔离上）。
 
+## 本机内核事实（2026-10-26，root 读 /proc/config.gz）
+
+```
+CONFIG_NAMESPACES=y
+# CONFIG_USER_NS is not set        ← user ns 内核未编译
+# CONFIG_PID_NS is not set         ← PID ns 内核未编译
+# CONFIG_SECURITY_LANDLOCK is not set  ← Landlock 未编译
+```
+
+- `unshare -U` / `unshare -p --fork` / `unshare -Urm` 全部 EINVAL；`unshare -m` 正常。
+- 推论：userns 隔离档在**本机永远不可用**；没有 PID 隔离；**DSH 的文件沙箱在本机永远只能 danger-full-access**。
+- 因此隔离上限固定为：**mount ns + chroot + UID/组 + capabilities**；安全靠"规则 + 可逆性"，不靠隔离。
+- 这些结论只对本机成立：不同机型的 kernel config 不同，**换机必须重测**（见 notes/analysis/dsh-chroot.md §7）。
+
 ## 硬需求
 - H1 真 chroot（非 proot），Go 可编译且产物可直接执行
 - H2 工作区在共享存储可见（手机文件管理器可改），产物仍可执行 → raw `/data/media/0` 绑定
