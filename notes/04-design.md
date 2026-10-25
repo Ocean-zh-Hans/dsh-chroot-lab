@@ -1,4 +1,4 @@
-# 设计 v0.3（全能 AI 的真 chroot 环境）
+# 设计 v0.4（全能 AI 的真 chroot 环境）
 
 > 状态：设计草案。证据标记：**[实测]** 本机验证 ｜ **[源码]** 源码/文档 ｜ **[研究]** 子代理调研笔记。
 > 结构沿用 DSH-Chroot 的文档骨架；所有"待定"都在 §12。
@@ -33,7 +33,7 @@
 |---|---|
 | proot / DSHA | ❌ 有 root 不付 ptrace 代价；且绑进 app 沙箱 |
 | Alpine + musl | ❌ node-pty 只发 glibc 预编译；cua-driver musl 404 且**静默降级** [研究/源码] |
-| **Debian slim (glibc) + 真 chroot** | ✅ 唯一"不现场编译、不静默降级" |
+| **Ubuntu base 24.04（glibc）+ 真 chroot** | ✅ 唯一不现场编译、不静默降级；官方 tarball + SHA256 可校验 [实测] |
 | overlayfs 分层 | ❌ 不采用（ADR-009：bind+ro+active 指针等价且可控；少一层内核依赖） |
 | 硬链接快照当主线 | ❌ 见 §7（原地写会串改快照） |
 | AVF 虚拟机 | ⏸ 本机无入口；架构上不堵死 |
@@ -57,9 +57,9 @@ L0 宿主模块  KSU 模块：service.sh 非阻塞 → bootstrap → s6 监督 �
 
 ```
 /data/adb/chroot/
-├── payload/     rootfs.tar.zst（或 rootfs.img）+ dsh-baseline.tar.zst
-├── images/      rootfs-<ts>.img（活动镜像与快照）
-├── mnt/         当前活动镜像的挂载点（loop）
+├── payload/     ubuntu-base-24.04.x-arm64.tar.gz + dsh-baseline.tar.zst（不入模块 zip）
+├── rootfs/      目录型根（主线：解压后的 Ubuntu）
+├── images/      可选：ext4 镜像（实测只能放 /data/media/0，loop）
 ├── state/       DSH_HOME / ttyd.pass / port / stopped
 ├── logs/        bootstrap/launch/supervisor/dsh/audit
 └── snapshots/   state 与镜像的冷快照
@@ -92,14 +92,14 @@ L0 宿主模块  KSU 模块：service.sh 非阻塞 → bootstrap → s6 监督 �
 - **硬链接快照会与活动树共享 inode**：活动树里任何原地写（append/覆盖）都会污染所有快照 [实测]。
   → 只能用于**冷且此后不再写**的归档，不能当活动 rootfs 的主线快照。
 
-**方案**：
-- **rootfs = ext4 镜像**（稀疏文件，losetup 挂到 `mnt/`）：
-  - 快照 = `cp --sparse=always` 整镜像（全量、免疫原地写；684GB 空间足够）；
-  - 回滚 = 停服务 → umount → 换镜像文件 → 重新挂载；
-  - 保留：1 份 golden + 3 份近期 + 1 份 pre-change。
-- **state/（数百 MB）= tar.zst 冷快照**（先 stop+sync+umount），保留 7 份。
-- 每周 `restic` 离线归档到 PC（防 /data 损坏）[研究]。
-- P0 必须先验证：losetup 挂载、exec 权限、SELinux 标签、卸载干净。
+**方案（W2 实测后定稿）**：
+- **rootfs = 目录**（`/data/adb/chroot/rootfs`，解压自官方 Ubuntu base）：
+  - 简单、在加密区（root-only）、无 loop 依赖；
+  - 快照 = 冷 `tar` 全量（stop → sync → tar），保留 1 golden + 3 近期 + 1 pre-change；
+- **ext4 镜像只作为可选模式**：实测 loop 只在 `/data/media/0`（未加密区）可读，
+  在 `/data/adb`、`/data/local/tmp` 一律 EIO（FBE inline-crypto）；且必须 `-b 4096` + `losetup --sector-size 4096`。
+- **state/**：tar 冷快照，保留 7 份；每周 `restic` 离线归档到 PC。
+- 不用 Docker Hub：本网络不可达（实测超时），rootfs 用官方 tarball + SHA256 校验。
 
 ## 8. 规则与审计（已定，详见 [research/dsh-extension-surface.md](research/dsh-extension-surface.md)）
 
