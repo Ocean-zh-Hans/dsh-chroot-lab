@@ -6,7 +6,11 @@
 - `01-analysis-template.md` 每个项目必须回答的六个问题
 - `02-requirements.md` 我们要什么（已拍板：全能 AI、能力优先、可逆性优先）
 - `03-rules-and-safety.md` 规则层 / 可逆层 / 审计层设计
-- `04-design.md` 设计文档（v0.2：架构/挂载/生命周期/快照/规则/验收）
+- `04-design.md` 设计过程稿（v0.5，已被 05 取代）
+- `05-design-v1.md` 设计 v1.2 定稿（路线比较/详细设计/验收/验证记录）
+- `06-packaging.md` 模块打包清单与构建门禁
+- `07-roadmap.md` 分阶段实施路线
+- `research/PLAN-8H.md` 8 小时研究计划
 - `research/` 专题研究
   - [dsh-extension-surface.md](research/dsh-extension-surface.md) DSH 规则与审计该挂在哪（hooks/presets/approval）
   - [kernelsu-magisk-module-packaging-and-lifecycle.md](research/kernelsu-magisk-module-packaging-and-lifecycle.md) 模块打包与生命周期
