@@ -11,4 +11,5 @@
 | 2026-10-26 | subreaper | prctl(2) PR_SET_CHILD_SUBREAPER | A | W3 笔记引用 | 否 |
 | 2026-10-26 | s6-supervise | skarnet s6 官方文档 | A | W3 笔记引用 | 否 |
 | 2026-10-26 | service.sh 阻塞 | KernelSU bootstages.rs（B 级转述） | B | research/chroot-supervision… | 否 || 2026-10-26 | DSH hooks 契约 | 本机安装包源码/README | A | dsh-hooks-and-permissions.md | 待验证工具名/ask 行为 |
-| 2026-10-26 | 权限预设/批准 | 本机安装包 README | A | dsh-extension-surface.md | 否 |
+| 2026-10-26 | 权限预设/批准 | 本机安装包 README | A | dsh-extension-surface.md | 否 || 2026-10-26 | issue 采矿（KSU/chroot-distro/SukiSU） | GitHub issues（B 级） | B | issues-pitfalls.md | 部分（post-fs-data/devpts 未复现） |
+| 2026-10-26 | 来源可信度 | 项目事实盘点 | — | source-credibility.md | — |
