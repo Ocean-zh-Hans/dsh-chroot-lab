@@ -1,0 +1,17 @@
+WenlaoJP/dsh-alpine-ksu
+SunsetRNE/DSH-Chroot
+sabamdarif/chroot-distro
+Magisk-Modules-Alt-Repo/chroot-distro
+Magisk-Modules-Alt-Repo/lhroot
+ErEbusE/dsh-termux
+DSH-APP/DSHA
+cmyfqwq/dsh-mobile-apk-legacy
+xliaoy/DeepSeekHarness
+Zxin-Pro/dsh-android
+kai6666666/deepseek-harness
+xisnn/dsh-outpost
+Soodok/Deepseek-Harness-Local-Android
+Meow1s/DeepSeek-Harness-For-Android
+dasabi114514/Excalibur
+regrevia/dsh-pet-voice
+liguobao/ds-harness-remote
