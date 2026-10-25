@@ -1,4 +1,4 @@
-# 设计 v1.1（定稿草案）：全能 AI 的真 chroot 环境
+# 设计 v1.2（定稿）：全能 AI 的真 chroot 环境
 
 - 日期：2026-10-26 ｜ 设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
 - 证据：A 级 = 官方文档/源码/本机实测；B 级 = issue/维护者回复；C 级仅线索。详见 notes/research/web/INDEX.md
@@ -150,3 +150,27 @@ mount --bind state            <rootfs>/root/.dsh
 - Q2 s6 与 runit 的最终选择（倾向 s6）
 - Q3 工具真实名称（决定 matcher 收窄）
 - Q4 payload 分发方式（手工 push vs 模块内置）
+## 10. 验证记录（本机实测，2026-10-26）
+
+| 实验 | 结果 | 结论 |
+|---|---|---|
+| `unshare -m` / `unshare -U` / `unshare -p` | -m 成功；-U、-p 均 EINVAL | 只有 mount ns 可用 |
+| `chroot` 最小 rootfs | 成功进入并执行（缺库报错即证明已切根） | 真 chroot 可行 |
+| `setpriv` UID1 + 全 caps 丢弃 | 二进制正常执行 | 降权方案可行 |
+| raw `/data/media/0` 执行 | 成功；FUSE `/sdcard` 即使 chmod 755 也 EACCES | 工作区必须 raw bind |
+| ext4 镜像 loop（/data/adb、/data/local/tmp） | EIO / unable to read superblock | FBE 加密区不可 loop |
+| ext4 镜像 loop（/data/media/0，-b 4096 + sector-size 4096） | 挂载、执行、写入全部成功 | 镜像模式仅在未加密区可用 |
+| hardlink（/data/adb，root） | links=2、同 inode | 可建，但会污染快照 |
+| reflink（f2fs） | EOPNOTSUPP | 不支持 |
+| `rsync -aH --link-dest` | 同 inode 复用；但 Termux rsync 无 ACL/xattr（-A/-X 报错） | 只作不可变归档 |
+| node-pty prebuilds | linux-arm64 / linux-x64 / darwin / win32，**无 linuxmusl** | 选 glibc 的决定性证据 |
+| DSH node_modules 体积 | 514MB（@deepseek-ai 218MB） | payload 估算依据 |
+| `dsh web --port 0` | --help 明写 "pass 0 to let the OS pick a free one" | 动态端口可行 |
+| `ksud feature list` | su_compat / kernel_umount / selinux_hide 已启用 | 记录 |
+| `su -Z` 各域 | shell/untrusted_app/priv_app/system_app 成功；u:r:su:s0 rc=139 | 禁用 su 域 |
+
+## 11. 配套文档
+
+- [06-packaging.md](06-packaging.md)：模块打包清单与构建门禁
+- [07-roadmap.md](07-roadmap.md)：从烘焙到模块化的分阶段实施路线
+- [research/web/INDEX.md](research/web/INDEX.md)：所有网页来源与可信度登记
