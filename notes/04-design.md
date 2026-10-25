@@ -1,4 +1,4 @@
-# 设计 v0.4（全能 AI 的真 chroot 环境）
+# 设计 v0.5（全能 AI 的真 chroot 环境）
 
 > 状态：设计草案。证据标记：**[实测]** 本机验证 ｜ **[源码]** 源码/文档 ｜ **[研究]** 子代理调研笔记。
 > 结构沿用 DSH-Chroot 的文档骨架；所有"待定"都在 §12。
@@ -72,16 +72,25 @@ L0 宿主模块  KSU 模块：service.sh 非阻塞 → bootstrap → s6 监督 �
 
 ## 6. 生命周期
 
-- **启动**：`service.sh` 被 magiskd **同步等待** [研究] → 立刻 return，`setsid` + 关 fd 转后台；
-  等 `sys.boot_completed=1` 与 `/data/media/0`（≤300s）→ bootstrap（版本标记 + new/old 原子交换）→ 监督器。
-  **实测补充**：`su` 默认并不隔离 mount namespace（默认与 `-M` 的挂载都出现在调用方 mountinfo），
-  所以启动必须自己 `unshare -m`，停止时必须自己清理挂载，不能依赖 su 的命名空间。
-- **监督**：**s6-supervise**（C，4.1MiB；runit 592KiB）[研究]。无 PID ns → 服务必须**前台运行**；
-  会自 daemonize 的程序用 `fghack` 思路兜住；自研 launcher 可设 `PR_SET_CHILD_SUBREAPER`。
-  systemd 不可行（需 PID 1 + cgroup 容器接口），supervisord 需 Python。
-- **停止**：写 `stopped`（等价 runsv 的 `down` 文件）+ 拿锁 → TERM **进程组** → 等真退出（pid + `/proc/<pid>/stat` starttime 校验）→ 超时 KILL → **逆序 umount** → 删状态。
-  禁止按端口/进程名杀（`pkill` 名匹配只有 15 字符）[研究]。
-- **崩溃**：s6 自动重启；stop 期间靠 `down` 文件阻止复活，避免竞态。
+**启动**
+1. `service.sh` 被 magiskd **同步等待** → 立刻 return；用 `setsid` + 重定向 fd 转后台。
+2. 后台 bootstrap 等 `sys.boot_completed=1` 且 `/data/media/0` 可见（≤300s）。
+3. 解压 rootfs（new → 校验 → mv 交换 → 删 old）；版本未变则跳过。
+4. `unshare -m` → `mount --make-rprivate /` → 按**父先子后**挂载（`/dev`、`/sys` 用 `--rbind`；`/proc`、`/system:ro`、`/apex:ro`、raw media → /sdcard、state）。
+5. 启动 **s6-supervise**（`dsh`、`ttyd` 两个服务目录），服务**前台**运行。
+
+**监督**
+- s6-supervise：无 `./down` 就拉起 `./run`，退出自动重启；`s6-svc -d/-u/-t/-k` 控制；`notification-fd` 做就绪通知。
+- 不用 systemd（需 PID 1 + cgroup 容器接口），supervisord 要 Python，shell 循环只作 fallback。
+- 无 PID ns：**double-fork 的守护进程会被 reparent 给宿主 init，监督器 wait 不到** → 必须前台运行；自研 launcher 可设 `PR_SET_CHILD_SUBREAPER=1` 并 `waitpid(-1)` 收尸（该属性不被 fork 继承）。
+
+**停止**
+1. 写 `state/stopped`（等价 s6 的 down 文件），阻止 watchdog 复活；
+2. `s6-svc -d` 或向**进程组** TERM；等真实退出（pid + `/proc/<pid>/stat` starttime 校验）；
+3. 超时 KILL → **逆序 umount**（先子后父）→ 校验 mountinfo 无残留 → 删 lock，保留日志。
+- 禁止按端口/名字杀；`umount -l` 只作最后手段（会掩盖 EBUSY）；EINVAL 要区分「不在本 ns」与「locked」（更高特权 ns 带来的整组挂载不能单独 umount）。
+
+**崩溃**：s6 自动重启；stop 期间靠 `down` 阻止复活。
 
 ## 7. 数据、快照与回滚
 
