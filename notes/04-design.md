@@ -1,114 +1,130 @@
-# 设计草案 v0.1（全能 AI 的真 chroot 环境）
+# 设计 v0.2（全能 AI 的真 chroot 环境）
 
-> 状态：草案。已定项来自实测与源码分析；标 **TBD** 的等研究笔记回来后补（快照、监督）。
-> 结构照抄 DSH-Chroot 的文档骨架：目标/非目标 → 现状 → 路线 → 架构 → 目录挂载 → 生命周期 → 数据快照 → 规则审计 → 版本 → 威胁模型 → 验收。
+> 状态：设计草案。证据标记：**[实测]** 本机验证 ｜ **[源码]** 源码/文档 ｜ **[研究]** 子代理调研笔记。
+> 结构沿用 DSH-Chroot 的文档骨架；所有"待定"都在 §12。
 
 ## 1. 目标与非目标
 
-**目标**：在 PJZ110（Android 15 / SukiSU）上，给 AI 一个**全能力**的 Linux 用户态：
+**目标**：PJZ110（Android 15 / SukiSU）上给 AI 一个**全能力** Linux 用户态：
 真 chroot（非 proot）、root 身份、宽挂载、能 apt/编译/挂载；工作区在共享存储可见且产物可执行；
-开机自启、可启停、可诊断；**可逆性**（快照/回收站/审计）与**规则层**（deny/ask）。
+开机自启、可启停、可诊断；**可逆性**（快照/回滚/审计）与**规则层**（deny/ask）。
 
-**非目标**：不做安全沙箱（本机 kernel 不支持 userns/pidns/Landlock，详见 §2）；不做多容器；
-不追求多机型/发布；不动内核；不替代 DSHA 的移动 UI 与设备控制。
+**非目标**：不做安全沙箱（本机内核不支持 userns/pidns/Landlock）；不做多容器；不追多机型/发布；不动内核；不替代 DSHA 的设备控制。
 
-## 2. 现状盘点（实测，2026-10-26）
+## 2. 现状盘点 [实测 2026-10-26]
 
 | 项 | 事实 |
 |---|---|
 | 机型/系统 | OnePlus PJZ110 / Android 15 / kernel 6.6.66 |
-| Root | SukiSU（KernelSU LKM 系），`su` → `uid=0, context=u:r:ksu:s0`，SELinux Enforcing |
-| 内核 namespace | `CONFIG_NAMESPACES=y`；**`CONFIG_USER_NS` / `CONFIG_PID_NS` 未编译**；`unshare -m` 可用 |
-| Landlock | **`CONFIG_SECURITY_LANDLOCK` 未编译** → DSH 文件沙箱永远不可用，只能 danger-full-access |
-| /data | f2fs，`rw,nosuid,nodev`（**无 noexec**）→ rootfs 放这里天然可执行 |
-| /sdcard | FUSE，`nosuid,nodev,noexec` → 必须走 raw `/data/media/0` 才能执行产物 |
-| 现有 DSH | 0.2.0-rc.2（dsh-termux 运行时），tmux 里跑 `dsh web --port 3080` |
-| 空间 | /data 有 684GB 可用 |
+| Root | SukiSU（KSU LKM），`su` → `uid=0, context=u:r:ksu:s0`，SELinux Enforcing |
+| namespace | `CONFIG_NAMESPACES=y`；**`USER_NS` / `PID_NS` 未编译**；`unshare -m` 可用 |
+| Landlock | **未编译** → DSH 文件沙箱永远不可用，只能 danger-full-access |
+| 文件系统 | `/data` f2fs `rw,nosuid,nodev`（无 noexec）；`/sdcard` FUSE `noexec`；`/storage` tmpfs noexec |
+| 内核特性 | `BLK_DEV_LOOP=y`、`EXT4_FS=y`、`DM_SNAPSHOT=y`、`OVERLAY_FS=y` [实测] |
+| 工具 | `/system/bin/{mke2fs,mkfs.ext4,losetup,mount,umount}` 齐全 [实测] |
+| 空间 | /data 684GB 可用 |
 
 ## 3. 路线选择
 
 | 路线 | 结论 |
 |---|---|
-| proot / DSHA | ❌ 有 root 就不该付 ptrace 翻译的代价；且绑定 app 沙箱 |
-| Alpine + musl | ❌ node-pty 只发 glibc 预编译、cua-driver musl 404 且静默降级（DSH-Chroot A12 + libc 审计） |
-| **Debian slim (glibc) + 真 chroot** | ✅ 唯一"不现场编译、不静默降级"的选择；基座体积差相对 500MB 的 DSH 是噪声 |
-| AVF 虚拟机 | ⏸ 本机 Android 15 无入口；设计上不堵死（rootfs 与启动层解耦） |
+| proot / DSHA | ❌ 有 root 不付 ptrace 代价；且绑进 app 沙箱 |
+| Alpine + musl | ❌ node-pty 只发 glibc 预编译；cua-driver musl 404 且**静默降级** [研究/源码] |
+| **Debian slim (glibc) + 真 chroot** | ✅ 唯一"不现场编译、不静默降级" |
+| overlayfs 分层 | ❌ 不采用（ADR-009：bind+ro+active 指针等价且可控；少一层内核依赖） |
+| 硬链接快照当主线 | ❌ 见 §7（原地写会串改快照） |
+| AVF 虚拟机 | ⏸ 本机无入口；架构上不堵死 |
 
 ## 4. 架构（四层 + 适配器）
 
 ```
-L3 策略层    DSH: sandbox-policy / permission-presets(root-full) / hooks(deny·ask) / 审计
-L2 DSH 运行时 node 24 + dsh（版本化目录 + current 软链 + previous 回滚）
-L1 容器运行时 预烘焙 Debian rootfs + bind 挂载 + chroot + 身份切换（无 Python 依赖）
-L0 宿主/模块  KernelSU 模块：service.sh 非阻塞启动、bootstrap、watchdog、快照、卸载清理
+L3 策略层    DSH: permission-preset(root-full) + hooks(deny/ask) + 审计
+L2 DSH 运行时 node 24 + dsh（versions/<v> + current 软链 + previous 回滚）
+L1 容器层    预烘焙 Debian rootfs（ext4 镜像）+ bind 挂载 + chroot + 身份
+L0 宿主模块  KSU 模块：service.sh 非阻塞 → bootstrap → s6 监督 → 快照/清理
 ```
 
-关键取舍：
-- **L1 不依赖 chroot-distro 的运行时**。chroot-distro 只在**烘焙阶段**（宿主侧 Termux）用来装 rootfs、做 diff/备份；
-  运行时只做 mount+chroot（shell 即可），避免把 Python 拖进开机路径。
-- **L0 不放进模块目录**：`/data/adb/modules/<id>` 会被整体删除，rootfs/state/payload 全部放 `/data/adb/chroot/`。
+- **L1 不依赖 chroot-distro 运行时**：它只在宿主侧烘焙阶段用来装 rootfs、做 diff；运行时只用 mount+chroot（shell），开机路径零 Python。
+- **L0 数据在模块目录外**：`/data/adb/modules/<id>` 会被整体删除 [研究]，所以 rootfs/state/payload 全放 `/data/adb/chroot/`。
+- **不 bind 模块目录进容器**（ADR-009 约束：会穿过 KernelSU 的挂载视图）。
 
-## 5. 目录与挂载规范
+## 5. 目录与挂载
 
 ```
 /data/adb/chroot/
-├── payload/        预烘焙 rootfs.tar.zst + dsh-baseline.tar.zst（不入模块 zip）
-├── rootfs/         解压后的根（new/old 原子交换）
-├── state/          DSH_HOME、ttyd 密码、端口、stopped 标志
-├── logs/           bootstrap / launch / supervisor / dsh / audit
-└── snapshots/      rootfs 与 state 的快照（TBD 策略）
+├── payload/     rootfs.tar.zst（或 rootfs.img）+ dsh-baseline.tar.zst
+├── images/      rootfs-<ts>.img（活动镜像与快照）
+├── mnt/         当前活动镜像的挂载点（loop）
+├── state/       DSH_HOME / ttyd.pass / port / stopped
+├── logs/        bootstrap/launch/supervisor/dsh/audit
+└── snapshots/   state 与镜像的冷快照
 ```
 
-挂载（**父必须先于子**）：
+挂载（**父先子后**）：
 `/dev`、`/dev/pts`、`/proc`、`/sys`、`/system:ro`、`/apex:ro`、`/vendor:ro`、`/product:ro`、
 `/data/media/0 → /sdcard`（raw，绕 FUSE）、`/data/adb/chroot/state → /root/.dsh`。
-不 bind `/dev/block`（防误刷分区）。每次启动在 `unshare -m` 私有命名空间内挂载。
+不 bind `/dev/block`。启动时先 `unshare -m` 再 `mount --make-rprivate /`；树里有子挂载时用 `--rbind` [研究]。
 
-## 6. 生命周期（TBD：监督细节待研究笔记）
+## 6. 生命周期
 
-- **启动**：`service.sh` 立刻 return → `dsh-service-boot`（等 /data/media/0，最多 300s）→ bootstrap（版本标记 + new/old 交换）→ watchdog → launch（锁 + stopped 检查）→ `unshare -m` + chroot + setpriv。
-- **停止**：写 `stopped` → 按 pid 文件 TERM → 等 → KILL → umount → 删 lock；禁止按端口/名字杀。
-- **崩溃**：watchdog 每 10s 重拉；与 stop 用 `stopped` 标志避免竞态。
+- **启动**：`service.sh` 被 magiskd **同步等待** [研究] → 立刻 return，`setsid` + 关 fd 转后台；
+  等 `sys.boot_completed=1` 与 `/data/media/0`（≤300s）→ bootstrap（版本标记 + new/old 原子交换）→ 监督器。
+- **监督**：**s6-supervise**（C，4.1MiB；runit 592KiB）[研究]。无 PID ns → 服务必须**前台运行**；
+  会自 daemonize 的程序用 `fghack` 思路兜住；自研 launcher 可设 `PR_SET_CHILD_SUBREAPER`。
+  systemd 不可行（需 PID 1 + cgroup 容器接口），supervisord 需 Python。
+- **停止**：写 `stopped`（等价 runsv 的 `down` 文件）+ 拿锁 → TERM **进程组** → 等真退出（pid + `/proc/<pid>/stat` starttime 校验）→ 超时 KILL → **逆序 umount** → 删状态。
+  禁止按端口/进程名杀（`pkill` 名匹配只有 15 字符）[研究]。
+- **崩溃**：s6 自动重启；stop 期间靠 `down` 文件阻止复活，避免竞态。
 
-## 7. 数据、快照与回滚（TBD：等快照研究笔记）
+## 7. 数据、快照与回滚
 
-要求：rootfs 升级前快照 1 份、state 每日 1 份保留 7 份、一键回滚、占用上限 5GB。
-候选：目录 + `rsync --link-dest` 硬链接快照 / tar.zst 全量 / ext4 镜像 + `cp`。**待定**。
+**已实测决定**：
+- f2fs **不支持 reflink**（`cp --reflink=always` → EOPNOTSUPP；`auto` 静默全量）[实测/研究]。
+- `/data/adb` 下 **root 域可以创建硬链接**（links=2、同 inode、label `adb_data_file`）[实测]。
+- `rsync -aH --link-dest` 可用；但 Termux 的 rsync **未编译 ACL/xattr**，`-A`/`-X` 会直接报错，只能用 `-aH` [实测]。
+- **硬链接快照会与活动树共享 inode**：活动树里任何原地写（append/覆盖）都会污染所有快照 [实测]。
+  → 只能用于**冷且此后不再写**的归档，不能当活动 rootfs 的主线快照。
+
+**方案**：
+- **rootfs = ext4 镜像**（稀疏文件，losetup 挂到 `mnt/`）：
+  - 快照 = `cp --sparse=always` 整镜像（全量、免疫原地写；684GB 空间足够）；
+  - 回滚 = 停服务 → umount → 换镜像文件 → 重新挂载；
+  - 保留：1 份 golden + 3 份近期 + 1 份 pre-change。
+- **state/（数百 MB）= tar.zst 冷快照**（先 stop+sync+umount），保留 7 份。
+- 每周 `restic` 离线归档到 PC（防 /data 损坏）[研究]。
+- P0 必须先验证：losetup 挂载、exec 权限、SELinux 标签、卸载干净。
 
 ## 8. 规则与审计（已定，详见 [research/dsh-extension-surface.md](research/dsh-extension-surface.md)）
 
-- 预设：自定义 `root-full` = `sandbox: danger-full-access` + `approval: ask`（出厂的 danger-full-access 预设会把 approval 一并设成 never）。
-- 规则：`dsh-hooks-claude-code` + `hooks.json`，`PreToolUse` 命令钩子读 `deny.txt`/`ask.txt`；命中 deny → exit 2 + 理由；命中 ask → 走批准 seam。
-- 审计：`PostToolUse` 钩子把 时间/cwd/工具/输入 追加到 `logs/audit/YYYY-MM-DD.log`。
-- 红线：钩子 **fail open**（崩了命令照跑）→ 零依赖脚本 + 启动自检 + 文档写明"护栏不是边界"。
+- 预设 `root-full`：`sandbox: danger-full-access` + `approval: ask`（出厂 danger-full-access 预设会把 approval 设成 never）。
+- `dsh-hooks-claude-code` + `hooks.json`；`PreToolUse` 钩子读 `deny.txt`/`ask.txt`，deny → exit 2 + 理由，ask → 走批准 seam。
+- `PostToolUse` 钩子写 `logs/audit/YYYY-MM-DD.log`（时间/cwd/工具/输入）。
+- **钩子 fail open**（崩了命令照跑）→ 零依赖 sh 脚本 + 启动自检 + 文档写明"护栏不是边界"。
 
 ## 9. 版本策略
 
-- 模块：`versionCode` 单调整数，唯一比较依据；`version` 不参与比较。
-- DSH：floor-only（允许的最低版本）+ bake 台账（每次烘焙的 DSH 版本单独记录，不编码进 module.prop）。
-- 升级：新版本装到 `versions/<v>`，smoke test 原生模块后切 `current`，保留 `previous` 回滚。
+模块 `versionCode` 单调整数（唯一比较字段）；DSH floor-only + bake 台账；升级装到 `versions/<v>`，smoke test 后切 `current`，保留 `previous`。
 
 ## 10. 威胁模型与不设防声明
 
-资产：整机数据、DSH 凭据、设备控制能力、系统可用性。
-不防：有 root 的攻击者；物理接触；提示注入本身（只限爆炸半径）；DSH 上游漏洞；内核/固件；用户自己执行不可逆命令。
-**结论**：安全 = 规则（降低误操作概率）+ 可逆性（把错误变成可回滚）+ 审计（事后能查）。
+资产：整机数据、DSH 凭据、设备控制、系统可用性。
+不防：root 攻击者、物理接触、提示注入本身（只限爆炸半径）、DSH 上游漏洞、内核/固件、用户自己的不可逆命令。
+**安全 = 规则（降低误操作）+ 可逆性（错误可回滚）+ 审计（事后可查）**。
 
-## 11. 验收标准（P0 命门，全部通过才进入打包）
+## 11. 验收标准（P0，全过才打包）
 
-1. chroot 内 `id` 与 `uname -r` 正确（root / 与宿主同内核）。
-2. **Go 在 /sdcard 工作区编译并直接运行产物**（raw media 生效）。
-3. `node-pty` 在 chroot 内能起 PTY（DSH 的命脉）。
-4. `dsh web --port 0` 打印带 token 的 URL，Web 可访问。
-5. `dsh-update` 安装新版本 + smoke test + 切 current + rollback。
+1. chroot 内 `id`=0、`uname -r` 与宿主一致。
+2. **Go 在 /sdcard 工作区编译并直接运行产物**。
+3. `node-pty` 在 chroot 内起 PTY。
+4. `dsh web --port 0` 打印 token URL 且可访问。
+5. `dsh-update` 装新版 → smoke test → 切 current → rollback。
 6. stop 后 `/proc/mounts` 无残留、无孤儿进程。
-7. 快照 → 破坏 → 回滚，一轮通过。
-8. 钩子拒绝一条已知坏命令；审计文件有记录；钩子失效自检能报警。
+7. 镜像快照 → 破坏 → 回滚，一轮通过。
+8. 钩子拒绝已知坏命令 + 审计有记录 + 失效自检报警。
 
-## 12. 待定项（需要拍板/等研究）
+## 12. 待定项
 
-- [ ] Q1 进程身份：root（推荐，全能优先）vs UID1+groups（避免 /sdcard 属主问题）
-- [ ] Q2 快照方案与保留策略（等笔记）
-- [ ] Q3 监督器：shell 轮询 vs s6（等笔记）
-- [ ] Q4 规则脚本语言：纯 sh（快、零依赖）vs python（易写）
-- [ ] Q5 payload 分发：手工 push 到 /data/adb/chroot/payload，还是模块内置？
+- [ ] Q1 进程身份：**root**（推荐：全能优先，且可跳过 `ensure_data_suid`，不动宿主 /data 的 nosuid）vs UID1+groups（/sdcard 属主更自然）
+- [ ] Q2 规则脚本：纯 sh（推荐：快、零依赖）vs python（易写）
+- [ ] Q3 payload 分发：手工 push 到 `/data/adb/chroot/payload`（推荐）vs 模块内置 zip
+- [ ] Q4 s6 vs runit（体积差 3.5MiB，功能都够；倾向 s6）

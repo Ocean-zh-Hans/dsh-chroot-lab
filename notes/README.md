@@ -6,6 +6,12 @@
 - `01-analysis-template.md` 每个项目必须回答的六个问题
 - `02-requirements.md` 我们要什么（已拍板：全能 AI、能力优先、可逆性优先）
 - `03-rules-and-safety.md` 规则层 / 可逆层 / 审计层设计
+- `04-design.md` 设计文档（v0.2：架构/挂载/生命周期/快照/规则/验收）
+- `research/` 专题研究
+  - [dsh-extension-surface.md](research/dsh-extension-surface.md) DSH 规则与审计该挂在哪（hooks/presets/approval）
+  - [kernelsu-magisk-module-packaging-and-lifecycle.md](research/kernelsu-magisk-module-packaging-and-lifecycle.md) 模块打包与生命周期
+  - [f2fs-android-chroot-snapshot-backup.md](research/f2fs-android-chroot-snapshot-backup.md) f2fs 快照/备份
+  - [chroot-supervision-mount-cleanup-and-lifecycle.md](research/chroot-supervision-mount-cleanup-and-lifecycle.md) 进程监督/挂载清理/启停
 - `analysis/<项目名>.md` 逐项目深挖（六节结构）
   - ✅ [dsh-alpine-ksu.md](analysis/dsh-alpine-ksu.md) —— 真 chroot KSU 模块，骨架蓝本（2026-10-26）
   - ✅ [chroot-distro.md](analysis/chroot-distro.md) —— 最该当依赖用的 rootfs 轮子（2026-10-26）
