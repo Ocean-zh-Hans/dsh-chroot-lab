@@ -1,4 +1,4 @@
-# 设计 v1.0（定稿草案）：全能 AI 的真 chroot 环境
+# 设计 v1.1（定稿草案）：全能 AI 的真 chroot 环境
 
 - 日期：2026-10-26 ｜ 设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
 - 证据：A 级 = 官方文档/源码/本机实测；B 级 = issue/维护者回复；C 级仅线索。详见 notes/research/web/INDEX.md
@@ -83,6 +83,7 @@ mount --bind state            <rootfs>/root/.dsh
 
 - chroot 内 **root**（ksu 域），跳过 `ensure_data_suid`（不动宿主 /data 的 nosuid/nodev）。
 - 可选 UID1+groups（若日后需要 /sdcard 属主更自然），但会失去部分能力。
+- 加固选项（实测）：`su -Z` 可切到 `u:r:shell:s0` / `u:r:untrusted_app:s0` / `u:r:priv_app:s0` / `u:r:system_app:s0`；但 `u:r:su:s0` 会 rc=139（SIGSEGV），**禁用**。是否用 shell 域取决于它能否读 `/data/adb`（待测），默认不用。
 
 ### 5.4 启动链
 
@@ -134,7 +135,16 @@ mount --bind state            <rootfs>/root/.dsh
 不防：root 攻击者、物理接触、提示注入本身（只限爆炸半径）、DSH 上游漏洞、内核/固件、用户自己的不可逆命令。
 不承诺：隔离（本机无 userns/pidns/Landlock）、性能数字（未做同机对照）。
 
-## 8. 开放问题
+## 8. 实施注意（来自 issue 实证，B 级）
+
+1. **不用 post-fs-data**：KernelSU #3693 实测它在 APEX 激活前运行（Magisk 会等 ~40s），依赖 /apex 的脚本静默失败 → 只用 `service.sh`。
+2. **devpts 会 EBUSY**：挂载前检查目标是否已有挂载；用私有 mount ns + `newinstance`；遇到 EBUSY 先清残留，不要硬挂（chroot-distro #102）。
+3. **退出可能卡死**：chroot-distro #101 报过 kill 也失败 → stop 必须 TERM → 等待 → KILL → 逆序 umount，并校验 mountinfo（设计 §6 已含）。
+4. **脚本权限**：所有入口脚本 0755（KernelSU #3396：uninstall.sh 缺可执行位不生效）。
+5. **SukiSU 安装入口**：不要用「打开方式」，走 管理器 → 模块 → 从文件安装（SukiSU #975）。
+6. **matcher 先用 `*`**：工具名以审计日志里的 `tool_name` 为准，观察后再收窄。
+
+## 9. 开放问题
 
 - Q1 `su -Z` 能否给 chroot 更受限的域（可选加固）
 - Q2 s6 与 runit 的最终选择（倾向 s6）
