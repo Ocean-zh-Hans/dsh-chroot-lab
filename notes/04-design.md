@@ -1,4 +1,4 @@
-# 设计 v0.2（全能 AI 的真 chroot 环境）
+# 设计 v0.3（全能 AI 的真 chroot 环境）
 
 > 状态：设计草案。证据标记：**[实测]** 本机验证 ｜ **[源码]** 源码/文档 ｜ **[研究]** 子代理调研笔记。
 > 结构沿用 DSH-Chroot 的文档骨架；所有"待定"都在 §12。
@@ -23,6 +23,9 @@
 | 内核特性 | `BLK_DEV_LOOP=y`、`EXT4_FS=y`、`DM_SNAPSHOT=y`、`OVERLAY_FS=y` [实测] |
 | 工具 | `/system/bin/{mke2fs,mkfs.ext4,losetup,mount,umount}` 齐全 [实测] |
 | 空间 | /data 684GB 可用 |
+| 页大小 | **4096（4KB）**；Android 15 平台支持 16KB 页设备，但本机不是 |
+| 应用域 | Termux = `untrusted_app_25`（尽管 targetSdk=36）；`su`/模块 = `u:r:ksu:s0`。**本机不按 targetSdk 分域**，app 数据可直接 exec [实测] |
+| 模块系统 | 我们不改 `/system` → **不需要 metamodule** [源码] |
 
 ## 3. 路线选择
 
@@ -34,6 +37,8 @@
 | overlayfs 分层 | ❌ 不采用（ADR-009：bind+ro+active 指针等价且可控；少一层内核依赖） |
 | 硬链接快照当主线 | ❌ 见 §7（原地写会串改快照） |
 | AVF 虚拟机 | ⏸ 本机无入口；架构上不堵死 |
+
+> **修正**：之前把 DSHA 的 Go 失败归因于 targetSdk≥29 的 W^X。本机实测 Termux 域是 `untrusted_app_25`、app 数据可直接 exec，**该归因不成立**；实际原因更可能只是工作区在 FUSE（noexec）。
 
 ## 4. 架构（四层 + 适配器）
 
@@ -69,6 +74,8 @@ L0 宿主模块  KSU 模块：service.sh 非阻塞 → bootstrap → s6 监督 �
 
 - **启动**：`service.sh` 被 magiskd **同步等待** [研究] → 立刻 return，`setsid` + 关 fd 转后台；
   等 `sys.boot_completed=1` 与 `/data/media/0`（≤300s）→ bootstrap（版本标记 + new/old 原子交换）→ 监督器。
+  **实测补充**：`su` 默认并不隔离 mount namespace（默认与 `-M` 的挂载都出现在调用方 mountinfo），
+  所以启动必须自己 `unshare -m`，停止时必须自己清理挂载，不能依赖 su 的命名空间。
 - **监督**：**s6-supervise**（C，4.1MiB；runit 592KiB）[研究]。无 PID ns → 服务必须**前台运行**；
   会自 daemonize 的程序用 `fghack` 思路兜住；自研 launcher 可设 `PR_SET_CHILD_SUBREAPER`。
   systemd 不可行（需 PID 1 + cgroup 容器接口），supervisord 需 Python。
