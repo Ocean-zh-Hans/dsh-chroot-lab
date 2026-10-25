@@ -146,10 +146,12 @@ mount --bind state            <rootfs>/root/.dsh
 
 ## 9. 开放问题
 
-- Q1 `su -Z` 能否给 chroot 更受限的域（可选加固）
-- Q2 s6 与 runit 的最终选择（倾向 s6）
-- Q3 工具真实名称（决定 matcher 收窄）
-- Q4 payload 分发方式（手工 push vs 模块内置）
+**已决定（2026-10-26）**：chroot 内用 **root**；规则脚本用 **sh**；payload **手工 push 到 /data/adb/chroot/payload**；监督器用 **s6-supervise**。
+
+**仍开放（不阻塞设计）**
+- [ ] DSH 工具真实名称（matcher 先用 *，跑一天审计后收窄）
+- [ ] su -Z 到 shell 域能否读 /data/adb（若可，作为可选加固层）
+- [ ] s6 服务目录里 dsh/ttyd 的最终 exec 参数（与 --port 0 联动）
 ## 10. 验证记录（本机实测，2026-10-26）
 
 | 实验 | 结果 | 结论 |
