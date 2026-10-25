@@ -5,4 +5,9 @@
 
 | 日期 | 主题 | 来源 | 等级 | 文件 | 本机验证 |
 |---|---|---|---|---|---|
-| 2026-10-26 | SELinux 域映射 | 本机 /system/etc/selinux | A | raw/selinux-seapp.txt | 待做 |
+| 2026-10-26 | SELinux 域映射 | 本机 /system/etc/selinux | A | raw/selinux-{plat,product,vendor}-seapp.txt | 已比对（有不一致） |
+| 2026-10-26 | Ubuntu base 校验 | cdimage.ubuntu.com | A | raw/ubuntu-base-24.04-SHA256SUMS.txt | 已记录 |
+| 2026-10-26 | mount 传播/locked/umount | man7 mount_namespaces(7)、umount(2) | A | raw 摘录见 W3 笔记 | 部分（unshare -m 实测） |
+| 2026-10-26 | subreaper | prctl(2) PR_SET_CHILD_SUBREAPER | A | W3 笔记引用 | 否 |
+| 2026-10-26 | s6-supervise | skarnet s6 官方文档 | A | W3 笔记引用 | 否 |
+| 2026-10-26 | service.sh 阻塞 | KernelSU bootstages.rs（B 级转述） | B | research/chroot-supervision… | 否 |
