@@ -13,7 +13,7 @@
 |---|---|
 | 真 chroot | 非 proot；内核原生 syscall；Go 编译产物直接执行；`uname -r` 与宿主一致 |
 | 完整 Android 视图 | `/data`（含 `/data/user/0`、`/data/data`、`/data/system`）、`/mnt`、`/data_mirror`、`/storage/emulated/0`、`/sdcard` 全部可见 |
-| 完整 Android 控制 | `am/pm/cmd/settings/input/uiautomator/screencap/screenrecord/dumpsys/content/appops/monkey/ime/wm/svc` 可用；binder/ashmem 可用 |
+| 完整 Android 控制 | `am/pm/cmd/settings/input/screencap/screenrecord/dumpsys/content/appops/monkey/ime/wm/svc` 可用；`uiautomator` 仅 `runtest`（本机无 `dump`）；binder/ashmem 可用 |
 | 完整设备节点 | `/dev` rbind；`/dev/block`、`/dev/binder*`、`/dev/ashmem`、`/dev/pts`、`/dev/shm` 全见 |
 | 完整内核视图 | `/proc`、`/sys` rw、`debugfs`、`tracefs`、`/proc/kallsyms` |
 | 完整 root | chroot 内 uid 0；full capabilities；不 setpriv/不降 UID；**SELinux 保持 Enforcing**；permissive 仅显式 break-glass |
@@ -83,8 +83,10 @@
 
 - **全局生效**：`setenforce 0` 影响整机所有域，不只是 chroot；运行期间所有进程都少了 SELinux 这一层。
 - **不是“只放开 chroot”**：恶意 App、被注入的进程、系统服务都同样受益；这是安全取舍，不是挂载技巧。
-- **可能影响完整性/企业/支付类检测**：部分 ROM/应用会把 permissive 视为异常；具体依赖设备和应用，不能保证。
+- **不要把它当成“App 一定看得见/看不见”**：untrusted_app 对 `/sys/fs/selinux/enforce` 有 neverallow；KernelSU `selinux_hide` 还会对 UID≥10000 返回 fake status page（源码 `my_sel_open_handle_status`）。所以普通 App 不一定能直接读到 permissive；但 root/特权扫描器、adb、某些检测工具仍可能看到。它是全局安全降级，不是隐藏手段。
+- **Play Integrity 不应被简化成“读 SELinux”**：PIF Detector 的检测引擎明确“没有 SELinux check”，其核心是 key attestation/启动状态等；Play Integrity 的具体 verdict 不公开且会变化，不能保证 permissive 对它是“无影响”。
 - **崩溃未恢复**：DSH 崩溃/被强杀时，如果没人恢复，设备会保持 permissive 到重启；需要 watchdog + stop 恢复。
+- **`getenforce` 本身不可靠**：本机 app/root 的 `/system/bin/getenforce` 返回 `Disabled`，但 root `cat /sys/fs/selinux/enforce` = `1`；app 读 `enforce` 被 EACCES。doctor 必须用 `/sys/fs/selinux/enforce`，不要用 `getenforce` 判断。
 - **不改变 DAC/capabilities**：permissive 只去掉 SELinux 拒绝；root、文件权限、能力仍在。
 - **v1.4 结论**：为了不降低 root 隐藏性，**默认 Enforcing**；`--permissive` 只作为显式 break-glass（需要你确认“本次接受隐藏性下降”），stop/watchdog 恢复。若某个工具必须 permissive，优先用窄域/单次操作，而不是全局 `setenforce 0`。
 
@@ -176,7 +178,7 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 | `/` | `/run/dsh-rootfs` | ext4 | 128GB 镜像 |
 | `/proc` | `proc` | `proc,nosuid,noexec,nodev` | 完整进程视图 |
 | `/sys` | `sysfs` | **rw** | 完整内核/设备视图 |
-| `/sys/fs/selinux` | `/sys/fs/selinux` | bind **ro**（失败则 hardguard） | 防止 chroot 内 `setenforce 0`/改策略 |
+| `/sys/fs/selinux` | `/sys/fs/selinux` | bind **ro**（实测 bind+remount,ro rc=0；enforce=1） | 防止 chroot 内 `setenforce 0`/改策略 |
 | `/dev` | `/dev` | **rbind** `nosuid`（去 noexec） | block/binder/ashmem/usb-ffs 全见 |
 | `/dev/pts` | `devpts` | `newinstance,ptmxmode=0666,mode=620` | 独立 pts；`/dev/ptmx` → `pts/ptmx` |
 | `/dev/shm` | tmpfs | `size=1g,mode=1777` | Chromium/Playwright |
@@ -212,11 +214,11 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 | `/sys/kernel/debug` | debugfs/宿主 bind | rw | BPF/kprobe/uprobe |
 | `/sys/kernel/tracing` | tracefs/宿主 bind | rw | ftrace/perf |
 
-**说明**：`/system` 等 erofs 物理只读；要写用 `dsh-ctl system-rw on` 的 overlay（upper/work 在 `/data/adb/chroot/overlays/<part>`），不是 `remount,rw`。`/metadata`/persist/qmcs 默认 rw（按“不要权限收束”）；`--protect-critical` 可一键改 ro，属于可选防手滑，不是默认限制。
+**说明**：`/system` 等 erofs 物理只读；要写用 `dsh-ctl system-rw on` 的 overlay。**upper/work 必须放在 ext4 rootfs 内**（如 `/var/lib/dsh/overlays/<part>`），不能放 `/data`（f2fs 实测 `overlay: case-insensitive capable filesystem ... not supported`，EINVAL）。不是 `remount,rw`。`/metadata`/persist/qmcs 默认 rw（按“不要权限收束”）；`--protect-critical` 可一键改 ro，属于可选防手滑，不是默认限制。
 
 ### 5.3 挂载顺序
 
-1. `busybox unshare --mount --propagation private --uts --ipc -m`（UTS/IPC 隔离可用；PID ns 不可用）
+1. `busybox unshare --mount --propagation private --uts -m`（UTS 可用；**IPC_NS 未编译，`--ipc` 实测 EINVAL**；PID ns 不可用）
 2. `busybox mount --make-rprivate /`
 3. `/proc` → `/sys` → `/dev` → `/dev/pts` → `/dev/shm` → `/run`/`/tmp` → Android 分区 → `/data` → `/mnt` → `/data_mirror` → `/storage` → `/sdcard` → 控制面 → chroot
 4. 每个 `rbind` 后 `busybox mount --make-rprivate "$dst"`
@@ -251,7 +253,7 @@ export PATH="$PATH:/system/bin:/system/xbin:/vendor/bin:/product/bin:/system_ext
 | Activity/服务 | `am start/stop/force-stop/broadcast` | 完整 |
 | 设置 | `settings get/put/list` | 完整 |
 | 输入 | `input tap/swipe/text/keyevent` | 完整 |
-| UI 自动化 | `uiautomator dump` | 完整 |
+| UI 自动化 | `uiautomator runtest`（需测试 jar） | **`uiautomator dump` 本机 rc=137，不可用**；可用 input+screencap 兜底 |
 | 截屏/录屏 | `screencap -p` / `screenrecord` | `/dev/graphics`/`/dev` |
 | 窗口 | `wm size/density` | 完整 |
 | 通知/状态栏 | `cmd notification/statusbar` | 完整 |
@@ -266,11 +268,11 @@ export PATH="$PATH:/system/bin:/system/xbin:/vendor/bin:/product/bin:/system_ext
 
 ```sh
 dsh-ctl system-rw on system vendor product odm system_ext
-# 内部：upper/work 在 /data/adb/chroot/overlays/<part>；
+# 内部：upper/work 在 ext4 rootfs 的 /var/lib/dsh/overlays/<part>（不能放 f2fs /data）
 # mount -t overlay overlay -o lowerdir=/<part>,upperdir=...,workdir=... /<part>
 ```
 
-- 只对需要写的分区开；默认关闭。
+- 只对需要写的分区开；默认关闭。本机只验证了“ext4 upper + 临时 target”的 overlay 成功；**实际 `/system` 挂载点 + APEX/linker/厂商分区未验证**，所以不默认开。
 - overlay 可能影响 APEX/linker/系统属性；先在一个分区试，smoke 通过再扩。
 - 空间不是约束：upper 放 `/data` 即可。
 
@@ -283,9 +285,9 @@ dsh-ctl system-rw on system vendor product odm system_ext
 ```
 dsh-ctl start [--permissive] [--protect-critical]  # 默认 Enforcing；--permissive 会降低 root 隐藏性
   1. flock state/ctl/lock
-  2. doctor：root、namespaces、chroot、mount、seccomp、SELinux、TMPDIR、镜像、losetup、node-pty、DSH
+  2. doctor：root、namespaces、chroot、mount、seccomp、SELinux（读 `/sys/fs/selinux/enforce`，不要只看 `getenforce`）、TMPDIR、镜像、losetup、node-pty、DSH
   3. e2fsck -p 镜像；losetup --sector-size 4096；记录 loopdev
-  4. setsid busybox unshare --mount --propagation private --uts --ipc -m sh -c '
+  4. setsid busybox unshare --mount --propagation private --uts -m sh -c '
        mounts（镜像 mount 到 /run/dsh-rootfs）
        cp -a /opt/dsh-control/s6/. /run/s6/
        exec s6-svscan /run/s6'
@@ -369,7 +371,7 @@ dsh-ctl stop
 2. `node-pty` PTY；`dsh web --port 0 --no-open` URL + curl 200/303；`root-free` 可用。
 3. `/data` rbind：`/data/user/0`、`/data/data`、`/data/system` 可见；`/mnt`、`/data_mirror`、`/storage`、`/sdcard` 完整。
 4. `/dev/block`、binder/ashmem、`/dev/pts`、`/dev/shm` 可见；`/sys` rw；debugfs/tracefs 可读。
-5. Android CLI：`am --help`、`pm list packages`、`input keyevent`、`screencap -p /tmp/x.png`、`uiautomator dump` 可用。
+5. Android CLI：`am`（无参数出 help）、`pm list packages`、`input`、`screencap -p /tmp/x.png`、`screenrecord --time-limit 1`、`cmd notification help` 可用；`uiautomator dump` 本机不可用（rc=137），只承诺 `uiautomator runtest`（需 jar）。
 6. `/apex` rbind 后 `com.android.runtime/bin` 非空；`/system` 等可见；`system-rw` overlay 可选通过。
 7. stop：全机 `/proc/*/mountinfo` 无 rootfs、`/proc/*/root` 无 rootfs 进程、无 launcher；镜像已 `losetup -d`。
 8. 镜像快照 → 破坏 → restore 一轮；state 同步；sha 校验。
@@ -401,6 +403,14 @@ dsh-ctl stop
 | `容器AI APK` | 原生 Compose/模型管理/工具循环 UX（可选客户端） | proot/Alpine、app 沙箱、无开机自启、专有代码 |
 | `dsh-alpine-ksu` | 非阻塞启动、原子 rootfs、raw media、版本/回滚骨架 | Alpine/musl 补丁链 |
 | `chroot-distro` | rootfs 安装/挂载/备份策略、fresh proc/devpts、能力探测 | 作为运行时依赖、GPL 代码复制 |
+
+### 13.1 验证来源（2026-10-26）
+
+- 本机 `ksud feature list`：`su_compat`/`kernel_umount`/`selinux_hide`/`mount_hide`/`avc_spoof` 已启用；`sulog`/`adb_root` 关闭。
+- KernelSU `selinux_hide.c`（`my_sel_open_handle_status` 对 UID≥10000 返回 fake status page）：<https://github.com/tiann/KernelSU/blob/main/kernel/feature/selinux_hide.c>
+- KernelSU PR #3457（feature: selinux hide）：<https://github.com/tiann/KernelSU/pull/3457>
+- PIF Detector README（untrusted_app 对 `/sys/fs/selinux/enforce` 有 neverallow；其引擎无 SELinux check）：<https://raw.githubusercontent.com/IR0NBYTE/playIntegrityFixDetector/refs/heads/main/README.md>
+- 本机验证详细命令/结果：`12-v1.4-verification.md`。
 
 ---
 
