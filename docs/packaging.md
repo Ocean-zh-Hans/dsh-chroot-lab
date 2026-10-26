@@ -9,12 +9,14 @@
 | `rootfs.img` | 128GB ext4 稀疏镜像（由 payload 烘焙） | P3 生成 |
 | `SHA256SUMS` | 上述文件校验 | P3 |
 | `dsh-agent-0.1.0.apk` | 可选宿主 thin agent（UI/通知/剪贴板） | 源码可构建，未真机验证 |
+| `dsh-console-0.1.0.apk` | 可选 WebView 前端（读模块 URL/启停） | 源码可构建 |
 
 ## 2. 模块 zip 结构
 
 ```
 module.prop
 customize.sh
+console.apk          # 构建时从 console-app/dist 放入，可选
 service.sh
 boot-completed.sh
 uninstall.sh

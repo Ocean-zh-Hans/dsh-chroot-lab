@@ -346,6 +346,7 @@ dsh-ctl stop
 - 形态：Android 本机 accessibility/Shizuku/ADB agent；当前最小实现是 `127.0.0.1:17321` + token 文件，固定 JSON 方法集，不暴露任意 shell。
 - 不是隐藏必需；不做也不影响 chroot 主体。
 - 最小 App 源码在 `agent-app/`，可构建 debug APK；**未在真机验证**。
+- 另有 `console-app/` WebView 前端：读取 `/data/adb/chroot/state/guest/url`，通过设备 `su` 调固定 `dsh-ctl` 命令；模块构建时可把 APK 放入 zip 并由 `customize.sh` 尝试安装。
 
 ### 8.2 手机控制能力矩阵
 
@@ -371,7 +372,7 @@ dsh-ctl stop
 
 ## 10. 打包与工具链
 
-- 模块 zip：`module.prop/customize.sh/service.sh/boot-completed.sh/uninstall.sh/action.sh/bin/dsh-ctl/bin/dsh-nsinit/bin/dsh-watchdog/control/*/lib/*`；`control/bin/dsh-run` 负责 URL 发现。
+- 模块 zip：`module.prop/customize.sh/service.sh/boot-completed.sh/uninstall.sh/action.sh/bin/dsh-ctl/bin/dsh-nsinit/bin/dsh-watchdog/control/*/lib/*`；`control/bin/dsh-run` 负责 URL 发现；可选 `console.apk` 前端由 `customize.sh` 尝试安装。
 - 包根禁止 `install.sh`；payload 不放 zip。
 - 工具链必须自带：
   - util-linux `losetup`（支持 `--sector-size`）；

@@ -20,7 +20,7 @@ need zip
 need unzip
 
 mapfile -t scripts < <(
-  find module bake agent-app -type f |
+  find module bake agent-app console-app -type f |
     while IFS= read -r f; do
       case "$f" in
         *.sh | module/bin/* | module/control/bin/* | module/control/s6/*/run | module/control/s6/*/finish) printf '%s\n' "$f" ;;

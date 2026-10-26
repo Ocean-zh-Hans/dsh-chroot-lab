@@ -39,6 +39,9 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/dsh-module.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 cp -a module/. "$tmp/module/"
 rm -rf "$tmp/module/tools/src"
+if [ -f "$ROOT/console-app/dist/dsh-console-0.1.0.apk" ]; then
+  cp "$ROOT/console-app/dist/dsh-console-0.1.0.apk" "$tmp/module/console.apk"
+fi
 
 (
   cd "$tmp/module"

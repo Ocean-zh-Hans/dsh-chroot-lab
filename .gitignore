@@ -9,3 +9,7 @@ module/tools/bin/
 agent-app/build/
 agent-app/dist/
 agent-app/debug.keystore
+module/console.apk
+console-app/build/
+console-app/dist/
+console-app/debug.keystore

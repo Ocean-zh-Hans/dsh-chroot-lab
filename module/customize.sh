@@ -58,6 +58,14 @@ chmod 0700 "$CHROOT_HOME" "$CHROOT_HOME/control" "$CHROOT_HOME/state" 2>/dev/nul
 
 printf '%s\n' "$MODULE_VERSION" >"$CHROOT_HOME/state/ctl/install-version" || abort "cannot write install marker"
 
-ui_print "- DSH Ubuntu Chroot skeleton installed"
+if [ -f "$MODPATH/console.apk" ]; then
+  if pm install -r "$MODPATH/console.apk" >/dev/null 2>&1; then
+    ui_print "- DSH Console frontend installed"
+  else
+    ui_print "! DSH Console auto-install failed; install $MODPATH/console.apk manually"
+  fi
+fi
+
+ui_print "- DSH Ubuntu Chroot installed"
 ui_print "- install only; apply/start is a separate explicit step"
 ui_print "- Next: dsh-ctl doctor; dsh-ctl plan"

@@ -13,6 +13,14 @@ _auto=$(cat "$CHROOT_HOME/state/ctl/autostart" 2>/dev/null || true)
 printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date)" \
   "service.sh: autostart=${_auto:-off}" >>"$LOG" 2>/dev/null || true
 
+# Optional frontend: after boot, package manager is alive. Do it in the
+# background and never block boot.
+if [ -f "$MODDIR/console.apk" ]; then
+  if ! pm list packages dev.dsh.console 2>/dev/null | grep -q '^package:dev.dsh.console$'; then
+    pm install -r "$MODDIR/console.apk" >>"$LOG" 2>&1 &
+  fi
+fi
+
 if [ "$_auto" = 1 ] && [ -x "$MODDIR/bin/dsh-ctl" ]; then
   setsid "$MODDIR/bin/dsh-ctl" boot >>"$LOG" 2>&1 &
   _wpid=$(cat "$CHROOT_HOME/state/ctl/watchdog.pid" 2>/dev/null || true)

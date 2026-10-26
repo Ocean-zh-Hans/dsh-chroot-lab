@@ -80,12 +80,18 @@ module/tools/bin/nsenter --help | grep -- --mount
 # dist/dsh_chroot-0.2.0.zip
 ```
 
-### 1.4 可选 host agent
+### 1.4 可选 App
 
 ```sh
 ./agent-app/build.sh
 # agent-app/dist/dsh-agent-0.1.0.apk
+
+./console-app/build.sh
+# console-app/dist/dsh-console-0.1.0.apk
 ```
+
+`build/build-module.sh` 会把 console APK 放进模块根 `console.apk`，
+`customize.sh` 会尝试 `pm install -r`。自动安装失败时手动安装。
 
 ---
 
