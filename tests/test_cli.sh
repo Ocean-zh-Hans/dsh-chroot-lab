@@ -37,6 +37,13 @@ set -e
 assert_eq "$rc" 2
 assert_contains "$out" "unknown command"
 
+out=$("$DSH_CTL" autostart status)
+assert_contains "$out" "autostart: off"
+"$DSH_CTL" autostart on >/dev/null
+out=$("$DSH_CTL" autostart status)
+assert_contains "$out" "autostart: on"
+"$DSH_CTL" autostart off >/dev/null
+
 # Config file must not override an explicit env value.
 printf 'DSH_IMAGE_SIZE_GB=256\n' >"$DSH_ROOT/config.conf"
 out=$(DSH_IMAGE_SIZE_GB=128 "$DSH_CTL" config)

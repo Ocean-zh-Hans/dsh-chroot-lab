@@ -47,6 +47,7 @@ Data:
   restore <name> | purge --yes [--keep-image]
 
 Optional:
+  autostart status|on|off
   system-rw status|on|off [partition] [--apply]
   guard status|on|off
   rescue --apply
@@ -104,6 +105,9 @@ log | logs)
   ;;
 fixperm)
   dsh_fixperm
+  ;;
+autostart)
+  dsh_autostart "$@"
   ;;
 image)
   _sub=${1:-create}

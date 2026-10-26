@@ -55,6 +55,12 @@ if ! shfmt -d -ln=mksh -i 2 "${scripts[@]}" >"$_shfmt_diff" 2>&1; then
 fi
 rm -f "$_shfmt_diff"
 
+printf '== build scripts ==\n'
+for f in build/*.sh; do
+  bash -n "$f"
+done
+shellcheck -s bash build/*.sh
+
 printf '== C helper ==\n'
 if command -v cc >/dev/null 2>&1; then
   cc -O2 -Wall -Wextra -fsyntax-only module/tools/src/dsh-mount-ro-recursive.c

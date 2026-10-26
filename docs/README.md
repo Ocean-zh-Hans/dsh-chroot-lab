@@ -38,7 +38,7 @@
 | [handoff.md](handoff.md) | **备用机/PC AI 验收交接手册** |
 | [../agent/README.md](../agent/README.md) | 宿主 thin agent 协议草案（P4） |
 | [../agent-app/README.md](../agent-app/README.md) | 最小宿主 agent App（可选，未真机验证） |
-| [../console-app/README.md](../console-app/README.md) | DSH Console WebView 前端（可选） |
+| [../console-app/README.md](../console-app/README.md) | DSH Console 原生控制台 + WebView（可选） |
 | [archive/README.md](archive/README.md) | 旧笔记归档说明；旧文档不再有当前效力 |
 
 ## 2. 一页事实表

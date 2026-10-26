@@ -90,8 +90,10 @@ module/tools/bin/nsenter --help | grep -- --mount
 # console-app/dist/dsh-console-0.1.0.apk
 ```
 
-`build/build-module.sh` 会把 console APK 放进模块根 `console.apk`，
-`customize.sh` 会尝试 `pm install -r`。自动安装失败时手动安装。
+`build/build-module.sh` 会把 console APK 同时放进模块根 `console.apk` 和
+`system/priv-app/DSHConsole/DSHConsole.apk`；KSU 开机 overlay 后应直接出现
+`DSH Console` 图标。`customize.sh`/`service.sh` 还会尝试 `pm install -r` 兜底。
+如果仍没有图标，手动安装。
 
 ---
 

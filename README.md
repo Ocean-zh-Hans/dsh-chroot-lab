@@ -17,7 +17,7 @@ module/        KernelSU 模块源码（P1/P2/P3 代码）
 bake/          Ubuntu rootfs/镜像烘焙（host/VM）
 agent/         宿主 thin agent 协议草案（P4）
 agent-app/     最小宿主 agent App（可选，未真机验证）
-console-app/   DSH Console WebView 前端（可选）
+console-app/   DSH Console 原生控制台 + WebView（可选）
 build/         检查/构建脚本
 tests/         本地单元测试（不碰系统）
 sources/       第三方源码参考（git clone，不纳入版本控制）

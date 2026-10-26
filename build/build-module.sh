@@ -9,15 +9,15 @@ cd "$ROOT"
 SKIP_CHECK=0
 for arg in "$@"; do
   case "$arg" in
-    --skip-check) SKIP_CHECK=1 ;;
-    -h | --help)
-      printf 'Usage: %s [--skip-check]\n' "$0"
-      exit 0
-      ;;
-    *)
-      printf 'unknown option: %s\n' "$arg" >&2
-      exit 2
-      ;;
+  --skip-check) SKIP_CHECK=1 ;;
+  -h | --help)
+    printf 'Usage: %s [--skip-check]\n' "$0"
+    exit 0
+    ;;
+  *)
+    printf 'unknown option: %s\n' "$arg" >&2
+    exit 2
+    ;;
   esac
 done
 
@@ -41,6 +41,11 @@ cp -a module/. "$tmp/module/"
 rm -rf "$tmp/module/tools/src"
 if [ -f "$ROOT/console-app/dist/dsh-console-0.1.0.apk" ]; then
   cp "$ROOT/console-app/dist/dsh-console-0.1.0.apk" "$tmp/module/console.apk"
+  # LSPosed-style system app overlay: KSU mounts this at boot, so the
+  # launcher icon exists without a manual adb install.
+  mkdir -p "$tmp/module/system/priv-app/DSHConsole"
+  cp "$ROOT/console-app/dist/dsh-console-0.1.0.apk" \
+    "$tmp/module/system/priv-app/DSHConsole/DSHConsole.apk"
 fi
 
 (

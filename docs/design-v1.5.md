@@ -316,7 +316,7 @@ dsh-ctl stop
 
 ### 7.5 命令面
 
-`doctor/plan/status/start/stop/restart/diag/log/image/snapshot/restore/guard/system-rw/rescue/purge/fixperm`。
+`doctor/plan/status/start/stop/restart/diag/log/image/snapshot/restore/guard/system-rw/rescue/purge/fixperm/autostart`。
 
 - 已实现：doctor/plan/status/config/start/stop/restart/boot/diag/log/snapshot/restore/guard/system-rw/rescue/purge/fixperm。
 - `start`/`rescue`/`system-rw on|off` 必须显式 `--apply`；没有 `--apply` 只打印计划。
@@ -346,7 +346,7 @@ dsh-ctl stop
 - 形态：Android 本机 accessibility/Shizuku/ADB agent；当前最小实现是 `127.0.0.1:17321` + token 文件，固定 JSON 方法集，不暴露任意 shell。
 - 不是隐藏必需；不做也不影响 chroot 主体。
 - 最小 App 源码在 `agent-app/`，可构建 debug APK；**未在真机验证**。
-- 另有 `console-app/` WebView 前端：读取 `/data/adb/chroot/state/guest/url`，通过设备 `su` 调固定 `dsh-ctl` 命令；模块构建时可把 APK 放入 zip 并由 `customize.sh` 尝试安装。
+- 另有 `console-app/` 原生控制台：状态/启停/日志/快照/Purge/设置开关 + WebView；读取模块 URL，通过设备 `su` 调固定 `dsh-ctl` 命令；模块构建时放到 `system/priv-app/DSHConsole/DSHConsole.apk` 由 KSU overlay；`customize.sh`/`service.sh` 再尝试 `pm install` 作为 fallback。
 
 ### 8.2 手机控制能力矩阵
 

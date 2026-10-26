@@ -466,3 +466,30 @@ dsh_rescue() {
   dsh_lock_release
   return "$_rc"
 }
+
+dsh_autostart() {
+  _op=${1:-status}
+  case $_op in
+  status)
+    _v=$(dsh_read_line "$DSH_CTL_DIR/autostart" 2>/dev/null || true)
+    [ "$_v" = 1 ] && printf 'autostart: on\n' || printf 'autostart: off\n'
+    ;;
+  on)
+    dsh_state_ensure || return 1
+    printf '1\n' >"$DSH_CTL_DIR/autostart" || return 1
+    printf 'autostart: on\n'
+    ;;
+  off)
+    dsh_state_ensure || return 1
+    printf '0\n' >"$DSH_CTL_DIR/autostart" || return 1
+    printf 'autostart: off\n'
+    ;;
+  -h | --help)
+    printf 'Usage: dsh-ctl autostart status|on|off\n'
+    ;;
+  *)
+    dsh_err "unknown autostart operation: $_op"
+    return 2
+    ;;
+  esac
+}
