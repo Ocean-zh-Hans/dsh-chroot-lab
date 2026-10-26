@@ -150,6 +150,26 @@
 
 **这些修正不等于设计已批准**：`/sys`、`/dev`、内部路径遮罩、宿主 agent 等仍需你按 `15-decisions-pending.md` 拍板。
 
+---
+
+## 附：Workflow-3 扩展红队追加（10 角度）
+
+| 严重度 | 发现 | 证据/含义 | 修正 |
+|---|---|---|---|
+| P0 | `u:r:ksu:s0` 是 KernelSU **permissive + allow all** 域 | KernelSU `kernel/selinux/rules.c`：`ksu_permissive(KERNEL_SU_DOMAIN)` + `ksu_allow(ALL,ALL,ALL)`；全局 `enforce=1` 不约束 chroot | 文档不能再写“SELinux 保证”；要么接受，要么自定义非 permissive 域（复杂） |
+| P0 | `/data` 的 rw 别名远多于三个遮罩路径 | `/data/user/0`、`/data_mirror/data_ce/null/0`、`/mnt/pass_through/0/emulated`、`/mnt/installer/0/emulated`、`/mnt/androidwritable/0/emulated`、`/mnt/user/0/emulated`、`/storage/emulated` 都指向同一 `/data` | 1A 三路径不够；要么不 full `/data`，要么枚举所有别名并测试；root 仍可 `unmount` mask / `/proc/1/root` |
+| P0/P1 | `/apex`、`/linkerconfig` 的 `remount,ro,bind` 不递归 | `/apex/com.android.conscrypt/cacerts` 仍是 rw tmpfs；`-o ro` 被 bind 忽略；remount-bind 机制未证实 | 用 `mount_setattr(AT_RECURSIVE)`（util-linux/mount 支持）或如实写“顶层只读、子挂载 rw” |
+| P1 | `/storage` 只挂了 `/storage/emulated/0` | `/storage/self`、其他用户视图缺失；`/storage` 是 tmpfs root `/user/0` | rbind 整个 `/storage` 或显式绑 self/emulated/用户 |
+| P1 | `/tmp/dsh-rootfs` 未创建 | 本机 `/run` 不存在，`/tmp` 是 tmpfs，但 `/tmp/dsh-rootfs` ENOENT | start 前 `mkdir -p/chmod 700`；doctor 检查 |
+| P1 | `getenforce` 结果不稳定 | 本机 root 一次 Disabled、一次 Enforcing；app Permission denied；`cat enforce=1` | doctor 只读 `enforce` + 域状态 |
+| P1 | `selinux_hide` 不 fake `enforce` | 源码只 hook `SEL_STATUS`/context/access；`SEL_ENFORCE` 是独立 inode；permissive 更可见 | 不把 `selinux_hide` 当 permissive 隐藏；`--permissive` 是检测破坏 |
+| P1 | `/sdcard/DSH` 2777 + root-free 是 app→root 路径 | 任意存储 App 可写脚本，DSH 可执行；hook 看不到脚本内容 | 工作区专用组/UID，或 root-only 执行目录；不要 root 执行 world-writable |
+| P1 | `mount_hide`/`kernel_umount` 不隐藏 loop/mount | 只过滤 app `/proc` mount 记录；不隐藏 `/sys/block/loopN`、`/proc/partitions`；chroot 不是 zygote | 不把它们当 chroot 隐藏；单独做 app-UID mount 扫描 |
+| P1 | `purge` 不删 `/data/media/0/.dsh` | 镜像/快照留下，`.dsh` 仍是 root artifact | purge 删除 `.dsh` + 镜像/快照 + loop 校验 |
+| P1 | 无宿主 watchdog | v1.4 只写“watchdog 恢复”，没有组件；permissive 崩溃后无人恢复 | 实现独立 30s watchdog + boot enforce 断言 |
+| P2 | `uiautomator`/`am`/`pm` 多数只 help-only | `uiautomator dump` rc=137；`am start`/`pm install` 写操作未验证 | capability matrix + 负例测试；不要写 perfect |
+| P2 | PIF Detector README 只是二手证据 | 不是 Google Play Integrity 官方；不能证明“无 SELinux check” | 官方文档 + 实际检测；标注未验证 |
+
 ## 结论
 
 - **v1.4 不是“没问题”**：P0-1（镜像/控制面自引用）、P0-2（`/sys`/hardguard 不是边界）、P0-3（stop 竞态）、P0-4（快照）、P0-5（手机控制未验证）必须先修。

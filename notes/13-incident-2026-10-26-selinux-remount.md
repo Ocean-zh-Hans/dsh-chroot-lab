@@ -103,7 +103,7 @@ uptime: up 2 min
 sys.boot_completed=1
 /sys/fs/selinux: rw（当前已恢复）
 cat /sys/fs/selinux/enforce: 1
-getenforce: Disabled（该命令在本机不可靠，不代表 permissive）
+getenforce: 观察不稳定（一次 Disabled，一次 Enforcing）；以 cat enforce=1 为准
 ```
 
 - 没有发现 `ovltest`/`selro` 等测试挂载残留。

@@ -13,11 +13,13 @@
 
 | 选项 | 具体做法 | 选它意味着 | 代价/风险 | 推荐 |
 |---|---|---|---|---|
-| **A. tmpfs 遮罩** | 在 chroot 的 private ns 里 `mount -t tmpfs tmpfs` 到这三个路径 | chroot 内看不到/写不到控制面和镜像；Android 本机与 `dsh-ctl` 仍可见；用户数据不受影响 | chroot 内不能自查 rootfs 镜像/control；多 3 个挂载 | ✅ **推荐** |
+| **A. tmpfs 遮罩** | 先遮这三个路径；**full `/data` 还有 `/data/user/0` 等别名，见 §14** | chroot 内看不到/写不到控制面和镜像；Android 本机与 `dsh-ctl` 仍可见；用户数据不受影响 | 三路径不够；full `/data` 必须枚举所有别名，否则镜像仍可写 | ⚠️ 仅当按 §14 做全别名 |
 | B. 只读 bind 占位 | 把空文件/空目录 bind 到镜像/控制面路径 | chroot 能看到路径但写不了 | 路径仍在，容易误判；bind 文件可能影响工具 | 可选 |
 | C. 不遮 | 保持现在 full `/data` | 最大透明度；chroot 内 root 可 truncate/unlink 自己的 `rootfs.img` | **P0 自引用损坏**；重启/快照可能找不到镜像 | ❌ 不建议 |
 
 **区别一句话**：A 是“藏起来”，B 是“看得见但碰不得”，C 是“把刀递给自己的 rootfs”。
+
+> 红队 v2：**A 的三个路径不是完整保护**；`/data/user/0`、`/data_mirror`、`/mnt/*/emulated`、`/storage` 等别名都能到 `.dsh`/control。要 full `/data` 就按 §14 枚举测试；否则选 1B。
 
 ---
 
@@ -156,6 +158,71 @@
 **区别一句话**：A 是“正常自启但坏了自己回滚”，B 是“每次手动”，C 是“不自启”。
 
 ---
+
+---
+
+## 13. SELinux 域：`u:r:ksu:s0` 怎么处理
+
+| 选项 | 具体做法 | 选它意味着 | 代价/风险 | 推荐 |
+|---|---|---|---|---|
+| **A. 接受 `u:r:ksu:s0`** | 全局 Enforcing 保持；chroot 域本身是 KernelSU permissive allow-all | root 可做任何事；SELinux 不是边界；hardguard 只是护栏 | 不能声称“SELinux 保证 root 隐藏性”；需在文档如实写 | ✅ 现状/能力优先 |
+| B. 自定义非 permissive 域 | 写 SELinux 策略，只允许 chroot 需要的东西 | 更接近真实约束；可能保住隐藏性 | 复杂、可能破坏 KSU/Android 工具；需 spare device 验证 | 未来 v2 |
+| C. 非 root DSH + 宿主 agent | DSH 降权；手机控制走宿主 | 隐藏性最好 | 失去 apt/mount/full root；与“完美 chroot”冲突 | 仅隐藏优先 |
+
+**一句话**：A 是“承认没有 SELinux 约束”，B 是“自己写策略”，C 是“放弃 root”。
+
+---
+
+## 14. `/data` 内部路径保护（修正 1A）
+
+红队发现 `/data` rbind 的别名很多：`/data/user/0`、`/data_mirror/data_ce/null/0`、`/mnt/pass_through/0/emulated`、`/mnt/installer/0/emulated`、`/mnt/androidwritable/0/emulated`、`/mnt/user/0/emulated`、`/storage/emulated`。**1A 的三路径 tmpfs 遮罩不够。**
+
+| 选项 | 具体做法 | 选它意味着 | 代价/风险 | 推荐 |
+|---|---|---|---|---|
+| A. full `/data` + 全别名遮罩 | 枚举所有别名，逐个 tmpfs/ro 遮 `.dsh`、`control`、`modules`、`ksu` | 保留 full `/data`；降低误删 | 别名动态、难穷尽；root 可 unmount；`/proc/1/root` 仍绕过 | 仅“全量控制优先” |
+| **B. 不 full `/data`** | 只给 `/sdcard` raw + 选定用户目录；镜像/控制面从客机不可见 | 镜像/控制面最难被写；最稳 | 失去 `/data/data`、`/data/system` 等完整视图 | ✅ 完整性/隐藏性优先 |
+| C. full `/data` 不遮 | 当前 v1.4 | 最大控制 | **P0 自引用/控制面可写**；可能毁 rootfs | ❌ |
+
+**一句话**：A 是“全开但加锁”，B 是“少开但锁死”，C 是“全开不锁”。
+
+---
+
+## 15. `/apex` / `/linkerconfig` 只读
+
+| 选项 | 具体做法 | 选它意味着 | 代价/风险 | 推荐 |
+|---|---|---|---|---|
+| A. 顶层 `remount,ro,bind` | 只让顶层 VFS 只读 | 方便；子挂载仍可写（cacerts rw） | 不能声称整树只读；remount-bind 机制未证实 | 临时 |
+| **B. 递归 `mount_setattr(AT_RECURSIVE)`** | util-linux/mount 支持时递归设 ro | 真正整树只读 | 需要静态 util-linux；需 spare device 测试 | ✅ 目标 |
+| C. 不设 ro | rbind 原样 | 最简单 | 失去只读保护；与“完美”不符 | ❌ |
+
+**一句话**：A 是“看起来只读”，B 是“真的递归只读”，C 是“不设防”。
+
+---
+
+## 16. `/storage` 范围
+
+| 选项 | 具体做法 | 选它意味着 | 代价/风险 | 推荐 |
+|---|---|---|---|---|
+| **A. rbind 整个 `/storage`** | 包含 `/storage/self`、`/storage/emulated`、各用户视图 | 完整存储视图 | 暴露更多 FUSE/用户目录 | ✅ 完整控制 |
+| B. 只挂 `/storage/emulated/0` | 当前 v1.4 | 基本文件管理够用 | `/storage/self`、其他用户缺失 | 可选 |
+| C. 逐个绑定 `/storage/self` + `/storage/emulated` + 用户 | 精确 | 可控 | 需要枚举用户 | 复杂 |
+
+**一句话**：A 是“完整”，B 是“只当前用户”，C 是“手工枚举”。
+
+---
+
+## 17. `/tmp` 挂载点（无需拍板，已修）
+
+- `/run` 在本机不存在（root 是 ro erofs）；`/tmp` 是宿主 tmpfs。
+- 设计改为 `/tmp/dsh-rootfs`；start 前 `mkdir -p /tmp/dsh-rootfs; chmod 700`；doctor 检查存在/可写。
+- 这是事实修正，不是选择题。
+
+---
+
+## 推荐组合（红队 v2 修订）
+
+如果 **完整性/隐藏性优先**：`1B 2A 3B 4B 5B 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`
+如果 **full `/data` 必须保留**：`1A 2A 3B 4B 5B 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`，并接受 1A 只是防手滑、root 仍可绕过。
 
 ## 我的推荐组合（供直接拍板）
 
