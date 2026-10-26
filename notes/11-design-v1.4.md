@@ -63,6 +63,16 @@
 
 **不再有 daily/lab 切换**。如果用户以后要“最小面”，那是另一个可选的 `guard`/`rescue`，不是主设计。
 
+### 2.1 SELinux 默认 permissive 的代价
+
+- **全局生效**：`setenforce 0` 影响整机所有域，不只是 chroot；运行期间所有进程都少了 SELinux 这一层。
+- **不是“只放开 chroot”**：恶意 App、被注入的进程、系统服务都同样受益；这是安全取舍，不是挂载技巧。
+- **可能影响完整性/企业/支付类检测**：部分 ROM/应用会把 permissive 视为异常；具体依赖设备和应用，不能保证。
+- **崩溃未恢复**：DSH 崩溃/被强杀时，如果没人恢复，设备会保持 permissive 到重启；需要 watchdog + stop 恢复。
+- **不改变 DAC/capabilities**：permissive 只去掉 SELinux 拒绝；root、文件权限、能力仍在。
+- **建议**：如果只是为了“能跑”，先 Enforcing；遇到明确 avc 拒绝再 `dsh-ctl permissive --yes`。如果你要“绝对控制”，v1.4 可以默认 permissive，但必须保留 `--enforcing`、stop 恢复、watchdog 和审计。
+
+
 ---
 
 ## 3. 架构
@@ -113,6 +123,21 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 - `losetup --sector-size 4096 --direct-io=off` 需要 util-linux；toybox/busybox 不支持。模块 `bin/` 自带静态 util-linux `losetup`，或预生成镜像后 push。
 - `e2fsck -p` / `resize2fs` 来源要固定（模块自带或 rootfs 内 e2fsprogs）；不要假设 `/system/bin` 全有。
 - 镜像 128GB 默认；实际使用 12–16GB；`df` 看的是 ext4 内部，不是文件 apparent size。
+
+### 4.2.1 128GB vs 256GB
+
+| 维度 | 128GB | 256GB |
+|---|---|---|
+| 实际 rootfs 占用 | 12–16GB 起 | 同 |
+| 可容纳 | 完整工具链 + 多项目 + 缓存 + 若干模型 | 大量本地模型/Android 源码/大型构建缓存 |
+| ext4 元数据/日志 | 较小 | 更大（inode/bitmap/日志），`mke2fs`/`fsck` 更慢 |
+| 快照成本 | 7 份稀疏复制，按实际块计 | 同，但单份上限更大；填满后 7× 更大 |
+| `/data` 余量 | 更稳（/data 已用 250GB/935GB） | 更容易逼近上限，尤其快照多份时 |
+| 扩容 | 可 `resize2fs` 在线/离线增大 | 不能再 shrink；只能继续增 |
+| 适用 | 日常 + 大多数开发 | 本地大模型/超大仓库/长期不清理 |
+
+**建议**：**128GB 起步**，不够再 `resize2fs` 增到 256GB；ext4 只能增不能减，先小后大更稳。若你确定要放本地 GGUF/Android 源码/大量构建缓存，直接 256GB。
+
 
 ### 4.3 镜像生命周期
 
@@ -359,14 +384,18 @@ dsh-ctl stop
 
 ---
 
-## 14. 仍需你确认
+## 14. 已定/待定（2026-10-26 更新）
 
-1. **镜像大小**：128GB 默认；要不要 256GB？
-2. **SELinux**：v1.4 默认 `permissive`（启动 `setenforce 0`，stop 恢复原状态）；`--enforcing` 可保持 Enforcing。确认是否接受这个全局切换。
-3. **高危区**：`/metadata`、`/mnt/vendor/persist`、`/mnt/vendor/qmcs` 默认 rw；要不要默认 `--protect-critical` 改 ro？
-4. **规则**：默认 `root-free`（不拦）还是默认 `root-guard`（ask/deny）？
-5. **system-rw**：要不要默认给 `/system` 开 overlay，还是保持硬件 ro、按需开？
-6. **全量备份**：`/data` + `/sdcard` 是否要 restic 全量到 PC/NAS（空间不优化，但时间/带宽）？
+**已按你的指令定稿**
+- **权限全开**：`guard` 默认 off；`protect-critical` 默认 off；`/metadata`、`/mnt/vendor/persist`、`/mnt/vendor/qmcs` 默认 rw；`/data`、`/dev`、`/sys`、`/sdcard`、`/storage` 完整开放。
+- **root-free**：DSH 默认 `danger-full-access + approval: never`；不弹批准；`root-guard` 仅作为可选开关。
+- **SELinux**：v1.4 默认 permissive；`--enforcing` 可保持；stop/watchdog 恢复原状态。
+- **镜像**：128GB 起步，可 `resize2fs` 增到 256GB；ext4 不能缩。
+
+**还需要你拍板**
+1. **镜像最终值**：128GB 起步够用；如果你要放本地模型/大仓库，直接 256GB。
+2. **system-rw**：`/system` 等物理 ro；要不要默认开 overlay 变可写？overlay 对 APEX/linker/厂商分区兼容性需要实测，默认仍建议 off、按需开。
+3. **全量备份**：`/data` + `/sdcard` 是否 restic 全量到 PC/NAS（空间不优化，但时间/带宽）。
 
 ---
 
