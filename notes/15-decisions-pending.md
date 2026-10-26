@@ -2,6 +2,7 @@
 
 - 日期：2026-10-26
 - 用法：直接回复编号+字母，例如 `1A 2A 3C 4B`。
+- **先看 `16-hiddenness-first.md`**：如果“隐藏性”指游戏/银行不被抓到把柄，推荐组合是 `1B 2A 3C 4B 5B 6B 7A 8C 9A 10A 11A 12A 13A 14D 15D`。
 - 前提：只有一台手机；“chroot 内”只是同一台手机上的进程树，不是虚拟机/第二台设备。
 - 当前状态：v1.4 **未批准开工**，先修 5 个 P0；这份单子决定“修成什么样”。
 
@@ -41,7 +42,7 @@
 |---|---|---|---|---|
 | A. rbind 全部 `/dev` | binder/ashmem/block/loop/usb 全见 | 最大设备控制；可碰分区/loop | chroot 内 root 可写块设备；loop/分区风险；root 隐藏性不是绝对 | 只有需要刷机/分区时 |
 | **B. rbind + 遮 `/dev/block`、`/dev/loop*`** | 保留 binder/ashmem/graphics/input 等；遮块设备/loop | 手机控制（am/pm/input/binder）完整；不能直接写分区/loop | 失去 raw 分区/loop 操作 | ✅ **推荐**（如果 root 隐藏优先） |
-| C. 最小 `/dev` | null/zero/random/ptmx + devpts + shm | 最干净 | 失去 binder/ashmem，手机控制大幅缩水 | ❌ 不符合“完美控制” |
+| C. 最小 `/dev` | null/zero/random/ptmx + devpts + shm | 最干净；手机控制走宿主 agent | 失去 chroot 内 binder/ashmem | ✅ 隐藏性优先（配合 4B/5B） |
 
 **区别一句话**：A 是“连分区都能碰”，B 是“手机控制够用、不碰块设备”，C 是“只够跑 Linux”。
 
@@ -106,6 +107,7 @@
 |---|---|---|---|
 | **A. 128GB 起步** | 实际 rootfs 12–16GB；够工具链/多项目/缓存；不够再 `resize2fs` 到 256GB | ext4 只能增不能减；以后要扩一次 | ✅ **推荐** |
 | B. 直接 256GB | 给本地 GGUF/Android 源码/大缓存留足 | 元数据/fsck 更慢；填满后 7 份快照更容易超 `/data` | 确定要放模型/大仓库时 |
+| **C. directory rootfs（无镜像）** | 目录 rootfs，不 loop、不 `/sdcard/rootfs.img`；快照=tar | 无镜像/loop 痕迹；最适合应用层隐藏 | 不能 full `/data` rbind（会自递归）；容量受 `/data` 文件系统 | ✅ 隐藏性优先 |
 
 **区别一句话**：128 是“先够用，能长”；256 是“一开始就大，但不能缩”。
 
@@ -192,6 +194,7 @@
 | 选项 | 具体做法 | 选它意味着 | 代价/风险 | 推荐 |
 |---|---|---|---|---|
 | A. 顶层 `remount,ro,bind` | 只让顶层 VFS 只读 | 方便；子挂载仍可写（cacerts rw） | 不能声称整树只读；remount-bind 机制未证实 | 临时 |
+| **D. 不挂 Android 分区** | chroot 只做 Linux/DSH；Android 控制走宿主 agent | 最少痕迹；无 /apex/linker 问题 | 失去 chroot 内 Android CLI/系统视图 | ✅ 隐藏性优先 |
 | **B. 递归 `mount_setattr(AT_RECURSIVE)`** | util-linux/mount 支持时递归设 ro | 真正整树只读 | 需要静态 util-linux；需 spare device 测试 | ✅ 目标 |
 | C. 不设 ro | rbind 原样 | 最简单 | 失去只读保护；与“完美”不符 | ❌ |
 
@@ -206,6 +209,7 @@
 | **A. rbind 整个 `/storage`** | 包含 `/storage/self`、`/storage/emulated`、各用户视图 | 完整存储视图 | 暴露更多 FUSE/用户目录 | ✅ 完整控制 |
 | B. 只挂 `/storage/emulated/0` | 当前 v1.4 | 基本文件管理够用 | `/storage/self`、其他用户缺失 | 可选 |
 | C. 逐个绑定 `/storage/self` + `/storage/emulated` + 用户 | 精确 | 可控 | 需要枚举用户 | 复杂 |
+| **D. 不挂 `/storage`** | chroot 只挂 `/sdcard/DSH` | 最少痕迹 | 失去完整存储视图；文件管理走宿主 | ✅ 隐藏性优先 |
 
 **一句话**：A 是“完整”，B 是“只当前用户”，C 是“手工枚举”。
 
@@ -221,7 +225,9 @@
 
 ## 推荐组合（红队 v2 修订）
 
-如果 **完整性/隐藏性优先**：`1B 2A 3B 4B 5B 6B 7A 8A 9A 10A 11A 12A 13B 14B 15A`
+如果 **游戏/银行隐藏性优先（推荐）**：`1B 2A 3C 4B 5B 6B 7A 8C 9A 10A 11A 12A 13A 14D 15D`
+
+如果 **完整性/隐藏性优先（保留部分 Android 视图）**：`1B 2A 3B 4B 5B 6B 7A 8A 9A 10A 11A 12A 13B 14B 15A`
 （13B 自定义非 permissive SELinux 域复杂；若不做 13B，就必须接受 13A 的“SELinux 不保证”并如实写。）
 如果 **full `/data` 必须保留**：`1A 2A 3B 4B 5B 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`，并接受 1A 只是防手滑、root 仍可绕过。
 

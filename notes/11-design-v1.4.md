@@ -1,6 +1,10 @@
 # 设计 v1.4（full-capability）：完整 chroot + 完整手机控制
 
-> **2026-10-26 红队审查：本设计尚未批准开工。** 待拍板选项见 [`15-decisions-pending.md`](15-decisions-pending.md)。 5 个 P0 反对意见见 [`14-red-team-v1.4.md`](14-red-team-v1.4.md)：rootfs 镜像/控制面自引用、`/sys` 与 hardguard 不是边界、stop 竞态、快照一致性、手机控制未验证。先修 P0 并出 v1.5，再谈 apply。
+> **2026-10-26 红队审查：本设计尚未批准开工。** 待拍板选项见 [`15-decisions-pending.md`](15-decisions-pending.md)。
+>
+> **如果“隐藏性”指游戏/银行/Play Integrity 不抓到本模块把柄：本 full 设计不是推荐方向。** 它会在 `/sdcard` 留 `.dsh`/rootfs.img/loop；应看 [`16-hiddenness-first.md`](16-hiddenness-first.md) 的“directory rootfs + 不 full /data + 宿主 thin agent”架构。
+>
+> 5 个 P0 反对意见见 [`14-red-team-v1.4.md`](14-red-team-v1.4.md)：rootfs 镜像/控制面自引用、`/sys` 与 hardguard 不是边界、stop 竞态、快照一致性、手机控制未验证。先修 P0 并出 v1.5，再谈 apply。
 >
 > **红队 v2 追加（必须知道）**：
 > - 本机 `u:r:ksu:s0` 是 KernelSU 的 **permissive + allow all** 域（`kernel/selinux/rules.c`：`ksu_permissive(KERNEL_SU_DOMAIN)` + `ksu_allow(ALL,ALL,ALL)`）；全局 `enforce=1` 不等于 chroot 域受约束，不能再写“SELinux 保证”。
