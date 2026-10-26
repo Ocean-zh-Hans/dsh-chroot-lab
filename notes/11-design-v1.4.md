@@ -2,7 +2,7 @@
 
 > **2026-10-26 红队审查：本设计尚未批准开工。** 待拍板选项见 [`15-decisions-pending.md`](15-decisions-pending.md)。
 >
-> **如果“隐藏性”指游戏/银行/Play Integrity 不抓到本模块把柄：本 full 设计不是推荐方向。** 它会在 `/sdcard` 留 `.dsh`/rootfs.img/loop；应看 [`16-hiddenness-first.md`](16-hiddenness-first.md) 的“directory rootfs + 不 full /data + 宿主 thin agent”架构。
+> **如果“隐藏性”指游戏/银行/Play Integrity 不抓到本模块把柄：本 full 设计可以保留**，只要所有 chroot mount 在 private ns、全局 prop/SELinux 不动、KSU 隐藏特性开着；`.dsh`/rootfs.img 名字不是标准检测项。详见 [`16-hiddenness-first.md`](16-hiddenness-first.md)。
 >
 > 5 个 P0 反对意见见 [`14-red-team-v1.4.md`](14-red-team-v1.4.md)：rootfs 镜像/控制面自引用、`/sys` 与 hardguard 不是边界、stop 竞态、快照一致性、手机控制未验证。先修 P0 并出 v1.5，再谈 apply。
 >
