@@ -16,7 +16,7 @@
 | 完整 Android 控制 | `am/pm/cmd/settings/input/uiautomator/screencap/screenrecord/dumpsys/content/appops/monkey/ime/wm/svc` 可用；binder/ashmem 可用 |
 | 完整设备节点 | `/dev` rbind；`/dev/block`、`/dev/binder*`、`/dev/ashmem`、`/dev/pts`、`/dev/shm` 全见 |
 | 完整内核视图 | `/proc`、`/sys` rw、`debugfs`、`tracefs`、`/proc/kallsyms` |
-| 完整 root | chroot 内 uid 0；full capabilities；不 setpriv/不降 UID；SELinux 默认 permissive（stop 恢复） |
+| 完整 root | chroot 内 uid 0；full capabilities；不 setpriv/不降 UID；**SELinux 保持 Enforcing**；permissive 仅显式 break-glass |
 | 完整存储 | `/data` rw、`/sdcard` raw rw、`/storage` rw、`/mnt` rw；镜像 128GB；不做 workspace 收窄 |
 | 完整生命周期 | 开机自启、s6 监督、启停、诊断、快照/回滚、卸载清理 |
 | 可选 | `guard` 规则、`system-rw` overlay、`protect-critical` 只读保护——都**不是默认** |
@@ -39,6 +39,22 @@
 
 **永远成立**：chroot 内 root 可通过 `/proc/1/root` 访问宿主 `/`；`/dev/block`、`/data` 不挂也能到。v1.4 不再把任何挂载限制写成安全边界。
 
+### 1.1 Root 隐藏性不变量（硬约束）
+
+1. **SELinux 保持 Enforcing**：不默认 `setenforce 0`；`--permissive` 仅显式 break-glass，且要明确“本次接受隐藏性下降”。
+2. **不改全局 prop**：不用 `resetprop` 改 `ro.debuggable`/`ro.secure`/`init.svc.*` 等；不伪造 root 状态。
+3. **挂载不暴露到宿主 namespace**：所有 chroot 挂载在私有 mount ns；`make-rprivate`；不做全局 bind/共享挂载。
+4. **不把模块目录 bind 进 chroot**：避免 KSU 挂载视图穿透/被检测。
+5. **数据目录最小可见**：`/data/adb/chroot` 0700；镜像目录 `/data/media/0/.dsh` 0700 + `.nomedia`；`/sdcard/DSH` 只放工作区，不放 root 标记。
+6. **保留 SukiSU 隐藏特性**：`su_compat`/`kernel_umount`/`selinux_hide` 保持启用；不在 chroot 内改 SELinux 策略。
+7. **不改 `/system`**：模块不落 `/system`；`system-rw` overlay 只在私有 ns，可随时关。
+8. **Loop 设备**：镜像 loop 是 Android 常见形态（APEX 也用 loop）；不创建可疑命名/多余 loop；镜像文件 0700、`.nomedia`。
+9. **服务只监听 loopback**：DSH/ttyd 绑定 `127.0.0.1`；不 `0.0.0.0`；端口不做广告。
+10. **崩溃恢复**：watchdog 在 DSH 异常退出时恢复 SELinux 原状态；不留全局 permissive。
+11. **root-free 的硬例外**：`setenforce`、写 `/sys/fs/selinux/*`、`resetprop` 修改 `ro.*`/`init.svc.*`/`persist.*`、全局 mount 传播——这些始终由 `hardguard` 拦截；它们不是普通权限，是 root 隐藏性的根。
+
+**便利性最大化**：在上述不变量内，root-free、全 `/data`/`/dev`/`/sys`、完整 Android CLI、debugfs/tracefs、128GB 镜像、`protect-critical` 默认 off、`system-rw` 可选——全部保留。
+
 ---
 
 ## 2. 单一 full 档 + rescue
@@ -58,19 +74,19 @@
 | s6 | 是 | 否 |
 | 规则 | 默认 free；`guard` 可选 | 无 |
 | 快照 | 128GB 镜像冷复制 + state | 无 |
-| SELinux | 默认 permissive（`--enforcing` 可保持 Enforcing） | 默认 Enforcing |
+| SELinux | **默认 Enforcing**；`--permissive` 仅显式 break-glass（会降低隐藏性） | Enforcing |
 | 开机 | 默认 full | 手动 |
 
 **不再有 daily/lab 切换**。如果用户以后要“最小面”，那是另一个可选的 `guard`/`rescue`，不是主设计。
 
-### 2.1 SELinux 默认 permissive 的代价
+### 2.1 SELinux permissive 的代价（为什么默认不用）
 
 - **全局生效**：`setenforce 0` 影响整机所有域，不只是 chroot；运行期间所有进程都少了 SELinux 这一层。
 - **不是“只放开 chroot”**：恶意 App、被注入的进程、系统服务都同样受益；这是安全取舍，不是挂载技巧。
 - **可能影响完整性/企业/支付类检测**：部分 ROM/应用会把 permissive 视为异常；具体依赖设备和应用，不能保证。
 - **崩溃未恢复**：DSH 崩溃/被强杀时，如果没人恢复，设备会保持 permissive 到重启；需要 watchdog + stop 恢复。
 - **不改变 DAC/capabilities**：permissive 只去掉 SELinux 拒绝；root、文件权限、能力仍在。
-- **建议**：如果只是为了“能跑”，先 Enforcing；遇到明确 avc 拒绝再 `dsh-ctl permissive --yes`。如果你要“绝对控制”，v1.4 可以默认 permissive，但必须保留 `--enforcing`、stop 恢复、watchdog 和审计。
+- **v1.4 结论**：为了不降低 root 隐藏性，**默认 Enforcing**；`--permissive` 只作为显式 break-glass（需要你确认“本次接受隐藏性下降”），stop/watchdog 恢复。若某个工具必须 permissive，优先用窄域/单次操作，而不是全局 `setenforce 0`。
 
 
 ---
@@ -80,6 +96,7 @@
 ```
 L4 接入     DSH web (loopback token) / ttyd (可选) / 手机浏览器 / PC adb forward
 L3 策略     DSH permission preset root-free (danger-full-access + never) 默认
+            hardguard 始终开启（SELinux/prop/mount 传播硬例外）
             可选 root-guard (danger-full-access + ask) + hooks deny/ask
             审计 PostToolUse 始终开启
 L2 运行时   Node 24 + DSH versions/current/previous + profile web
@@ -107,6 +124,7 @@ L0 宿主     KSU module: service.sh + boot-completed.sh
 - 空间不是约束：128GB sparse 镜像，实际 rootfs 12–16GB；`resize2fs` 可扩。
 - 快照=镜像文件冷复制；回滚=换镜像；比目录 tar 更“整存整删”。
 - 镜像必须放 `/data/media/0/.dsh/rootfs.img`（FBE 加密区 loop 会 EIO）。
+- 目录权限：`chmod 700 /data/media/0/.dsh`；放 `.nomedia`；rootfs.img 0600。这样普通 App/文件管理器看不到镜像，不增加 root 可见标记。
 
 ### 4.2 创建/扩容
 
@@ -158,6 +176,7 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 | `/` | `/run/dsh-rootfs` | ext4 | 128GB 镜像 |
 | `/proc` | `proc` | `proc,nosuid,noexec,nodev` | 完整进程视图 |
 | `/sys` | `sysfs` | **rw** | 完整内核/设备视图 |
+| `/sys/fs/selinux` | `/sys/fs/selinux` | bind **ro**（失败则 hardguard） | 防止 chroot 内 `setenforce 0`/改策略 |
 | `/dev` | `/dev` | **rbind** `nosuid`（去 noexec） | block/binder/ashmem/usb-ffs 全见 |
 | `/dev/pts` | `devpts` | `newinstance,ptmxmode=0666,mode=620` | 独立 pts；`/dev/ptmx` → `pts/ptmx` |
 | `/dev/shm` | tmpfs | `size=1g,mode=1777` | Chromium/Playwright |
@@ -262,7 +281,7 @@ dsh-ctl system-rw on system vendor product odm system_ext
 ### 7.1 start
 
 ```
-dsh-ctl start [--enforcing] [--protect-critical]
+dsh-ctl start [--permissive] [--protect-critical]  # 默认 Enforcing；--permissive 会降低 root 隐藏性
   1. flock state/ctl/lock
   2. doctor：root、namespaces、chroot、mount、seccomp、SELinux、TMPDIR、镜像、losetup、node-pty、DSH
   3. e2fsck -p 镜像；losetup --sector-size 4096；记录 loopdev
@@ -313,6 +332,7 @@ dsh-ctl stop
   - `fs-sandbox.cwd: /sdcard/DSH/workspace`
   - `workspaceRoot: /sdcard/DSH/workspace`
   - 默认预设 `root-free`：`danger-full-access` + `approval: never`（不弹批准；完整控制）
+- **`hardguard` 始终启用**：即使 `root-free`，也拦 `setenforce`、`/sys/fs/selinux` 写入、`resetprop` 改全局 prop、全局 mount 传播；这是 root 隐藏性硬约束，不是普通权限收束
   - 可选 `root-guard`：`danger-full-access` + `ask` + hooks（deny/ask）
   - 默认 `root-free`；`/permission` 可切 `root-guard`
 - 工作区：`/sdcard/DSH/workspace`；`chmod 2777`；`umask 000`；文件 0666；`dsh-rm` 回收站。
@@ -388,8 +408,8 @@ dsh-ctl stop
 
 **已按你的指令定稿**
 - **权限全开**：`guard` 默认 off；`protect-critical` 默认 off；`/metadata`、`/mnt/vendor/persist`、`/mnt/vendor/qmcs` 默认 rw；`/data`、`/dev`、`/sys`、`/sdcard`、`/storage` 完整开放。
-- **root-free**：DSH 默认 `danger-full-access + approval: never`；不弹批准；`root-guard` 仅作为可选开关。
-- **SELinux**：v1.4 默认 permissive；`--enforcing` 可保持；stop/watchdog 恢复原状态。
+- **root-free**：DSH 默认 `danger-full-access + approval: never`；不弹批准；`root-guard` 仅作为可选开关。**硬例外**：`setenforce`/`/sys/fs/selinux`/`resetprop` 全局 prop/全局 mount 传播由 `hardguard` 始终拦截，保证 root 隐藏性。
+- **不降低 root 隐藏性**：SELinux 默认 **Enforcing**；`--permissive` 仅显式 break-glass，且会降低隐藏性；不做全局 prop 修改、不把 chroot 挂载暴露到宿主 namespace。
 - **镜像**：128GB 起步，可 `resize2fs` 增到 256GB；ext4 不能缩。
 
 **还需要你拍板**
@@ -401,4 +421,4 @@ dsh-ctl stop
 
 ## 15. 一句话
 
-v1.4 不再做“日常/实验”分档：**一个 full 档，128GB 镜像，完整 `/data`/`/mnt`/`/storage`/`/sdcard`/`/dev`/`/sys`，完整 Android 命令与 debugfs/tracefs，root 全能力；规则默认关闭、审计保留，`guard`/`system-rw`/`protect-critical` 都是可选开关。** 这就是“完美 chroot + 完美手机控制”的工程定义。
+v1.4 不再做“日常/实验”分档：**一个 full 档，128GB 镜像，完整 `/data`/`/mnt`/`/storage`/`/sdcard`/`/dev`/`/sys`，完整 Android 命令与 debugfs/tracefs，root 全能力；SELinux 默认 Enforcing（不降隐藏性）；规则默认 root-free（SELinux/prop 硬例外）、审计保留，`guard`/`system-rw`/`protect-critical` 都是可选开关。** 这就是“完美 chroot + 完美手机控制”的工程定义。
