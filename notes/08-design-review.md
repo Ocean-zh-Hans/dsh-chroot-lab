@@ -1,6 +1,7 @@
 # 设计评审：v1.2（2026-10-26）
 
 - 评审对象：`notes/05-design-v1.md`（v1.2 定稿）及其配套 `02/03/06/07`、`research/`、`analysis/`
+- 评审后的优化设计：**[`10-design-v1.3.md`](10-design-v1.3.md)**（daily/lab/rescue 三档 + 双 rootfs 模式）
 - 评审方法：文档交叉核对 + 第三方源码核对 + **本机隔离实验**（不改系统；实验记录见 `09-p0-evidence.md`）
 - 设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
 - 结论先行：**方向正确、命门可跑，但现稿不能直接进入打包。**

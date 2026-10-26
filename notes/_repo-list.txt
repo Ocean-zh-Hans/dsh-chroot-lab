@@ -15,3 +15,8 @@ Meow1s/DeepSeek-Harness-For-Android
 dasabi114514/Excalibur
 regrevia/dsh-pet-voice
 liguobao/ds-harness-remote
+
+YevolcXhb/mini-panel
+PhoenixHairpin/chroot-mcp-safe
+
+# 本地参考（非 repo）：/storage/emulated/0/Download/容器AI_0.1.0.apk

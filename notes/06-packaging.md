@@ -1,5 +1,7 @@
 # 模块打包清单（v1）
 
+> **2026-10-26**：v1.2 配套稿；v1.3 的模块/打包以 [`10-design-v1.3.md`](10-design-v1.3.md) §11 为准。
+
 - 目标：一个 KB 级模块 zip + 一个约 0.6–1.2GB 的 payload；模块只负责启动/挂载/监督/清理。
 - 依据：KernelSU 模块文档、DSH-Chroot 的 module.md/payload.md、issue #3396/#3693
 

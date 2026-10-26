@@ -34,11 +34,12 @@ experiments/   非破坏验证（P0：Debian chroot + Go 编译，不动现有�
 - [notes/03-rules-and-safety.md](notes/03-rules-and-safety.md) 规则层与可逆性设计
 - [notes/08-design-review.md](notes/08-design-review.md) **v1.2 评审：8 个 P0、P1 清单、v1.3 修订建议**
 - [notes/09-p0-evidence.md](notes/09-p0-evidence.md) 评审的本机实验记录
+- [notes/10-design-v1.3.md](notes/10-design-v1.3.md) **优化后的 v1.3 设计：daily/lab/rescue、双 rootfs 模式、验收/路线**
 - notes/analysis/ 逐项目深挖（进行中）
 
 ## 已 clone 的项目
 
-见 [notes/_repo-list.txt](notes/_repo-list.txt)。当前 14 个，覆盖四类运行模型：
+见 [notes/_repo-list.txt](notes/_repo-list.txt)。当前 16 个，覆盖四类运行模型（新增 mini-panel、chroot-mcp-safe 两个参考）：
 真 chroot 模块（dsh-alpine-ksu、DSH-Chroot、chroot-distro、lhroot）、
 proot APK（DSHA、xliaoy、kai6666666、Soodok、masgzy、cmyfqwq）、
 Termux 原生（dsh-termux）、AVF 指南（run-linux-on-android-guide、gunyah-on-sd-guide）。
