@@ -15,6 +15,7 @@
 - `14-red-team-v1.4.md` **v1.4 红队审查：5 个 P0 反对意见，暂不批准开工**
 - `15-decisions-pending.md` **待拍板决策单：每项列选项/代价/推荐**
 - `16-hiddenness-first.md` **应用层隐藏性模型：full 可保留；private ns/全局 prop/SELinux 是关键；`.dsh` 名字不是硬指标**
+- `17-project-overview.md` **项目总览 v2：单一入口（目标/架构/隐藏性/P0/路线/决策）**
 - `08-design-review.md` **v1.2 评审：8 个 P0、P1 清单、v1.3 目录/挂载/停止状态机建议（2026-10-26）**
 - `09-p0-evidence.md` 评审的本机实验记录（chroot/node-pty/dsh web/s6/apt/权限/挂载）
 - `06-packaging.md` 模块打包清单与构建门禁
