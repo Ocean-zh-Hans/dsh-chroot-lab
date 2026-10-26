@@ -1,6 +1,6 @@
 # DSH Ubuntu Chroot — 文档入口
 
-- 状态：**P1 静态骨架 + P2/P3/P4 代码已实现**（2026-10-26）；外部验证未完成
+- 状态：**开发完成（P1–P5 代码/脚本）**（2026-10-26）；真实挂载验证由 PC AI 在备用机执行
 - 目标设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
 - 当前代码：模块骨架 + `dsh-ctl doctor/plan/status/start/stop/snapshot/...`；**apply 需显式 `--apply`，尚未在主力机执行**
 - 当前设计：`design-v1.5.md`
@@ -35,6 +35,7 @@
 | [incident.md](incident.md) | 2026-10-26 系统崩溃复盘与禁止事项 |
 | [roadmap.md](roadmap.md) | P0–P5 阶段、代码与验证状态 |
 | [packaging.md](packaging.md) | 模块 zip、payload、工具链、构建门禁 |
+| [handoff.md](handoff.md) | **备用机/PC AI 验收交接手册** |
 | [../agent/README.md](../agent/README.md) | 宿主 thin agent 协议草案（P4） |
 | [../agent-app/README.md](../agent-app/README.md) | 最小宿主 agent App（可选，未真机验证） |
 | [archive/README.md](archive/README.md) | 旧笔记归档说明；旧文档不再有当前效力 |

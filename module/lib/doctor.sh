@@ -242,7 +242,7 @@ dsh_doc_check_tools() {
 
 dsh_doc_check_mounts() {
   if [ -r "$DSH_PROC/self/mountinfo" ] && grep -q 'dsh-rootfs' "$DSH_PROC/self/mountinfo" 2>/dev/null; then
-    dsh_doc_warn "host mountinfo already contains dsh-rootfs; possible leftover"
+    dsh_doc_required "host mountinfo already contains dsh-rootfs; possible leftover"
   else
     dsh_doc_pass "no dsh-rootfs mount in current namespace"
   fi

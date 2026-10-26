@@ -204,3 +204,8 @@ ls /sdcard/ubuntu-rootfs               # Permission denied
 - 真实 `mount`/`loop`/`nsenter`/`chroot` 没有在本机执行。
 
 因此当前只能声明“代码路径和静态门禁通过”，不能声明“chroot 已可用”。
+
+## 13. 交接
+
+真实 P2/P3/P4/P5 验收已交接给 PC AI + 备用机，步骤和回传清单见
+`docs/handoff.md`。本文件不把未执行的验证写成通过。

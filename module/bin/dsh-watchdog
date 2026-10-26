@@ -69,6 +69,8 @@ case ${1:-} in
   dsh_watchdog_once
   ;;
 --daemon)
+  dsh_state_ensure || exit 1
+  printf '%s\n' "$$" >"$DSH_CTL_DIR/watchdog.pid" 2>/dev/null || true
   dsh_watchdog_daemon
   ;;
 --status)

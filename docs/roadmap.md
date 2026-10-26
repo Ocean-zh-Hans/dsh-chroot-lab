@@ -4,8 +4,8 @@
 
 - P0：设计定稿、决策锁定、旧文档归档 — **完成**
 - P1：静态 module 骨架 + `dsh-ctl doctor/plan/status` — **完成（2026-10-26）**
-- P2/P3：mount holder、lifecycle、snapshot、system-rw、guard、rescue、DSH runner、bake 脚本 — **代码实现，待外部验证**
-- P2：备用机/VM 的 mount/ns/stop/loop 验证 — 未开始
+- P2/P3/P4/P5：mount holder、lifecycle、snapshot、system-rw、guard、rescue、DSH runner、bake、agent、打包 — **开发完成，待备用机/PC AI 验收**
+- P2：备用机/VM 的 mount/ns/stop/loop 验证 — **已交接**
 - **主力机 apply：未开始，且 P2 前禁止**
 
 “P1 完成”的定义不是“能启动 chroot”，而是：
@@ -45,7 +45,7 @@
 - `start` 的 mock 测试只验证状态机/挂载调用序列，不证明内核挂载成功；
 - 真实 apply 只在 P2 备用机/VM 做。
 
-## 3. P2：隔离环境验证（代码已备，未执行）
+## 3. P2：隔离环境验证（交接给备用机/PC AI）
 
 前置：
 
@@ -69,7 +69,7 @@
 
 **零残留定义**：没有同 ns inode 进程、没有 `dsh-rootfs` 挂载、没有 holder、没有测试 loop、没有 `/tmp/dsh-rootfs` 残留。
 
-## 4. P3：DSH 运行时（代码已备，未验证）
+## 4. P3：DSH 运行时（代码完成，待验收）
 
 - Node 24 / node-pty / DSH web；
 - s6-svscan / dsh-run / URL；
@@ -78,7 +78,7 @@
 - approval-free + hooks 自检；
 - 开机自启、watchdog、last-good。
 
-## 5. P4：手机控制（最小 agent 源码/构建，未真机验证）
+## 5. P4：手机控制（agent 源码/APK 完成，待真机验证）
 
 - full Android CLI 能力矩阵；
 - 写操作负例；
@@ -87,7 +87,7 @@
 - `uiautomator runtest`；
 - 不在 P4 前写“perfect”。
 
-## 6. P5：打包/迁移/检测（脚本已备，硬件验证未开始）
+## 6. P5：打包/迁移/检测（脚本完成，硬件验证待执行）
 
 - 正式模块 zip + payload；
 - 安装/卸载/重启自愈；

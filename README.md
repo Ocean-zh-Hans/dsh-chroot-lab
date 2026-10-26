@@ -3,10 +3,11 @@
 Android 上“真 chroot 的 Ubuntu + DSH + 完整手机控制”的设计与实现工作区。
 
 - 目标设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
-- 当前阶段：**P1 静态骨架 + P2/P3/P4 代码已实现，待备用机/VM 真机验证**；`start --apply` 是显式门，尚未在主力机执行
+- 当前阶段：**P1–P5 开发产物完成；真实挂载/设备验证由 PC AI 在备用机执行**；`start --apply` 是显式门
 - 当前设计：[docs/design-v1.5.md](docs/design-v1.5.md)
 - 已锁定决策：[docs/decisions.md](docs/decisions.md)
 - 文档入口：[docs/README.md](docs/README.md)
+- 验收交接：[docs/handoff.md](docs/handoff.md)
 
 ## 结构
 
