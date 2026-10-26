@@ -18,5 +18,6 @@ liguobao/ds-harness-remote
 
 YevolcXhb/mini-panel
 PhoenixHairpin/chroot-mcp-safe
+S1LENCE-D/astrbot-mubuntu
 
 # 本地参考（非 repo）：/storage/emulated/0/Download/容器AI_0.1.0.apk

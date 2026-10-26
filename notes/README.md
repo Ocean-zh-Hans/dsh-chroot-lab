@@ -26,6 +26,7 @@
   - ✅ [chroot-mcp-safe.md](analysis/chroot-mcp-safe.md) —— full/lab 档挂载/停止/preflight 参考（2026-10-26）
   - ✅ [mini-panel.md](analysis/mini-panel.md) —— 面板+Agent 产品化参考（AGPL，不并入）
   - ✅ [container-ai-apk.md](analysis/container-ai-apk.md) —— proot+本地模型 APK 分析（只做 UX 参考）
+  - ✅ [astrbot-mubuntu.md](analysis/astrbot-mubuntu.md) —— 薄应用模块 + Mubuntu 一键部署参考（2026-10-26）
   - ⬜ DSHA（proot 工程化天花板）
   - ⬜ dsh-termux（现有环境的 9 个补丁）
 - `_repo-list.txt` 已 clone 的第三方项目清单

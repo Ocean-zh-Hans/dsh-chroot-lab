@@ -9,7 +9,7 @@
 
 ## 0. 结论先行
 
-1. **默认 `daily`**：目录 rootfs、raw `/sdcard` 工作区、最小 `/dev`、`/data` 不挂、Android 分区不挂；DSH 可用、apt/Go 可用、可快照/回滚。适合日常。
+1. **默认 `daily`**：目录 rootfs、只挂 `/sdcard/DSH` 工作区（不暴露整块内部存储）、最小 `/dev`、`/data` 不挂、Android 分区不挂；DSH 可用、apt/Go 可用、可快照/回滚。适合日常。
 2. **显式 `lab`**：ext4 镜像 rootfs（放 `/data/media/0`，挂 `/run/dsh-rootfs` 后再 chroot）+ `/data`/`/mnt`/`/storage`/`/dev` rbind + Android 分区 ro + debugfs/tracefs；适合 Agent 调试/逆向/设备控制。**必须显式开启，开机不自动进 lab。**
 3. **`rescue`**：目录 rootfs、最小挂载、只起 `/bin/bash`，用于 DSH/rootfs 坏掉后的修复；不启动 DSH。
 4. **控制面必须在客机可见**：`control/` → `/opt/dsh-control` ro，`logs/` → `/var/log/dsh` rw，`state/dsh-home` → `/root/.dsh`；否则 hooks/audit/s6 都是“宿主路径，客机看不到”。
@@ -87,7 +87,7 @@ L0  宿主模块    KSU module: service.sh + boot-completed.sh
 | 目的 | 日常 AI/开发/apt/Go | Agent 调试、逆向、设备控制 | 修 rootfs/DSH |
 | rootfs | 目录 `/data/adb/chroot/rootfs` | ext4 镜像 `/data/media/0/.dsh/rootfs.img`，挂 `/run/dsh-rootfs` | 目录 rootfs |
 | `/data` | **不挂** | **rbind rw**（含 `/data/user/0`） | 不挂 |
-| `/sdcard` | raw `/data/media/0` rw | raw `/data/media/0` rw + `/storage/emulated/0` rbind rw | 不挂 |
+| `/sdcard` | bind `/data/media/0/DSH` → `/sdcard/DSH`（仅工作区） | raw `/data/media/0` rw + `/storage/emulated/0` rbind rw（完整视图） | 不挂 |
 | `/mnt`/`/data_mirror` | 不挂 | rbind rw；`persist`/`qmcs` ro | 不挂 |
 | `/dev` | 最小 tmpfs（null/zero/full/random/urandom/tty/ptmx + devpts + shm） | rbind `/dev`（binder/ashmem/block 全见） | 最小 tmpfs |
 | `/sys` | ro | rw；debugfs/tracefs rw | ro |
@@ -168,12 +168,13 @@ L0  宿主模块    KSU module: service.sh + boot-completed.sh
 
 | 客机路径 | 源 | 类型/选项 | 说明 |
 |---|---|---|---|
-| `/sdcard` | `/data/media/0` | bind rw | raw，exec；工作区 |
-| `/storage/emulated/0` | symlink → `/sdcard` | symlink | 兼容硬编码路径 |
+| `/sdcard/DSH` | `/data/media/0/DSH` | bind rw | **只暴露工作区**；raw，exec；2777/0666 |
+| `/storage/emulated/0` | symlink → `/sdcard/DSH` | symlink | 兼容硬编码路径；不暴露其它媒体 |
 | `/dev` | tmpfs | `mode=755,size=1m` | 最小设备 |
 | `/dev/null` 等 | `/dev/<node>` | bind | null/zero/full/random/urandom/tty；`ptmx` 用 symlink → `pts/ptmx` |
 | `/system` 等 | — | 不挂 | 需要 Android CLI 时切 lab |
 
+**daily 只挂 `/sdcard/DSH`**：不 bind 整块 `/data/media/0`，避免 AI/文件管理器看到 DCIM、Android/data 等无关区域；需要完整内部存储时切 lab。
 **daily 不挂 `/data`**：rootfs 在 `/data/adb/chroot`，bind `/data` 会自递归；且 `/data` 没有快照，rw 不可逆。
 **daily 不挂 `/dev/block`**：最小 `/dev` 防手滑；但 root 仍可通过 `/proc/1/root/dev/block` 访问（规则兜）。
 
@@ -457,7 +458,7 @@ control/bin/*
 - `customize.sh`：`source` 执行，不 `exit`；校验 aarch64/API/空间；payload 不存在则 `abort` 并给 push 指令；建目录；复制 `control/` → `/data/adb/chroot/control`；`chmod 0755`。
 - `service.sh`/`boot-completed.sh`：立刻 return；`setsid` 后台 `dsh-ctl start --boot`；fd 重定向；不跑长循环。
 - `uninstall.sh`：`dsh-ctl stop`；只删模块目录；保留 `/data/adb/chroot`；`dsh-ctl purge` 显式全删。
-- `action.sh`：KSU 管理器按钮 → `dsh-ctl status`/`diag`。
+- `action.sh`：KSU 管理器按钮 → `status|start|stop|restart|url|log|diag`；输出短，长日志落文件/后台 job；不要同步跑 10 分钟部署。可选 `prop_update.sh` 把 `✓/×` 写 `module.prop` description，但**只作显示**，真实状态以 `dsh-ctl status` 为准。
 - `module.prop`：`id` 发布后不改；`versionCode` 单调整数；`version` 不参与比较；可选 `updateJson`。
 
 ### 11.2 payload
@@ -485,7 +486,7 @@ control/bin/*
 
 ### 12.1 daily（默认，必须全过）
 
-1. `id`=0、`uname -r` 宿主一致；`/sdcard` raw 可执行；Go 在 `/sdcard/DSH/workspace` 编译并运行。
+1. `id`=0、`uname -r` 宿主一致；`/sdcard/DSH` raw 可执行；Go 在 `/sdcard/DSH/workspace` 编译并运行。
 2. `node-pty` 起 PTY；`dsh web --port 0 --no-open` 打印 token URL，curl 200/303；URL 写入 `state/guest/url`。
 3. `/sdcard/DSH` 2777/0666 + umask 000；Termux/文件管理器可写。
 4. stop 后：全机 `/proc/*/mountinfo` 无 rootfs、`/proc/*/root` 无 rootfs 进程、无 launcher；不是只看 `/proc/self`。
@@ -517,7 +518,7 @@ control/bin/*
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| P0（1–2 天） | doctor/preflight；daily 目录 rootfs；最小 `/dev`；raw `/sdcard`；node-pty；DSH web；workspace 权限；stop 扫描 | daily P0 1–4、6 |
+| P0（1–2 天） | doctor/preflight；daily 目录 rootfs；最小 `/dev`；只挂 `/sdcard/DSH`；node-pty；DSH web；workspace 权限；stop 扫描 | daily P0 1–4、6 |
 | P1（2–3 天） | `dsh-ctl` 全命令；s6 + `dsh-run`；watchdog；快照/restore；审计 | daily P0 5–8 |
 | P2（1 周） | lab 镜像；`/data`/`/mnt`/`/storage`/`/dev` rbind；Android 分区 ro；debugfs/tracefs；包装器；`--permissive` | lab P0 1–8 |
 | P3（1 周） | 模块打包；service.sh/boot-completed；uninstall/purge；action；版本/更新 | 模块/恢复 |
@@ -535,6 +536,7 @@ control/bin/*
 | `chroot-mcp-safe` | 挂载表、`make-rprivate`、preflight、nsenter stop、pid/root 扫描、TMPDIR/resolv、Android 包装器、镜像模式 | 默认 full-access、默认 sshd/123456、默认 `setenforce 0`、4183 行单文件、`umount -l` 常规化、无快照 |
 | `mini-panel` | 计划确认/PLANNING→CODING→REVIEWING、工具分类、lazy-ref、面板信息架构 | AGPL 代码、Docker/DockRoot 运行时、子串黑名单、Agent 同进程 root、双 Agent |
 | `容器AI APK` | 原生 Compose UX、模型管理（本地 GGUF/云端）、Chat+工具循环、资源/容器状态卡片 | proot/Alpine、app 沙箱、无开机自启、无快照、`debuggable`/`allowBackup`、专有代码 |
+| `astrbot-mubuntu` | 薄应用模块 + 外部 rootfs、Action 一键部署、`module.prop` 状态投影、默认不挂整块存储、凭据抓取、卸载保留环境 | `nohup`/`pkill -f`、同步 10 分钟 Action、解压别的模块 zip、无 pin/校验/快照/审计 |
 | `dsh-alpine-ksu` | 非阻塞启动、原子 rootfs、raw media、版本/回滚骨架 | Alpine/musl 补丁链 |
 | `chroot-distro` | rootfs 安装/挂载/备份策略、fresh proc/devpts、能力探测 | 作为运行时依赖、GPL 代码复制 |
 

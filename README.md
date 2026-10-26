@@ -39,7 +39,7 @@ experiments/   非破坏验证（P0：Debian chroot + Go 编译，不动现有�
 
 ## 已 clone 的项目
 
-见 [notes/_repo-list.txt](notes/_repo-list.txt)。当前 16 个，覆盖四类运行模型（新增 mini-panel、chroot-mcp-safe 两个参考）：
+见 [notes/_repo-list.txt](notes/_repo-list.txt)。当前 17 个，覆盖四类运行模型（新增 mini-panel、chroot-mcp-safe、astrbot-mubuntu 三个参考）：
 真 chroot 模块（dsh-alpine-ksu、DSH-Chroot、chroot-distro、lhroot）、
 proot APK（DSHA、xliaoy、kai6666666、Soodok、masgzy、cmyfqwq）、
 Termux 原生（dsh-termux）、AVF 指南（run-linux-on-android-guide、gunyah-on-sd-guide）。
