@@ -1,5 +1,7 @@
 # f2fs + Android 自研 chroot：快照 / 回滚 / 备份调研
 
+> **2026-10-26 后续修正**：本文 TL;DR 第 3 条“硬链接快照当主线”已被 `05-design-v1.md` 否定——硬链接与活动树共享 inode，原地写会污染所有快照；主线改为 **目录 rootfs + 冷 tar 快照**，硬链接只用于“冷且不再写”的不可变归档。详见 `08-design-review.md` §P1-3。
+
 > 目标：rooted Android 15，/data=f2fs；rootfs 1–3GB（目录或 ext4 镜像）位于 /data/adb/<mod>；数据目录数百 MB；要求一键回滚、空间可控。
 > 方法：官方文档 + 内核/AOSP 源码；另在本机 Termux **app 域**（/data=f2fs，内核 6.6.66-android15，uid untrusted_app_25）做只读性实测，会单独标注。凡未在目标 **root 域**验证者标「未验证」。
 

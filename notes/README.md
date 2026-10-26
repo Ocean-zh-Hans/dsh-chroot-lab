@@ -8,6 +8,8 @@
 - `03-rules-and-safety.md` 规则层 / 可逆层 / 审计层设计
 - `04-design.md` 设计过程稿（v0.5，已被 05 取代）
 - `05-design-v1.md` 设计 v1.2 定稿（路线比较/详细设计/验收/验证记录）
+- `08-design-review.md` **v1.2 评审：8 个 P0、P1 清单、v1.3 目录/挂载/停止状态机建议（2026-10-26）**
+- `09-p0-evidence.md` 评审的本机实验记录（chroot/node-pty/dsh web/s6/apt/权限/挂载）
 - `06-packaging.md` 模块打包清单与构建门禁
 - `07-roadmap.md` 分阶段实施路线
 - `research/PLAN-8H.md` 8 小时研究计划

@@ -1,5 +1,7 @@
 # 设计 v1.2（定稿）：全能 AI 的真 chroot 环境
 
+> **2026-10-26 评审后状态**：本文件是 v1.2 原文，保留作对照。评审发现的 8 个 P0 与 v1.3 修订建议见 [`08-design-review.md`](08-design-review.md)；在 v1.3 落地前，**不要按本文件的挂载/停止/压缩命令直接施工**（尤其 §5.2 `mount --make-rprivate`、§5.5 宿主侧 umount 校验、§5.6 `tar --zstd`、§5.7 hooks 路径）。
+
 - 日期：2026-10-26 ｜ 设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
 - 证据：A 级 = 官方文档/源码/本机实测；B 级 = issue/维护者回复；C 级仅线索。详见 notes/research/web/INDEX.md
 

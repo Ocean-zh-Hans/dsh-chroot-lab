@@ -32,6 +32,8 @@ experiments/   非破坏验证（P0：Debian chroot + Go 编译，不动现有�
 - [notes/01-analysis-template.md](notes/01-analysis-template.md) 逐项目分析模板
 - [notes/02-requirements.md](notes/02-requirements.md) 需求定义（能力优先 + 可逆性）
 - [notes/03-rules-and-safety.md](notes/03-rules-and-safety.md) 规则层与可逆性设计
+- [notes/08-design-review.md](notes/08-design-review.md) **v1.2 评审：8 个 P0、P1 清单、v1.3 修订建议**
+- [notes/09-p0-evidence.md](notes/09-p0-evidence.md) 评审的本机实验记录
 - notes/analysis/ 逐项目深挖（进行中）
 
 ## 已 clone 的项目
