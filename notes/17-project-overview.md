@@ -1,6 +1,6 @@
 # 项目总览 v2（2026-10-26）
 
-> 这份是**单一入口**：把需求、架构、隐藏性定义、已验证/未验证、红队 P0、路线和待拍板项收在一起。历史文档保留，但以本文为准。
+> 这份是**单一入口**：把需求、架构、隐藏性定义、已验证/未验证、红队 P0、路线和已拍板项收在一起。历史文档保留，但以本文为准。
 
 ---
 
@@ -33,7 +33,7 @@
 - **本机 / 宿主**：这台 Android 手机，只有一台。
 - **chroot 内**：同一台手机上的进程树，根目录切到 Ubuntu rootfs；共用同一内核/网络/硬件；**不是虚拟机、不是 proot、不是第二台设备**。
 - **不再使用“客机”**：旧文档里的“客机”已统一改为“chroot 内”。
-- **root-free**：DSH 的 approval 设为 `never`，不弹批准；**不是**“手机没有 root”。
+- **approval-free**：DSH 的 approval 设为 `never`，不弹批准；DSH 进程本身仍是 **uid 0**、shell 命令是 root；**不是**“手机没有 root”。
 - **隐藏性**：本文默认指 **应用层隐藏性**（游戏/银行不抓把柄），不是安全边界。
 - **full**：chroot 内 `/data`/`/dev`/`/sys` 全开；不是全局 mount/prop 全开。
 - **完美**：按检测矩阵/验收表通过，不是“任何未知检测都绝对发现不了”。
@@ -58,7 +58,7 @@ Android 本机（唯一设备）
 ```
 
 - **默认 full**：单一 full 档；不再 daily/lab 分档；`rescue` 只维修。
-- **rootfs**：ext4 128GB 镜像；128 起步、可 `resize2fs` 到 256GB；`.dsh` 名字不是隐藏硬指标。
+- **rootfs**：ext4 **128GB 存储镜像**；128 起步、可 `resize2fs` 到 256GB；`.dsh` 名字不是隐藏硬指标。**128/256 是存储空间，不是内存**；实际 rootfs 12–16GB，其余是稀疏容量；loop/ext4 只用页缓存，不把整块镜像加载进 RAM。
 - **私有 ns**：所有 chroot mount 只在 private mount namespace；App 的 `/proc/self/mountinfo` 看不到。
 - **可选宿主 agent**：`uiautomator dump` 本机不可用；要 UI 树/通知/剪贴板/包管理，用宿主 accessibility/Shizuku/ADB agent；不是隐藏必需，是“完美手机控制”补全。
 
@@ -128,7 +128,7 @@ Android 本机（唯一设备）
 
 - Node 24 + DSH `versions/<v>` + `current`/`previous`；`/opt/node`；`/opt/dsh`。
 - s6：`s6-svscan /run/s6`；`dsh`/`ttyd`；`dsh-run` 抓 URL 写 `/run/dsh/url`（宿主 `state/guest/url`）。
-- DSH 配置：`fs-sandbox.cwd=/sdcard/DSH/workspace`；`workspaceRoot` 同；默认 `root-free`（danger-full-access + never）；可选 `root-guard`；审计保留。
+- DSH 配置：`fs-sandbox.cwd=/sdcard/DSH/workspace`；`workspaceRoot` 同；默认 `approval-free`（danger-full-access + never）；可选 `approval-guard`；审计保留。
 - 手机控制矩阵：
   - 命令存在/只读验证：`am`（无参数 help）、`pm list`、`settings get`、`input`、`dumpsys`、`content`、`appops`、`ime`、`wm`、`svc`、`cmd notification`、`screencap`、`screenrecord`。
   - **`uiautomator dump` 本机不可用（rc=137）**；只有 `runtest`（需 jar）；UI 树/通知/剪贴板用宿主 agent 更完整。
@@ -153,7 +153,7 @@ Android 本机（唯一设备）
 - chroot 可进；Node 24 + node-pty PTY；`dsh web --port 0` URL；s6-svscan/s6-svc/s6-svwait；apt 装 s6/ttyd；raw `/data/media/0` 执行；`/sys`/`debugfs`/`tracefs` 部分；Android CLI 多数 help/只读；`screencap`/`screenrecord`；`/dev/ashmem`/binder；`/data` 别名存在；`/storage` 只有 emulated/0；`/tmp` tmpfs；`/run` 不存在。
 
 **未验证（不能当事实）**
-- 真实 chroot 的 full `/data` rbind、`/mnt`/`/storage`、`/system` overlay 实际挂载点、128GB 镜像全流程、`am start`/`pm install`/`pm clear` 写操作、`uiautomator runtest`、frida/stackplz、`/proc/kallsyms`、DSH `root-free` + `dsh-bash-sandbox` 组合、App 级银行/游戏检测。
+- 真实 chroot 的 full `/data` rbind、`/mnt`/`/storage`、`/system` overlay 实际挂载点、128GB 镜像全流程、`am start`/`pm install`/`pm clear` 写操作、`uiautomator runtest`、frida/stackplz、`/proc/kallsyms`、DSH `approval-free` + `dsh-bash-sandbox` 组合、App 级银行/游戏检测。
 
 **事故**
 - 2026-10-26 主机级测试后系统崩溃；具体单点机制未证实；`selinuxfs` bind/remount 等所有宿主级测试永久禁止；详见 `13`。
@@ -188,9 +188,9 @@ Android 本机（唯一设备）
 
 ---
 
-## 12. 待拍板（按“应用层隐藏性”推荐）
+## 12. 已拍板（2026-10-26，全按推荐）
 
-**full 能力 + 应用层隐藏**：
+**已拍板组合：full 能力 + 应用层隐藏**：
 
 `1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`
 

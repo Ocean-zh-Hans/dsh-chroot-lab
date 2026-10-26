@@ -53,7 +53,7 @@
 
 - **full `/data`、`/mnt`、`/data_mirror`、`/storage`、`/sdcard`、`/dev`、`/sys`、Android 分区**：都可以保留；只要在 **private mount namespace** 里，App 看不到这些 mount。
 - **128GB ext4 镜像 / `.dsh`**：可以保留；`.dsh` 名字、rootfs.img 不是标准检测项；不为了“名字”强制改 directory rootfs。若要更干净，可改名/放 `/data/adb`（但 loop 只能 `/data/media/0`）。
-- **root-free**：保留；不弹批准。
+- **approval-free**：保留；不弹批准。
 - **`u:r:ksu` permissive**：接受；App 看不到域；但**全局 Enforcing + 不改 prop** 仍要守。
 - **`/sys` rw、`/dev` rbind、`/data` full**：App 看不到；可以保留；但它们是安全边界问题，不是 App 隐藏问题。
 - **`system-rw` overlay**：App 看不到 private ns；但 PIF Detector 类工具可能看自己的 mountinfo（不是 chroot 的），所以 private 即可；默认仍建议 off。

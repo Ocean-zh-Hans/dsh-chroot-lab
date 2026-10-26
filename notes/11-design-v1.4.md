@@ -74,9 +74,9 @@
 8. **Loop 设备**：镜像 loop 是 Android 常见形态（APEX 也用 loop）；不创建可疑命名/多余 loop；镜像文件 0700、`.nomedia`。
 9. **服务只监听 loopback**：DSH/ttyd 绑定 `127.0.0.1`；不 `0.0.0.0`；端口不做广告。
 10. **崩溃恢复**：watchdog 在 DSH 异常退出时恢复 SELinux 原状态；不留全局 permissive。
-11. **root-free 的硬例外**：`setenforce`、写 `/sys/fs/selinux/*`、`resetprop` 修改 `ro.*`/`init.svc.*`/`persist.*`、全局 mount 传播——这些始终由 `hardguard` 拦截；它们不是普通权限，是 root 隐藏性的根。
+11. **approval-free 的硬例外**：`setenforce`、写 `/sys/fs/selinux/*`、`resetprop` 修改 `ro.*`/`init.svc.*`/`persist.*`、全局 mount 传播——这些始终由 `hardguard` 拦截；它们不是普通权限，是 root 隐藏性的根。
 
-**便利性最大化**：在上述不变量内，root-free、全 `/data`/`/dev`/`/sys`、完整 Android CLI、debugfs/tracefs、128GB 镜像、`protect-critical` 默认 off、`system-rw` 可选——全部保留。
+**便利性最大化**：在上述不变量内，approval-free、全 `/data`/`/dev`/`/sys`、完整 Android CLI、debugfs/tracefs、128GB 镜像、`protect-critical` 默认 off、`system-rw` 可选——全部保留。
 
 ---
 
@@ -93,7 +93,7 @@
 | `/sys` | **rw**；debugfs/tracefs rw | ro |
 | Android 分区 | `/system` 等 rbind/bind ro（硬件只读）；可选 `system-rw` overlay | 不挂 |
 | Android CLI | 全量包装器 + `ANDROID_*` | 不保证 |
-| DSH | 启动；`root-free` 默认 | 不启动，只 `/bin/bash` |
+| DSH | 启动；`approval-free` 默认 | 不启动，只 `/bin/bash` |
 | s6 | 是 | 否 |
 | 规则 | 默认 free；`guard` 可选 | 无 |
 | 快照 | 128GB 镜像冷复制 + state | 无 |
@@ -120,9 +120,9 @@
 
 ```
 L4 接入     DSH web (loopback token) / ttyd (可选) / 手机浏览器 / PC adb forward
-L3 策略     DSH permission preset root-free (danger-full-access + never) 默认
+L3 策略     DSH permission preset approval-free (danger-full-access + never) 默认
             hardguard 始终开启（SELinux/prop/mount 传播硬例外）
-            可选 root-guard (danger-full-access + ask) + hooks deny/ask
+            可选 approval-guard (danger-full-access + ask) + hooks deny/ask
             审计 PostToolUse 始终开启
 L2 运行时   Node 24 + DSH versions/current/previous + profile web
             s6-svscan (dsh, ttyd) + dsh-run (URL/ready)
@@ -370,10 +370,10 @@ dsh-ctl stop
 - DSH 配置：
   - `fs-sandbox.cwd: /sdcard/DSH/workspace`
   - `workspaceRoot: /sdcard/DSH/workspace`
-  - 默认预设 `root-free`：`danger-full-access` + `approval: never`（不弹批准；完整控制）
-- **`hardguard` 始终启用**：即使 `root-free`，也拦 `setenforce`、`/sys/fs/selinux` 写入、`resetprop` 改全局 prop、全局 mount 传播；这是 root 隐藏性护栏，不是普通权限收束；它不能保证隐藏性
-  - 可选 `root-guard`：`danger-full-access` + `ask` + hooks（deny/ask）
-  - 默认 `root-free`；`/permission` 可切 `root-guard`
+  - 默认预设 `approval-free`：`danger-full-access` + `approval: never`（不弹批准；完整控制）
+- **`hardguard` 始终启用**：即使 `approval-free`，也拦 `setenforce`、`/sys/fs/selinux` 写入、`resetprop` 改全局 prop、全局 mount 传播；这是 root 隐藏性护栏，不是普通权限收束；它不能保证隐藏性
+  - 可选 `approval-guard`：`danger-full-access` + `ask` + hooks（deny/ask）
+  - 默认 `approval-free`；`/permission` 可切 `approval-guard`
 - 工作区：`/sdcard/DSH/workspace`；`chmod 2777`；`umask 000`；文件 0666；`dsh-rm` 回收站。
 - `npm_config_unsafe_perm=true`；`env -i PATH=… TMPDIR=/tmp`；`jq`；`ca-certificates`。
 - `ttyd` 可选；127.0.0.1；密码 `state/guest/ttyd.pass`。
@@ -406,7 +406,7 @@ dsh-ctl stop
 ## 11. 验收（full P0）
 
 1. chroot 内 `id`=0、`uname -r` 宿主一致；Go 在 `/sdcard` 编译并运行。
-2. `node-pty` PTY；`dsh web --port 0 --no-open` URL + curl 200/303；`root-free` 可用。
+2. `node-pty` PTY；`dsh web --port 0 --no-open` URL + curl 200/303；`approval-free` 可用。
 3. `/data` rbind：`/data/user/0`、`/data/data`、`/data/system` 可见；`/mnt`、`/data_mirror`、`/storage`、`/sdcard` 完整。
 4. `/dev/block`、binder/ashmem、`/dev/pts`、`/dev/shm` 可见；`/sys` rw；debugfs/tracefs 可读。
 5. Android CLI：`am`（无参数出 help）、`pm list packages`、`input`、`screencap -p /tmp/x.png`、`screenrecord --time-limit 1`、`cmd notification help` 可用；`uiautomator dump` 本机不可用（rc=137），只承诺 `uiautomator runtest`（需 jar）。
@@ -457,7 +457,7 @@ dsh-ctl stop
 
 **已按你的指令定稿**
 - **权限全开**：`guard` 默认 off；`protect-critical` 默认 off；`/metadata`、`/mnt/vendor/persist`、`/mnt/vendor/qmcs` 默认 rw；`/data`、`/dev`、`/sys`、`/sdcard`、`/storage` 完整开放。
-- **root-free**：DSH 默认 `danger-full-access + approval: never`；不弹批准；`root-guard` 仅作为可选开关。**硬例外**：`setenforce`/`/sys/fs/selinux`/`resetprop` 全局 prop/全局 mount 传播由 `hardguard` 尽量拦截；它只能降低误操作，不能保证 root 隐藏性。
+- **approval-free**：DSH 默认 `danger-full-access + approval: never`；不弹批准；`approval-guard` 仅作为可选开关。**硬例外**：`setenforce`/`/sys/fs/selinux`/`resetprop` 全局 prop/全局 mount 传播由 `hardguard` 尽量拦截；它只能降低误操作，不能保证 root 隐藏性。
 - **默认策略尽量不降低 root 隐藏性**：全局 SELinux 默认 **Enforcing**，但 `u:r:ksu:s0` 本身是 permissive allow-all，**不能保证**隐藏性；`--permissive` 仅显式 break-glass；不做全局 prop 修改、不把 chroot 挂载暴露到宿主 namespace。
 - **镜像**：128GB 起步，可 `resize2fs` 增到 256GB；ext4 不能缩。
 
@@ -470,4 +470,4 @@ dsh-ctl stop
 
 ## 15. 一句话
 
-v1.4 不再做“日常/实验”分档：**一个 full 档，128GB 镜像，完整 `/data`/`/mnt`/`/storage`/`/sdcard`/`/dev`/`/sys`，完整 Android 命令与 debugfs/tracefs，root 全能力；全局 SELinux Enforcing、域 permissive（不保证隐藏性）；规则默认 root-free（SELinux/prop 硬例外）、审计保留，`guard`/`system-rw`/`protect-critical` 都是可选开关。** 这就是“完美 chroot + 完美手机控制”的工程定义。
+v1.4 不再做“日常/实验”分档：**一个 full 档，128GB 镜像，完整 `/data`/`/mnt`/`/storage`/`/sdcard`/`/dev`/`/sys`，完整 Android 命令与 debugfs/tracefs，root 全能力；全局 SELinux Enforcing、域 permissive（不保证隐藏性）；规则默认 approval-free（SELinux/prop 硬例外）、审计保留，`guard`/`system-rw`/`protect-critical` 都是可选开关。** 这就是“完美 chroot + 完美手机控制”的工程定义。

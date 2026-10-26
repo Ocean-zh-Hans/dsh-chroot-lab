@@ -1,7 +1,7 @@
-# 待拍板决策单（v1.4 红队后）
+# 决策单（2026-10-26 已拍板）
 
 - 日期：2026-10-26
-- 用法：直接回复编号+字母，例如 `1A 2A 3C 4B`。
+- 状态：**用户已决定“全部按推荐走”**；采用 full 能力组合 `1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`。
 - **先看 `16-hiddenness-first.md`**：如果“隐藏性”指游戏/银行不被抓到把柄，且你不在乎 chroot 内部/`.dsh` 名字，推荐 **full 能力 + private ns** 组合：`1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`。
 - 前提：只有一台手机；“chroot 内”只是同一台手机上的进程树，不是虚拟机/第二台设备。
 - 当前状态：v1.4 **未批准开工**，先修 5 个 P0；这份单子决定“修成什么样”。
@@ -141,8 +141,8 @@
 
 | 选项 | 选它意味着 | 代价/风险 | 推荐 |
 |---|---|---|---|
-| **A. root-free + hardguard** | 不弹批准；只拦 SELinux/全局 prop/全局 mount | 最顺手；hardguard 不是安全边界 | ✅ 当前选择 |
-| B. root-guard | 默认 ask/deny | 更安全；会打断自动化 | 需要时切 |
+| **A. approval-free + hardguard** | 不弹批准；只拦 SELinux/全局 prop/全局 mount | 最顺手；hardguard 不是安全边界 | ✅ 当前选择 |
+| B. approval-guard | 默认 ask/deny | 更安全；会打断自动化 | 需要时切 |
 | C. 只 hardguard，无 audit | 最少日志 | 出事无法复盘 | ❌ 不建议 |
 
 **区别一句话**：A 是“不挡日常，只挡会掉隐藏性的”，B 是“危险操作先问”，C 是“什么都不记”。
@@ -249,7 +249,7 @@
 - 128GB 起步；
 - rootfs+state+`/sdcard/DSH` 备份；
 - 备用机/VM 先测；
-- root-free + hardguard；
+- approval-free + hardguard；
 - 开机 full + last-good 回滚。
 
 如果你只想改最少：至少选 **1A + 2A + 3B + 6B + 12A**；这五个直接对应 P0 事故/隐藏性/砖风险。

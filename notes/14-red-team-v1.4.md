@@ -26,7 +26,7 @@
 
 ---
 
-## P0-2 `/sys` rw + `/dev` rbind + root-free，hardguard 不是边界
+## P0-2 `/sys` rw + `/dev` rbind + approval-free，hardguard 不是边界
 
 **问题**
 - `/sys` rw 暴露 `/sys/fs/selinux/{enforce,policy,booleans}`；直接 `echo 0 > enforce` 不需要 `setenforce` 二进制。
@@ -40,7 +40,7 @@
 - `/sys/fs/selinux` 在chroot 内用 **tmpfs 遮罩**（private ns；绝不对宿主 selinuxfs remount，见事故复盘）。
 - `/dev` 是否保留 rbind 是用户取舍：保留=完整设备控制但 root 可写块设备；不保留=更隐藏但失去 loop/USB。无法两全。
 - `hardguard` 改名/定位为 **guardrail/telemetry**，不叫安全边界。
-- 在文档中明确：**root-free + root 权限 + 无 userns/PIDns 不可能保证“root 隐藏性绝对不降”**；只能保证不改全局 props、不 remount selinuxfs、不全局挂载、默认 Enforcing。
+- 在文档中明确：**approval-free + root 权限 + 无 userns/PIDns 不可能保证“root 隐藏性绝对不降”**；只能保证不改全局 props、不 remount selinuxfs、不全局挂载、默认 Enforcing。
 
 **验收**：chroot 内内 `cat /sys/fs/selinux/enforce` 不存在/不可写；`/sys` 只读；debugfs/tracing 可读；`/proc/1/root` 仍可逃逸（如实记录）。
 
@@ -163,7 +163,7 @@
 | P1 | `/tmp/dsh-rootfs` 未创建 | 本机 `/run` 不存在，`/tmp` 是 tmpfs，但 `/tmp/dsh-rootfs` ENOENT | start 前 `mkdir -p/chmod 700`；doctor 检查 |
 | P1 | `getenforce` 结果不稳定 | 本机 root 一次 Disabled、一次 Enforcing；app Permission denied；`cat enforce=1` | doctor 只读 `enforce` + 域状态 |
 | P1 | `selinux_hide` 不 fake `enforce` | 源码只 hook `SEL_STATUS`/context/access；`SEL_ENFORCE` 是独立 inode；permissive 更可见 | 不把 `selinux_hide` 当 permissive 隐藏；`--permissive` 是检测破坏 |
-| P1 | `/sdcard/DSH` 2777 + root-free 是 app→root 路径 | 任意存储 App 可写脚本，DSH 可执行；hook 看不到脚本内容 | 工作区专用组/UID，或 root-only 执行目录；不要 root 执行 world-writable |
+| P1 | `/sdcard/DSH` 2777 + approval-free 是 app→root 路径 | 任意存储 App 可写脚本，DSH 可执行；hook 看不到脚本内容 | 工作区专用组/UID，或 root-only 执行目录；不要 root 执行 world-writable |
 | P1 | `mount_hide`/`kernel_umount` 不隐藏 loop/mount | 只过滤 app `/proc` mount 记录；不隐藏 `/sys/block/loopN`、`/proc/partitions`；chroot 不是 zygote | 不把它们当 chroot 隐藏；单独做 app-UID mount 扫描 |
 | P1 | `purge` 不删 `/data/media/0/.dsh` | 镜像/快照留下，`.dsh` 仍是 root artifact | purge 删除 `.dsh` + 镜像/快照 + loop 校验 |
 | P1 | 无宿主 watchdog | v1.4 只写“watchdog 恢复”，没有组件；permissive 崩溃后无人恢复 | 实现独立 30s watchdog + boot enforce 断言 |
