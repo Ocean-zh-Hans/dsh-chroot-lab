@@ -56,7 +56,9 @@ dsh_mount_bind() {
   _opts=${3:-}
   dsh_mount_prepare_point "$_dst" || return 1
   dsh_mount_log "bind $_src -> $_dst $_opts"
-  if [ -n "$_opts" ]; then
+  if [ -x "${DSH_RECURSIVE_RO:-}" ]; then
+    "$DSH_RECURSIVE_RO" --bind "$_src" "$_dst"
+  elif [ -n "$_opts" ]; then
     mount -o "bind,$_opts" "$_src" "$_dst"
   else
     mount --bind "$_src" "$_dst" 2>/dev/null || mount -o bind "$_src" "$_dst"
@@ -72,7 +74,11 @@ dsh_mount_rbind() {
   _dst=$2
   dsh_mount_prepare_point "$_dst" || return 1
   dsh_mount_log "rbind $_src -> $_dst"
-  mount --rbind "$_src" "$_dst" 2>/dev/null || mount -o rbind "$_src" "$_dst" || {
+  if [ -x "${DSH_RECURSIVE_RO:-}" ]; then
+    "$DSH_RECURSIVE_RO" --rbind "$_src" "$_dst"
+  else
+    mount --rbind "$_src" "$_dst" 2>/dev/null || mount -o rbind "$_src" "$_dst"
+  fi || {
     dsh_err "rbind failed: $_src -> $_dst"
     return 1
   }
@@ -82,10 +88,35 @@ dsh_mount_rbind() {
 
 dsh_mount_remount_ro() {
   _dst=$1
+  if [ -x "${DSH_RECURSIVE_RO:-}" ]; then
+    "$DSH_RECURSIVE_RO" --remount-ro-bind "$_dst"
+    return $?
+  fi
   mount -o remount,ro,bind "$_dst" 2>/dev/null || {
     dsh_warn "could not make read-only: $_dst"
     return 1
   }
+}
+
+dsh_mount_remount_ro_plain() {
+  _dst=$1
+  if [ -x "${DSH_RECURSIVE_RO:-}" ]; then
+    "$DSH_RECURSIVE_RO" --remount-ro "$_dst"
+    return $?
+  fi
+  mount -o remount,ro "$_dst" 2>/dev/null || {
+    dsh_warn "could not remount read-only: $_dst"
+    return 1
+  }
+}
+
+dsh_mount_make_rprivate() {
+  _path=${1:-/}
+  if [ -x "${DSH_RECURSIVE_RO:-}" ]; then
+    "$DSH_RECURSIVE_RO" --make-rprivate "$_path"
+    return $?
+  fi
+  mount --make-rprivate "$_path"
 }
 
 dsh_mount_ro_recursive() {

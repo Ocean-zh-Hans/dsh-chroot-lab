@@ -210,3 +210,17 @@ ls /sdcard/ubuntu-rootfs               # Permission denied
 
 真实 P2/P3/P4/P5 验收已交接给 PC AI + 备用机，步骤和回传清单见
 `docs/handoff.md`。本文件不把未执行的验证写成通过。
+
+## 14. 评审修复（2026-10-26）
+
+- `/metadata` 加入 rbind 列表，6B 保护现在真的覆盖它。
+- `/opt/dsh`、`/opt/dsh-control` 在 bind 后 remount ro。
+- `dsh-nsinit` 的 TERM/wait 竞态修复：信号中断 wait 后会继续等待 s6 子进程，
+  不再提前清空 `CHILD_PID`。
+- 新增 `dsh-ctl recover --apply`，处理 holder 已死但 loop/mount/stale 文件残留。
+- `dsh-run` 通过 `--patch` 挂载 `dsh-hooks-claude-code`；patch 已用本机
+  `--dump-config` 验证。
+- 工具链改为 Android toybox fallback；`dsh-mount-ro-recursive` 增加
+  `--make-rprivate`/`--rbind`/`--bind`/`--remount-ro*`。
+- `config.conf` 解析去掉 `eval`；`resolv.conf`/`hosts` 在 stop 时恢复。
+- DSH/s6 日志重定向不再互相截断；Console 使用绝对 su 候选路径。

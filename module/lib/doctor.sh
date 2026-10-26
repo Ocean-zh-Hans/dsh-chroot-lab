@@ -200,7 +200,7 @@ dsh_doc_check_tools() {
     if "$_losetup" --help 2>&1 | grep -q -- '--sector-size'; then
       dsh_doc_pass "losetup supports --sector-size: $_losetup"
     else
-      dsh_doc_required "losetup lacks --sector-size (toybox?): $_losetup"
+      dsh_doc_warn "losetup lacks --sector-size; using kernel default sector size: $_losetup"
     fi
   else
     dsh_doc_required "losetup missing"
@@ -211,16 +211,12 @@ dsh_doc_check_tools() {
     if "$_nsenter" --help 2>&1 | grep -q -- '--mount'; then
       dsh_doc_pass "nsenter supports --mount: $_nsenter"
     else
-      dsh_doc_required "nsenter lacks --mount (util-linux needed): $_nsenter"
+      dsh_doc_warn "nsenter lacks --mount; using validated -t PID fallback: $_nsenter"
     fi
   fi
   _unshare=$(dsh_tool_path unshare || true)
   if [ -n "$_unshare" ]; then
-    if "$_unshare" --help 2>&1 | grep -q -- '--propagation'; then
-      dsh_doc_pass "unshare supports --propagation: $_unshare"
-    else
-      dsh_doc_required "unshare lacks --propagation (util-linux needed): $_unshare"
-    fi
+    dsh_doc_pass "unshare present: $_unshare"
   fi
 
   if [ -x "$DSH_NSINIT" ]; then

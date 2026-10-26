@@ -1,4 +1,4 @@
-# Host thin agent（P4，未实现）
+# Host thin agent（P4，最小实现）
 
 目的：补 chroot 内做不到的手机 UI 能力，而不是替代 chroot。
 
@@ -24,6 +24,7 @@
 `package.list`, `package.install`, `package.clear`,
 `activity.start`, `activity.forceStop`.
 
-当前状态：**未实现**。chroot 内仍可用 `/system/bin/am`、`pm`、`input`、
-`screencap` 等；但通用 UI 树必须等这个 agent。没有它之前，文档不会写
-“完美手机控制”。
+当前状态：`agent-app/` 已提供最小 Accessibility/Notification bridge 源码，
+并已构建 debug APK；**未真机验证**。`package.install`/`forceStop`/`clear`
+明确返回 `supported:false`，不伪造系统权限。通用 UI 树仍以真机验收为准；
+没有验证前，文档不会写“完美手机控制”。

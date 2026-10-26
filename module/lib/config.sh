@@ -13,7 +13,6 @@ dsh_config_load_file() {
     *=*) ;;
     *) continue ;;
     esac
-    _is_set=''
     _key=${_line%%=*}
     _val=${_line#*=}
     _key=$(dsh_trim "$_key")
@@ -29,12 +28,17 @@ dsh_config_load_file() {
       ;;
     esac
     case $_key in
-    DSH_IMAGE_DIR | DSH_IMAGE | DSH_ROOTFS_DIR | DSH_MEDIA | DSH_TMP | DSH_PROC | DSH_SYS | DSH_IMAGE_SIZE_GB | DSH_PROTECT_CRITICAL | DSH_SELINUXFS_MASK | DSH_SYSTEM_RW)
-      eval "_is_set=\${$_key+x}"
-      if [ "$_is_set" != x ]; then
-        eval "$_key=\$_val"
-      fi
-      ;;
+    DSH_IMAGE_DIR) [ "${DSH_IMAGE_DIR+x}" = x ] || DSH_IMAGE_DIR=$_val ;;
+    DSH_IMAGE) [ "${DSH_IMAGE+x}" = x ] || DSH_IMAGE=$_val ;;
+    DSH_ROOTFS_DIR) [ "${DSH_ROOTFS_DIR+x}" = x ] || DSH_ROOTFS_DIR=$_val ;;
+    DSH_MEDIA) [ "${DSH_MEDIA+x}" = x ] || DSH_MEDIA=$_val ;;
+    DSH_TMP) [ "${DSH_TMP+x}" = x ] || DSH_TMP=$_val ;;
+    DSH_PROC) [ "${DSH_PROC+x}" = x ] || DSH_PROC=$_val ;;
+    DSH_SYS) [ "${DSH_SYS+x}" = x ] || DSH_SYS=$_val ;;
+    DSH_IMAGE_SIZE_GB) [ "${DSH_IMAGE_SIZE_GB+x}" = x ] || DSH_IMAGE_SIZE_GB=$_val ;;
+    DSH_PROTECT_CRITICAL) [ "${DSH_PROTECT_CRITICAL+x}" = x ] || DSH_PROTECT_CRITICAL=$_val ;;
+    DSH_SELINUXFS_MASK) [ "${DSH_SELINUXFS_MASK+x}" = x ] || DSH_SELINUXFS_MASK=$_val ;;
+    DSH_SYSTEM_RW) [ "${DSH_SYSTEM_RW+x}" = x ] || DSH_SYSTEM_RW=$_val ;;
     *) dsh_warn "ignoring unknown config key: $_key" ;;
     esac
   done <"$_cfg"

@@ -51,6 +51,7 @@ Optional:
   system-rw status|on|off [partition] [--apply]
   guard status|on|off
   rescue --apply
+  recover --apply
 
 Exit codes:
   0 success
@@ -137,6 +138,9 @@ restore)
   ;;
 purge)
   dsh_purge "$@"
+  ;;
+recover)
+  dsh_recover "$@"
   ;;
 system-rw)
   dsh_system_rw "$@"

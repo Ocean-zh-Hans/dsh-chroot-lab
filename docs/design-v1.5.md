@@ -17,11 +17,11 @@
 
 | P0 | 设计处理 | 代码状态 |
 |---|---|---|
-| 镜像/控制面自引用 | `1A`：private ns 内 tmpfs 遮罩控制面/镜像及已知别名；接受 `/proc/1/root` 绕过 | 代码已实现；P2 验证 |
-| `/sys` rw + hardguard 不是边界 | `2B`：`/sys` rw；`/sys/fs/selinux` 用 private tmpfs 遮罩；承认 hardguard 不是边界 | P2 |
-| stop/namespace 竞态 | 记录 PID + starttime + PGID + ns inode；先 s6 停止，再只向 holder TERM（由它转发）；holder 活着时逆序 umount | P2 |
-| 快照一致性 | stop + unmount + e2fsck 后冷复制；sha256 + 原子 rename；last-good | P2/P3 |
-| 手机控制未验证 | 建立 capability matrix；UI 用宿主 agent；未验证项不写“perfect” | P4 |
+| 镜像/控制面自引用 | `1A`：private ns 内 tmpfs 遮罩控制面/镜像及已知别名；接受 `/proc/1/root` 绕过 | 代码已实现；待备用机验收 |
+| `/sys` rw + hardguard 不是边界 | `2B`：`/sys` rw；`/sys/fs/selinux` 用 private tmpfs 遮罩；承认 hardguard 不是边界 | 已实现；待备用机验收 |
+| stop/namespace 竞态 | 记录 PID + starttime + PGID + ns inode；先 s6 停止，再只向 holder TERM（由它转发）；holder 活着时逆序 umount | 已实现；待备用机验收 |
+| 快照一致性 | stop + unmount + e2fsck 后冷复制；sha256 + 原子 rename；last-good | 已实现；待验收 |
+| 手机控制未验证 | 建立 capability matrix；UI 用宿主 agent；未验证项不写“perfect” | 代码/APK 已备；待真机验收 |
 
 **注意**：P1 的 `doctor/plan/status` 不执行表中任何 mount/apply 操作。
 
@@ -123,8 +123,8 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 
 ### 5.1 顺序
 
-1. `unshare --mount --propagation private --uts -m`（util-linux，模块自带；不 `--ipc`；IPC_NS 未编译）。
-2. `mount --make-rprivate /`。
+1. `unshare -m -u`（toybox/util-linux 均可；不 `--ipc`；IPC_NS 未编译）。
+2. `dsh-mount-ro-recursive --make-rprivate /`（模块自带 helper；失败则拒绝启动）。
 3. `mount -t ext4` 镜像到 `/tmp/dsh-rootfs`。
 4. 在 `$ROOT` 下先 `mkdir -p` 所有挂载点，再挂载：`/proc`、`/sys`、`/dev`、`/dev/pts`、`/dev/shm`、`/run`、`/tmp`。
 5. Android 视图：`/data`、`/mnt`、`/data_mirror`、`/storage`、`/sdcard`、`/system`、`/system_ext`、`/product`、`/vendor`、`/odm`、`/apex`、`/linkerconfig`。
@@ -246,7 +246,7 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 
 ## 7. 生命周期
 
-### 7.1 start（设计；P2 实现）
+### 7.1 start（已实现）
 
 ```
 dsh-ctl start [--protect-critical=off] [--permissive]
@@ -255,7 +255,7 @@ dsh-ctl start [--protect-critical=off] [--permissive]
   3. mkdir -p /tmp/dsh-rootfs && chmod 700
   4. e2fsck -p image；检查同一 backing file 无第二个 loop
   5. losetup --sector-size 4096 --direct-io=off；记录 loopdev
-  6. setsid unshare --mount --propagation private --uts -m \
+  6. setsid unshare -m -u \
        /data/adb/chroot/bin/dsh-nsinit >logs/nsinit.log 2>&1 &
        # setsid 可能 fork；不要依赖 shell 的 $! 当 holder PID
   7. dsh-nsinit（两段式，holder 不 exec 掉自己）：
@@ -336,7 +336,7 @@ dsh-ctl stop
   - `workspaceRoot: /sdcard/DSH/workspace`
   - 默认 `approval-free`：`danger-full-access` + `approval: never`
   - 可选 `approval-guard`：`danger-full-access` + `ask`
-- `hardguard` 始终启用（命令钩子）：拦 `setenforce`、写 `/sys/fs/selinux/*`、`resetprop` 改全局 prop、全局 mount 传播；**不是安全边界**。DSH profile 必须通过 `dsh-hooks-claude-code` 指向 `/opt/dsh-control/hooks/hooks.json`；该 profile 接线在 P3 验证。
+- `hardguard` 始终启用（命令钩子）：拦 `setenforce`、写 `/sys/fs/selinux/*`、`resetprop` 改全局 prop、全局 mount 传播；**不是安全边界**。`dsh-run` 通过 `--patch /opt/dsh-control/dsh/hooks.patch.yml` 挂载 `dsh-hooks-claude-code` 并指向 `/opt/dsh-control/hooks/hooks.json`；该接线已用本机 `--dump-config` 验证。
 - 工作区：`/sdcard/DSH/workspace`；`chmod 2777`、`umask 000`；文件 0666；`dsh-rm` 回收站。
 - `ttyd` 可选；127.0.0.1；密码 `state/guest/ttyd.pass`。
 
@@ -346,7 +346,7 @@ dsh-ctl stop
 - 形态：Android 本机 accessibility/Shizuku/ADB agent；当前最小实现是 `127.0.0.1:17321` + token 文件，固定 JSON 方法集，不暴露任意 shell。
 - 不是隐藏必需；不做也不影响 chroot 主体。
 - 最小 App 源码在 `agent-app/`，可构建 debug APK；**未在真机验证**。
-- 另有 `console-app/` 的 Chroot Console 原生控制台：状态/启停/日志/快照/Purge/设置开关 + WebView；读取模块 URL，通过设备 `su` 调固定 `dsh-ctl` 命令；模块构建时放到 `system/priv-app/ChrootConsole/ChrootConsole.apk` 由 KSU overlay；`customize.sh`/`service.sh` 再尝试 `pm install` 作为 fallback。
+- 另有 `console-app/` 的 Chroot Console 原生控制台：状态/启停/日志/快照/Recover/Purge/设置开关 + WebView；读取模块 URL，通过设备 `su` 调固定 `dsh-ctl` 命令；模块构建时放到 `system/priv-app/ChrootConsole/ChrootConsole.apk` 由 KSU overlay；`customize.sh`/`service.sh` 再尝试 `pm install` 作为 fallback。
 
 ### 8.2 手机控制能力矩阵
 
@@ -379,7 +379,8 @@ dsh-ctl stop
   - `mke2fs/e2fsck/resize2fs`；
   - GNU `cp`（`--sparse`）或 tar；
   - `dsh-mount-ro-recursive`（mount_setattr）；
-  - util-linux `unshare`/`nsenter`（必须支持 `--propagation`/`--mount`）；`chroot`/`mount` 可用 Android toybox，doctor 检查。
+  - `unshare`/`nsenter`：Android toybox 可用（`unshare -m -u`、`nsenter -t PID -m`）；util-linux 版本可选，用于 fd/path 增强。
+  - `dsh-mount-ro-recursive` 同时提供 `--make-rprivate` 和递归 ro。
 - payload：`rootfs.tar.gz`（Ubuntu 24.04 + Node 24 + Go + Python + build-essential + s6/ttyd + Android 工具依赖）。
 - `customize.sh` 只建目录/复制 control；不解压 payload；更新前必须 stop。
 - `action.sh`：当前只读 `status`；长任务/启停动作由 `dsh-ctl` 显式执行，不把 action 按钮变成隐藏的自动启动。
@@ -424,10 +425,10 @@ dsh-ctl stop
 |---|---|---|
 | P0 | 设计定稿、决策锁定、文档归并 | 本次完成 |
 | P1 | 静态 module + `dsh-ctl doctor/plan/status`；不 apply | 完成 |
-| P2 | 备用机/VM：mount/ns/stop/loop；零残留 | 待做 |
-| P3 | DSH/Node/s6/URL/工作区；快照/回滚 | 待做 |
-| P4 | full Android 视图 + 宿主 agent 手机控制 | 待做 |
-| P5 | 模块打包、开机、迁移、检测矩阵 | 待做 |
+| P2 | 备用机/VM：mount/ns/stop/loop；零残留 | 代码/测试完成，待备用机验收 |
+| P3 | DSH/Node/s6/URL/工作区；快照/回滚 | 代码完成，待备用机验收 |
+| P4 | full Android 视图 + 宿主 agent 手机控制 | 代码/APK 完成，待真机验收 |
+| P5 | 模块打包、开机、迁移、检测矩阵 | 脚本/打包完成，待真机验收 |
 
 ---
 
@@ -445,4 +446,4 @@ dsh-ctl stop
 - DSH `approval-free` + hooks 的真实组合；
 - 银行/游戏/Play Integrity 的实际检测矩阵。
 
-**在 P2 之前，任何“已经可用/完美”的说法都不成立。**
+**在备用机/PC AI 验收之前，任何“已经可用/完美”的说法都不成立。**

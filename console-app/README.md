@@ -6,7 +6,7 @@
 ## 功能
 
 - 状态卡片：running/stopped/degraded、PID、URL、loop、镜像路径；
-- 生命周期：Start（`--apply`）、Stop、Restart、Refresh、Plan、Doctor；
+- 生命周期：Start（`--apply`）、Stop、Restart、Refresh、Plan、Doctor、Recover；
 - 日志：`log 200`；
 - 快照：创建快照、列出快照；
 - Purge：二次确认后清理 `/data/adb/chroot` 和镜像目录；

@@ -186,7 +186,7 @@ dsh_start_locked() {
       DSH_PROC="$DSH_PROC" \
       DSH_SYS="$DSH_SYS" \
       DSH_CONFIG="$DSH_CONFIG" \
-      setsid "$_unshare" --mount --propagation private --uts -m "$DSH_NSINIT"
+      setsid "$_unshare" -m -u "$DSH_NSINIT"
   ) >>"$_log" 2>&1 &
   _launcher=$!
   dsh_log "launcher pid=$_launcher; waiting for holder pid"
@@ -458,7 +458,7 @@ dsh_rescue() {
       DSH_IMAGE="$DSH_IMAGE" DSH_ROOTFS_DIR="$DSH_ROOTFS_DIR" \
       DSH_MEDIA="$DSH_MEDIA" DSH_TMP="$DSH_TMP" \
       DSH_PROC="$DSH_PROC" DSH_SYS="$DSH_SYS" DSH_CONFIG="$DSH_CONFIG" \
-      "$_unshare" --mount --propagation private --uts -m "$DSH_NSINIT"
+      "$_unshare" -m -u "$DSH_NSINIT"
   )
   _rc=$?
   dsh_loop_detach "$_loop" || dsh_warn "rescue loop detach failed: $_loop"
@@ -492,4 +492,63 @@ dsh_autostart() {
     return 2
     ;;
   esac
+}
+
+dsh_recover() {
+  _apply=0
+  for _arg in "$@"; do
+    case $_arg in
+    --apply) _apply=1 ;;
+    -h | --help)
+      printf 'Usage: dsh-ctl recover --apply\n'
+      return 0
+      ;;
+    *)
+      dsh_err "unknown recover option: $_arg"
+      return 2
+      ;;
+    esac
+  done
+  if [ "$_apply" -ne 1 ]; then
+    dsh_err "recover requires the explicit --apply flag"
+    printf 'recover: reset a dead-holder state, kill namespace survivors, detach loop, clear stale files\n'
+    return 3
+  fi
+  dsh_lock_acquire || return 1
+  _rc=0
+  _pid=$(dsh_read_line "$DSH_PID_FILE" 2>/dev/null || true)
+  _ns=$(dsh_read_line "$DSH_NS_FILE" 2>/dev/null || true)
+  _loop=$(dsh_read_line "$DSH_LOOP_FILE" 2>/dev/null || true)
+  if dsh_is_uint "$_pid" && dsh_proc_alive "$_pid"; then
+    dsh_err "holder is alive (pid $_pid); use dsh-ctl stop instead"
+    dsh_lock_release
+    return 1
+  fi
+
+  _host_ns=$(dsh_proc_ns "$$" 2>/dev/null || true)
+  if [ -n "$_ns" ] && [ "$_ns" != "$_host_ns" ]; then
+    for _p in $(dsh_proc_scan_ns "$_ns" 2>/dev/null || true); do
+      [ "$_p" = "$$" ] && continue
+      kill -TERM "$_p" 2>/dev/null || true
+    done
+    sleep 1 2>/dev/null || true
+    for _p in $(dsh_proc_scan_ns "$_ns" 2>/dev/null || true); do
+      [ "$_p" = "$$" ] && continue
+      kill -KILL "$_p" 2>/dev/null || true
+    done
+  fi
+
+  # Only unmount the exact configured mountpoint; never a broad path.
+  if [ -n "$DSH_ROOTFS_DIR" ] && [ "$DSH_ROOTFS_DIR" != / ] && mountpoint -q "$DSH_ROOTFS_DIR" 2>/dev/null; then
+    umount "$DSH_ROOTFS_DIR" 2>/dev/null || umount -l "$DSH_ROOTFS_DIR" 2>/dev/null || _rc=1
+  fi
+  if [ -n "$_loop" ]; then
+    dsh_loop_detach "$_loop" || _rc=1
+  fi
+  dsh_loop_detach_image "$DSH_IMAGE" || _rc=1
+  dsh_clear_runtime_files
+  dsh_state_set "state=stopped" "note=recovered" "recovered=$(dsh_timestamp)"
+  dsh_lock_release
+  printf 'recover: %s\n' "$([ "$_rc" -eq 0 ] && printf ok || printf incomplete)"
+  return "$_rc"
 }

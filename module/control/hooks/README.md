@@ -1,8 +1,11 @@
 # Hooks
 
 `hooks.json` wires the PreToolUse hardguard/guard and PostToolUse audit hooks.
-The DSH profile must reference `/opt/dsh-control/hooks/hooks.json` via
-`dsh-hooks-claude-code`; that profile wiring is part of P3 verification.
+`dsh-run` passes `/opt/dsh-control/dsh/hooks.patch.yml` with `--patch`, which
+mounts `dsh-hooks-claude-code` and points it at
+`/opt/dsh-control/hooks/hooks.json`. The patch is validated with
+`dsh --profile web --dump-config --patch ...`; real hook execution still needs
+a device test.
 
 - hardguard: always on; blocks obvious global SELinux/prop/mount changes.
 - deny/ask lists: active only when `/run/dsh/guard` contains `1`

@@ -12,6 +12,7 @@ URL=${DSH_WEB_URL_FILE:-/run/dsh/url}
 URL_TMP=$URL.tmp.$$
 
 mkdir -p "$(dirname "$LOG")" "$(dirname "$URL")" 2>/dev/null || true
+: >"$LOG" 2>/dev/null || true
 : >"$URL" 2>/dev/null || true
 
 if [ ! -x "$DSH_BIN" ]; then
@@ -19,7 +20,8 @@ if [ ! -x "$DSH_BIN" ]; then
   exit 1
 fi
 
-"$DSH_BIN" web --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open >"$LOG" 2>&1 &
+"$DSH_BIN" web --patch /opt/dsh-control/dsh/hooks.patch.yml \
+  --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open >>"$LOG" 2>&1 &
 CHILD=$!
 
 (

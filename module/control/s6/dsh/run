@@ -1,8 +1,6 @@
 #!/bin/sh
 # s6 service: DSH web on loopback. Foreground only; s6 supervises.
 
-exec >/var/log/dsh/dsh.log 2>&1
-
 export HOME=/root
 export PATH=/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export TMPDIR=/tmp

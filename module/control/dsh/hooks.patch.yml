@@ -1,0 +1,8 @@
+# Extra DSH profile overlay: mount the hardguard/guard and audit hooks.
+# dsh-run passes this file with --patch, so it applies after the web profile
+# layer without editing the user's own cordis.patch.yml.
+- insert:
+    - id: dsh-hardguard-hooks
+      name: '@deepseek-ai/dsh-hooks-claude-code'
+      config:
+        configPath: /opt/dsh-control/hooks/hooks.json

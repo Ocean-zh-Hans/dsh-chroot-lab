@@ -102,7 +102,7 @@ assert_contains "$out" "state        : running"
 assert_contains "$out" "pid valid    : yes"
 [ -s "$CASE/mounts.log" ] || fail "mount was not called"
 grep -q 'ext4' "$CASE/mounts.log" || fail "rootfs ext4 mount missing"
-grep -q 'rbind /data' "$CASE/mounts.log" || fail "data rbind missing"
+grep -q -- '--rbind /data' "$CASE/helper.log" || fail "data rbind missing"
 
 set +e
 "$DSH_CTL" stop >"$TMPBASE/stop.out" 2>"$TMPBASE/stop.err"

@@ -24,7 +24,15 @@ dsh_loop_attach() {
     dsh_err "image already attached: $_existing ($_img)"
     return 1
   fi
-  _loop=$("$_losetup" -f --show --sector-size 4096 --direct-io=off "$_img" 2>/dev/null | tail -n 1)
+  if "$_losetup" --help 2>&1 | grep -q -- '--sector-size'; then
+    _loop=$("$_losetup" -f --show --sector-size 4096 --direct-io=off "$_img" 2>/dev/null | tail -n 1)
+  else
+    # Android toybox losetup: no --sector-size/--direct-io. The ext4 block
+    # size still comes from mkfs; the loop sector size stays at the kernel
+    # default. Doctor reports this as a WARN.
+    _loop_out=$("$_losetup" -f --show "$_img" 2>/dev/null || "$_losetup" -f -s "$_img" 2>/dev/null)
+    _loop=$(printf '%s\n' "$_loop_out" | tail -n 1)
+  fi
   case $_loop in
   /dev/*) ;;
   *)

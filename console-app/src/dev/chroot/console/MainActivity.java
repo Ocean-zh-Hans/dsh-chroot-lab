@@ -92,6 +92,7 @@ public final class MainActivity extends Activity {
 
         root.addView(row(
                 button("Snapshot", () -> runCtl("snapshot create app-" + System.currentTimeMillis(), "Snapshot", true)),
+                button("Recover", () -> runCtl("recover --apply", "Recover", true)),
                 button("Purge", this::confirmPurge)));
 
         root.addView(section("Settings"));
@@ -258,11 +259,19 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
     }
 
+    private String findSu() {
+        for (String candidate : new String[]{"/system/bin/su", "/system/xbin/su", "su"}) {
+            if (candidate.equals("su")) return candidate;
+            if (new java.io.File(candidate).canExecute()) return candidate;
+        }
+        return "su";
+    }
+
     private String runRoot(String command) {
         StringBuilder out = new StringBuilder();
         Process p = null;
         try {
-            p = new ProcessBuilder("su", "-c", command).redirectErrorStream(true).start();
+            p = new ProcessBuilder(findSu(), "-c", command).redirectErrorStream(true).start();
             try (BufferedReader r = new BufferedReader(
                     new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;

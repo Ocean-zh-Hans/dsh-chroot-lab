@@ -5,7 +5,7 @@
 - P0：设计定稿、决策锁定、旧文档归档 — **完成**
 - P1：静态 module 骨架 + `dsh-ctl doctor/plan/status` — **完成（2026-10-26）**
 - P2/P3/P4/P5：mount holder、lifecycle、snapshot、system-rw、guard、rescue、DSH runner、bake、agent、打包 — **开发完成，待备用机/PC AI 验收**
-- P2：备用机/VM 的 mount/ns/stop/loop 验证 — **已交接**
+- P2：备用机/VM 的 mount/ns/stop/loop 验收 — **已交接给 PC AI**
 - **主力机 apply：未开始，且 P2 前禁止**
 
 “P1 完成”的定义不是“能启动 chroot”，而是：

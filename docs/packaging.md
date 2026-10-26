@@ -96,11 +96,11 @@ tools/
 
 | 工具 | 原因 |
 |---|---|
-| util-linux `losetup` | toybox `-S` 是 sizelimit，不支持 `--sector-size` |
+| `losetup` | toybox 可无 `--sector-size` 回退；util-linux 自带则优先 |
 | `mke2fs`/`e2fsck`/`resize2fs` | 镜像创建/检查/扩容 |
 | GNU `cp` 或 tar | toybox `cp` 无 `--sparse` |
-| `dsh-mount-ro-recursive` | `mount_setattr(AT_RECURSIVE)`；6B/14B |
-| util-linux `unshare`/`nsenter` | `--propagation private` 和 `--mount`；toybox 不满足 |
+| `dsh-mount-ro-recursive` | `mount_setattr(AT_RECURSIVE)` + `--make-rprivate`；6B/14B |
+| `unshare`/`nsenter` | toybox 的 `-m -u` 与 `-t -m` 已可用；util-linux 可选增强 |
 | `busybox`（可选） | 仅作救援工具；不是启动依赖 |
 | `sha256sum`/`sync` | 快照/一致性 |
 

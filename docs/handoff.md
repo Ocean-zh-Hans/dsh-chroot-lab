@@ -47,12 +47,15 @@ ROOTFS_DIR=/srv/dsh-rootfs ./bake/verify-rootfs.sh
 
 ### 1.2 模块工具
 
-模块需要 aarch64 Android 可执行的：
+模块**必须**自带：
+
+- `dsh-mount-ro-recursive`（`build/build-tools.sh` 编译；提供
+  `--make-rprivate`、`--rbind`、`--bind`、`--remount-ro*`、递归 ro）
+
+可选（没有也能用 Android toybox fallback）：
 
 - util-linux `losetup`（`--sector-size`）
-- util-linux `unshare`（`--propagation`）
-- util-linux `nsenter`（`--mount`）
-- `dsh-mount-ro-recursive`（本仓库 `build/build-tools.sh` 可编译）
+- util-linux `unshare`/`nsenter`（默认路径已改成 toybox 的 `-m -u` / `-t PID -m`）
 
 放到：
 
@@ -64,9 +67,7 @@ module/tools/bin/
 
 ```sh
 file module/tools/bin/*
-module/tools/bin/losetup --help | grep -- --sector-size
-module/tools/bin/unshare --help | grep -- --propagation
-module/tools/bin/nsenter --help | grep -- --mount
+module/tools/bin/dsh-mount-ro-recursive --help 2>&1 || true
 ```
 
 > 如果工具是动态链接，必须确认目标 Android 能加载（优先静态链接）。
@@ -105,8 +106,8 @@ module/tools/bin/nsenter --help | grep -- --mount
 4. 首次只读检查：
 
 ```sh
-su -c 'dsh-ctl doctor'
-su -c 'dsh-ctl plan'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl doctor'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl plan'
 ```
 
 必须先 `doctor --for-apply` 全绿（warning 可接受，fail 不可）。
@@ -116,17 +117,17 @@ su -c 'dsh-ctl plan'
 ## 3. 首次启动（P2）
 
 ```sh
-su -c 'dsh-ctl doctor --for-apply'
-su -c 'dsh-ctl start --apply'
-su -c 'dsh-ctl status'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl doctor --for-apply'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl start --apply'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl status'
 cat /data/adb/chroot/state/guest/url
 ```
 
 如果 `status` 是 `degraded`：
 
 ```sh
-su -c 'dsh-ctl diag'
-su -c 'dsh-ctl log 200'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl diag'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl log 200'
 ```
 
 不要直接反复 `start`；先 `stop`，看 `nsinit.log`。
@@ -148,8 +149,8 @@ su -c 'dsh-ctl log 200'
 建议记录：
 
 ```sh
-su -c 'dsh-ctl diag' > /sdcard/DSH/diag-$(date +%s).txt
-su -c 'dsh-ctl status --json'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl diag' > /sdcard/DSH/diag-$(date +%s).txt
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl status --json'
 su -c 'losetup -a'
 grep dsh-rootfs /proc/self/mountinfo || echo no-host-mount
 ```
@@ -157,11 +158,21 @@ grep dsh-rootfs /proc/self/mountinfo || echo no-host-mount
 ### 3.2 失败清理
 
 ```sh
-su -c 'dsh-ctl stop'
-su -c 'dsh-ctl status'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl stop'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl status'
+```
+
+如果 holder 已经死了、状态是 stale，或 `/tmp/dsh-rootfs` 非空/loop 残留：
+
+```sh
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl recover --apply'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl status'
 su -c 'ps -A | grep -E "dsh-nsinit|s6-svscan"'
 su -c 'losetup -a'
 ```
+
+`recover` 只做：杀掉已记录 namespace 的残留进程、卸载精确的
+`/tmp/dsh-rootfs`、detach 记录的 loop、清 stale 文件。它不会删除镜像或数据。
 
 只有在确认没有 holder/loop 后，才允许处理镜像/快照。
 
@@ -171,8 +182,12 @@ su -c 'losetup -a'
 
 ### 4.1 DSH
 
+`dsh-run` 会带 `--patch /opt/dsh-control/dsh/hooks.patch.yml` 启动 DSH；
+该 patch 已用 `dsh --profile web --dump-config --patch ...` 在本机验证能挂载
+`dsh-hooks-claude-code`。真机上仍要确认 hardguard 命令确实被 deny。
+
 ```sh
-su -c 'dsh-ctl status'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl status'
 su -c 'cat /data/adb/chroot/state/guest/url'
 ```
 
@@ -184,11 +199,11 @@ su -c 'cat /data/adb/chroot/state/guest/url'
 ### 4.2 快照
 
 ```sh
-su -c 'dsh-ctl stop'
-su -c 'dsh-ctl snapshot create before-test'
-su -c 'dsh-ctl snapshot list'
-su -c 'dsh-ctl restore before-test'
-su -c 'dsh-ctl start --apply'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl stop'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl snapshot create before-test'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl snapshot list'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl restore before-test'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl start --apply'
 ```
 
 注意：快照只在 stopped 状态做；不要在 holder 运行时复制镜像。
@@ -198,8 +213,8 @@ su -c 'dsh-ctl start --apply'
 成功启动后 `autostart=1` 已写入。重启备用机，检查：
 
 ```sh
-su -c 'dsh-ctl status'
-su -c 'dsh-ctl diag'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl status'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl diag'
 ```
 
 连续 3 次失败后应出现 `rescue-needed`，自动启动被抑制。
@@ -207,7 +222,7 @@ su -c 'dsh-ctl diag'
 ### 4.4 rescue
 
 ```sh
-su -c 'dsh-ctl rescue --apply'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl rescue --apply'
 ```
 
 进入只读 `/bin/bash`；验证完成后 `exit`。rescue 不挂 `/data`/`/storage`。

@@ -78,7 +78,7 @@ dsh_plan_run() {
 1. mkdir atomic lock; doctor --for-apply; mkdir -p rootfs mountpoint
 2. e2fsck -p image; verify no second loop for the same backing file
 3. util-linux losetup --sector-size 4096 --direct-io=off
-4. setsid unshare --mount --propagation private --uts -m dsh-nsinit
+4. setsid unshare -m -u dsh-nsinit; dsh-nsinit makes / rprivate first
 5. dsh-nsinit: host mounts -> chroot -> fork/exec s6-svscan child; holder waits
 6. record holder pid, PGID, starttime, /proc/PID/ns/mnt
 7. wait for URL/ready; on failure keep holder for reverse cleanup
@@ -140,8 +140,8 @@ EOF
   cat <<'EOF'
 1. lock; validate pid/starttime/ns inode
 2. open /proc/PID/ns/mnt fd; nsenter --mount=fd chroot /tmp/dsh-rootfs ...
-3. s6-svc -d dsh/ttyd; s6-svwait -d; TERM PGID; KILL only if needed
-4. holder alive: reverse umount; remount root ro; scan /proc/*/ns/mnt
+3. s6-svc -d dsh/ttyd; s6-svwait -d; TERM holder only; KILL only if needed
+4. holder cleanup: remount root ro; reverse umount; scan /proc/*/ns/mnt
 5. kill holder; losetup -d; wait for real detach; restore SELinux; remove lock
 EOF
   printf '\n'

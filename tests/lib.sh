@@ -72,6 +72,9 @@ fixture_module() {
   mkdir -p "$_dst/tools/bin"
   cat >"$_dst/tools/bin/dsh-mount-ro-recursive" <<'EOF'
 #!/bin/sh
+if [ -n "${DSH_TEST_ROOT:-}" ]; then
+  printf 'helper %s\n' "$*" >>"$DSH_TEST_ROOT/helper.log" 2>/dev/null || true
+fi
 exit 0
 EOF
   chmod 0755 "$_dst/tools/bin/dsh-mount-ro-recursive"

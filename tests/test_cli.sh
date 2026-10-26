@@ -31,6 +31,13 @@ assert_eq "$rc" 3
 assert_contains "$out" "requires the explicit --apply flag"
 
 set +e
+out=$("$DSH_CTL" recover 2>&1)
+rc=$?
+set -e
+assert_eq "$rc" 3
+assert_contains "$out" "recover requires the explicit --apply flag"
+
+set +e
 out=$("$DSH_CTL" definitely-not-a-command 2>&1)
 rc=$?
 set -e
