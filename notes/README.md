@@ -7,8 +7,9 @@
 - `02-requirements.md` 我们要什么（已拍板：全能 AI、能力优先、可逆性优先）
 - `03-rules-and-safety.md` 规则层 / 可逆层 / 审计层设计
 - `04-design.md` 设计过程稿（v0.5，已被 05 取代）
-- `05-design-v1.md` 设计 v1.2 定稿（保留作对照；v1.3 见 10）
-- `10-design-v1.3.md` **优化后的 v1.3 设计：daily/lab/rescue 三档、双 rootfs 模式、v1.3 验收/路线**
+- `05-design-v1.md` 设计 v1.2 定稿（保留作对照；v1.4 见 11）
+- `10-design-v1.3.md` v1.3 设计（daily/lab/rescue 三档；已被 v1.4 取代）
+- `11-design-v1.4.md` **full-capability：单一 full 档、128GB 镜像、完整 Android 视图/控制**
 - `08-design-review.md` **v1.2 评审：8 个 P0、P1 清单、v1.3 目录/挂载/停止状态机建议（2026-10-26）**
 - `09-p0-evidence.md` 评审的本机实验记录（chroot/node-pty/dsh web/s6/apt/权限/挂载）
 - `06-packaging.md` 模块打包清单与构建门禁

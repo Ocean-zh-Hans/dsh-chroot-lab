@@ -1,6 +1,6 @@
 # 规则层与可逆性设计（草案 v1）
 
-> **2026-10-26 评审后注**：本草案的“rootfs 用 ext4 镜像 / 数据每日快照”部分已被 `05-design-v1.md` 的“目录型 rootfs + tar 冷快照”取代；规则层/审计层思路仍有效，但“块设备只读 bind”不是安全边界（root 可通过 `/proc/1/root` 绕过）。实施以 `08-design-review.md` 的 P0/P1 与 `10-design-v1.3.md` §9 的分档规则为准。
+> **2026-10-26 评审后注**：本草案的“rootfs 用 ext4 镜像 / 数据每日快照”部分已被 `05-design-v1.md` 的“目录型 rootfs + tar 冷快照”取代；规则层/审计层思路仍有效，但“块设备只读 bind”不是安全边界（root 可通过 `/proc/1/root` 绕过）。实施以 `08-design-review.md` 的 P0/P1 与 `11-design-v1.4.md` §8 的默认 `root-free`/可选 `guard` 为准。
 
 ## 前提
 全能 AI + root = 长期可用的唯一关键不是"拦住它"，而是**让它做的事可逆**。

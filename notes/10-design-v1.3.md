@@ -2,6 +2,7 @@
 
 - 日期：2026-10-26 ｜ 设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
 - 取代：`05-design-v1.md`（v1.2）。v1.2 的 8 个 P0 评审见 `08-design-review.md`，实验证据见 `09-p0-evidence.md`。
+- **2026-10-26 后续：用户要求“不考虑权限收束/空间占用，只做完美 chroot + 完美手机控制”，v1.3 的 daily/lab 分档已被 `11-design-v1.4.md` 取代；本文件保留作演进记录。**
 - 新增参考：`chroot-mcp-safe`（full/lab 档实现）、`mini-panel`（面板/Agent 产品化）、`容器AI` APK（proot + 本地模型 + 原生 UX）。分析见 `analysis/`。
 - 一句话：**三档运行（daily / lab / rescue）+ 双 rootfs 模式（目录 / ext4 镜像）+ 控制面 bind + s6 + DSH hooks；默认 daily，lab 全 Android 视图显式开启；不再把 chroot 当沙箱，也不再把“不绑 /dev/block”当安全边界。**
 

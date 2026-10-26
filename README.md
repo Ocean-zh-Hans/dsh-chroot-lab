@@ -34,7 +34,8 @@ experiments/   非破坏验证（P0：Debian chroot + Go 编译，不动现有�
 - [notes/03-rules-and-safety.md](notes/03-rules-and-safety.md) 规则层与可逆性设计
 - [notes/08-design-review.md](notes/08-design-review.md) **v1.2 评审：8 个 P0、P1 清单、v1.3 修订建议**
 - [notes/09-p0-evidence.md](notes/09-p0-evidence.md) 评审的本机实验记录
-- [notes/10-design-v1.3.md](notes/10-design-v1.3.md) **优化后的 v1.3 设计：daily/lab/rescue、双 rootfs 模式、验收/路线**
+- [notes/10-design-v1.3.md](notes/10-design-v1.3.md) v1.3 设计（daily/lab/rescue；已被 v1.4 取代）
+- [notes/11-design-v1.4.md](notes/11-design-v1.4.md) **full-capability：单一 full 档、128GB 镜像、完整 Android 视图/控制**
 - notes/analysis/ 逐项目深挖（进行中）
 
 ## 已 clone 的项目

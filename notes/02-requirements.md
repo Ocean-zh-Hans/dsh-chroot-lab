@@ -23,20 +23,20 @@ CONFIG_NAMESPACES=y
 
 ## 硬需求
 - H1 真 chroot（非 proot），Go 可编译且产物可直接执行
-- H2 工作区在共享存储可见（手机文件管理器可改），产物仍可执行 → raw `/data/media/0/DSH`（daily）/ `/data/media/0`（lab）绑定
+- H2 工作区在共享存储可见（手机文件管理器可改），产物仍可执行 → raw `/data/media/0` 完整绑定（full 档）
 - H3 开机自启，且不阻塞开机（service.sh 立刻返回 + 后台 bootstrap）
 - H4 可启停/重启 + 状态与日志（坏了自己说清哪坏了）
 - H5 数据可备份/可回滚；停用/卸载前 stop + 全机残留校验；模块卸载保留 `/data/adb/chroot`，`dsh-ctl purge` 显式全删
-- H6 **能力优先（分档）**：root 域；daily 只挂 `/sdcard/DSH` 工作区、不挂整块内部存储与 `/data`；lab 显式挂 `/data`/`/mnt`/`/storage`/`/dev`，Android 分区只读；两档都能 apt/编译/挂载/改文件
-- H7 **可逆性（分资产）**：rootfs + state 冷快照；`/sdcard/DSH` 回收站 + restic；`/data`/`/system` 不做承诺；卸载前 stop/umount 校验
-- H8 **规则可注入**：按 profile 的 deny/ask 清单 + 服务级自检；agent 启动即加载，自检失败不启动 DSH
-- H9 **分档运行**：默认 daily；lab 全 Android 视图需显式开启；rescue 用于修复；重启回 daily
+- H6 **能力优先（full）**：root 域；完整 `/data`/`/mnt`/`/storage`/`/sdcard`/`/dev`/`/sys`/Android 分区视图；能 apt/编译/挂载/改文件/控制手机；不做 least privilege
+- H7 **可逆性（full）**：128GB rootfs 镜像冷复制 + state 快照；`/data`/`/sdcard` 可选 restic 全量；卸载前 stop/umount 校验
+- H8 **规则可选**：默认 `root-free`（不拦、完整控制）；`guard` 可开 deny/ask；审计始终记录
+- H9 **单一 full 档**：默认 full；rescue 只用于维修；不再 daily/lab 分档
 
 ## 软需求
 - S1 把 DSH 搬进 chroot 并开机自启（摆脱 Termux 常驻）
 - S2 保留 DSHA 的移动 UI / 设备控制
 - S3 发行版：Ubuntu 24.04 base（glibc，省掉 musl 补丁链；Debian 12 等价备选）
-- S4 rootfs：daily 目录 rootfs；lab ext4 镜像（放 `/data/media/0`，挂 `/run/dsh-rootfs`）
+- S4 rootfs：128GB ext4 镜像（放 `/data/media/0/.dsh`，挂 `/run/dsh-rootfs`）
 - S5 本机专用（不追求多机型/发布）
 - S6 可选 Web 终端（ttyd）
 
@@ -46,7 +46,7 @@ CONFIG_NAMESPACES=y
 - 不在验证完成前删除现有 Termux / DSHA 环境
 
 ## 待拍板
-- [x] Q1 进程身份：chroot 内 root（v1.3 ADR-001）；UID1 留作未来 v2
-- [x] Q2 快照：rootfs 1 golden + 3 recent + 1 pre-change；state 7 份
-- [x] Q3 回收站：`dsh-rm` 进 `.trash`；`rm -rf` 走 ask；`/sdcard/DSH` 重点保护
-- [x] Q4 规则：已起草 daily/lab 两套（见 10-design-v1.3.md §9）
+- [x] Q1 进程身份：chroot 内 root；full capabilities；不降 UID
+- [x] Q2 快照：128GB 镜像 7 份 + state 7 份（空间不优化）
+- [x] Q3 回收站：`dsh-rm` 进 `.trash`；默认 free，`guard` 可开 ask
+- [x] Q4 规则：默认 `root-free`；可选 `guard`（见 11-design-v1.4.md §8）
