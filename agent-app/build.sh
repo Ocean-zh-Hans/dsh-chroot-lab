@@ -9,6 +9,7 @@ BT=${BUILD_TOOLS:-$SDK/build-tools/35.0.0}
 JAR=${ANDROID_JAR:-$SDK/platforms/android-35/android.jar}
 OUT=$ROOT/build
 APK=$ROOT/dist/dsh-agent-0.1.0.apk
+rm -rf "$OUT"
 mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex" "$ROOT/dist"
 
 AAPT2=$(command -v aapt2 2>/dev/null || printf '%s' "$BT/aapt2")

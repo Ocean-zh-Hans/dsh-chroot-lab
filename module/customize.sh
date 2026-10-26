@@ -60,9 +60,9 @@ printf '%s\n' "$MODULE_VERSION" >"$CHROOT_HOME/state/ctl/install-version" || abo
 
 if [ -f "$MODPATH/console.apk" ]; then
   if pm install -r "$MODPATH/console.apk" >/dev/null 2>&1; then
-    ui_print "- DSH Console frontend installed"
+    ui_print "- Chroot Console frontend installed"
   else
-    ui_print "! DSH Console auto-install failed; install $MODPATH/console.apk manually"
+    ui_print "! Chroot Console auto-install failed; install $MODPATH/console.apk manually"
   fi
 fi
 

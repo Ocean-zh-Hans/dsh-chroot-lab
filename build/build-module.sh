@@ -39,13 +39,13 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/dsh-module.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 cp -a module/. "$tmp/module/"
 rm -rf "$tmp/module/tools/src"
-if [ -f "$ROOT/console-app/dist/dsh-console-0.1.0.apk" ]; then
-  cp "$ROOT/console-app/dist/dsh-console-0.1.0.apk" "$tmp/module/console.apk"
+if [ -f "$ROOT/console-app/dist/chroot-console-0.1.0.apk" ]; then
+  cp "$ROOT/console-app/dist/chroot-console-0.1.0.apk" "$tmp/module/console.apk"
   # LSPosed-style system app overlay: KSU mounts this at boot, so the
   # launcher icon exists without a manual adb install.
-  mkdir -p "$tmp/module/system/priv-app/DSHConsole"
-  cp "$ROOT/console-app/dist/dsh-console-0.1.0.apk" \
-    "$tmp/module/system/priv-app/DSHConsole/DSHConsole.apk"
+  mkdir -p "$tmp/module/system/priv-app/ChrootConsole"
+  cp "$ROOT/console-app/dist/chroot-console-0.1.0.apk" \
+    "$tmp/module/system/priv-app/ChrootConsole/ChrootConsole.apk"
 fi
 
 (

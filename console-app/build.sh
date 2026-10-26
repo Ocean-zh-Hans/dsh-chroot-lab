@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the optional DSH Console WebView frontend with the local Android SDK.
+# Build the optional Chroot Console frontend with the local Android SDK.
 set -eu
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
@@ -7,7 +7,8 @@ SDK=${ANDROID_HOME:-$HOME/android-sdk}
 BT=${BUILD_TOOLS:-$SDK/build-tools/35.0.0}
 JAR=${ANDROID_JAR:-$SDK/platforms/android-35/android.jar}
 OUT=$ROOT/build
-APK=$ROOT/dist/dsh-console-0.1.0.apk
+APK=$ROOT/dist/chroot-console-0.1.0.apk
+rm -rf "$OUT"
 mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex" "$ROOT/dist"
 
 AAPT2=$(command -v aapt2 2>/dev/null || printf '%s' "$BT/aapt2")
@@ -39,7 +40,7 @@ if [ ! -f "$KS" ]; then
   keytool -genkeypair -v -keystore "$KS" -alias androiddebugkey \
     -keyalg RSA -keysize 2048 -validity 10000 \
     -storepass android -keypass android \
-    -dname "CN=DSH Console Debug,O=DSH,C=CN" >/dev/null 2>&1
+    -dname "CN=Chroot Console Debug,O=Chroot,C=CN" >/dev/null 2>&1
 fi
 
 if [ -n "$ZIPALIGN" ]; then

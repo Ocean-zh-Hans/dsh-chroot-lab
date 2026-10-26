@@ -201,7 +201,7 @@ ls /sdcard/ubuntu-rootfs               # Permission denied
 - `test_snapshot.sh`：真实 `cp/sha256sum/tar` 的小文件快照/恢复/purge（非镜像）。
 - `test_guard.sh`：hardguard 和 deny/ask hook 的本地输入/输出。
 - `agent-app/build.sh`：已用 Termux aapt2/d8/apksigner 构建 `dsh-agent-0.1.0.apk`（21KB，v3 签名），未安装/未真机验证。
-- `console-app/build.sh`：已构建 `dsh-console-0.1.0.apk`（原生状态/启停/日志/快照/开关 + WebView）；模块构建时同时放入 `console.apk` 和 `system/priv-app/DSHConsole/DSHConsole.apk`，自动安装/system overlay 未验证。
+- `console-app/build.sh`：已构建 `chroot-console-0.1.0.apk`（原生状态/启停/日志/快照/开关 + WebView）；模块构建时同时放入 `console.apk` 和 `system/priv-app/ChrootConsole/ChrootConsole.apk`，自动安装/system overlay 未验证。
 - 真实 `mount`/`loop`/`nsenter`/`chroot` 没有在本机执行。
 
 因此当前只能声明“代码路径和静态门禁通过”，不能声明“chroot 已可用”。

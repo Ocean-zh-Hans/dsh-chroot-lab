@@ -1,4 +1,4 @@
-package dev.dsh.console;
+package dev.chroot.console;
 
 import android.app.Activity;
 import android.os.Bundle;

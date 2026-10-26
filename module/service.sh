@@ -16,7 +16,7 @@ printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date)" \
 # Optional frontend: after boot, package manager is alive. Do it in the
 # background and never block boot.
 if [ -f "$MODDIR/console.apk" ]; then
-  if ! pm list packages dev.dsh.console 2>/dev/null | grep -q '^package:dev.dsh.console$'; then
+  if ! pm list packages dev.chroot.console 2>/dev/null | grep -q '^package:dev.chroot.console$'; then
     pm install -r "$MODDIR/console.apk" >>"$LOG" 2>&1 &
   fi
 fi

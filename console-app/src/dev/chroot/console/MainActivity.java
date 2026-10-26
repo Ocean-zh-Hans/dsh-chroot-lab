@@ -1,4 +1,4 @@
-package dev.dsh.console;
+package dev.chroot.console;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -48,7 +48,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        prefs = getSharedPreferences("dsh-console", MODE_PRIVATE);
+        prefs = getSharedPreferences("chroot-console", MODE_PRIVATE);
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -57,7 +57,7 @@ public final class MainActivity extends Activity {
         scroll.addView(root);
 
         TextView title = new TextView(this);
-        title.setText("DSH Console");
+        title.setText("Chroot Console");
         title.setTextSize(26);
         title.setTextColor(Color.BLACK);
         root.addView(title);
