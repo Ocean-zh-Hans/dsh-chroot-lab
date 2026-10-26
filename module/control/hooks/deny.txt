@@ -1,0 +1,2 @@
+# P1 placeholder. Patterns are not active until P3.
+# One rule per line; comments start with #.

@@ -1,52 +1,41 @@
 # dsh-chroot-lab
 
-Android 上"全能 AI + 真 chroot"方案的研究与自研工作区。
+Android 上“真 chroot 的 Ubuntu + DSH + 完整手机控制”的设计与实现工作区。
+
+- 目标设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
+- 当前阶段：**P1 静态骨架已完成**；只有 `dsh-ctl doctor/plan/status`，**没有 apply/mount**
+- 当前设计：[docs/design-v1.5.md](docs/design-v1.5.md)
+- 已锁定决策：[docs/decisions.md](docs/decisions.md)
+- 文档入口：[docs/README.md](docs/README.md)
 
 ## 结构
 
 ```
-sources/       第三方项目源码（git clone --depth 1，不纳入本仓库版本控制）
-notes/         我们的笔记：全景、方法、需求、规则、逐项目分析、设计
-scripts/       我们自己写的脚本/模块（后续）
-experiments/   非破坏验证（P0：Debian chroot + Go 编译，不动现有环境）
+docs/          当前文档（唯一事实源）+ archive/ 历史归档
+module/        KernelSU 模块源码（P1 静态骨架）
+build/         检查/构建脚本
+tests/         本地单元测试（不碰系统）
+sources/       第三方源码参考（git clone，不纳入版本控制）
+experiments/   隔离环境实验（P2 起；P1 不产生系统修改）
 ```
 
-## 目标（长期）
+## 快速检查
 
-在 OnePlus PJZ110 / Android 15 / SukiSU 上，自研一套：
+```sh
+./build/check.sh
+./build/build-module.sh
+# 产物：dist/dsh_chroot-0.1.0.zip
+```
 
-- **真 chroot**（非 proot），root 域、能力优先，Go 可编译且产物可直接执行
-- 工作区在共享存储可见且可执行 → bind 原始 `/data/media/0`
-- 开机自启、不阻塞开机、可启停、可诊断
-- **可逆性优先**：rootfs 快照 + 数据备份 + 回收站 + 卸载前强制 umount
-- **规则可注入**：`deny.txt` / `ask.txt` 危险命令清单
+## 当前状态
 
-## 方法
+| 项 | 状态 |
+|---|---|
+| Ubuntu rootfs / 128GB 镜像 | 设计完成，未构建 |
+| 真 chroot apply | 未实现；P2 前禁止 |
+| `doctor/plan/status` | P1 实现 |
+| 手机控制 | 只读/help 验证；写操作未验证 |
+| 开机自启 / watchdog | 设计完成，未实现 |
+| 银行/游戏/Play Integrity 检测 | 未验证 |
 
-每个第三方项目都要回答六个问题（见 [notes/01-analysis-template.md](notes/01-analysis-template.md)）：
-它解决什么问题 / 运行模型 / 生命周期 / 数据与更新 / **为什么这样写** / **有没有更优雅的做法**。
-
-## 笔记索引
-
-- [notes/00-landscape.md](notes/00-landscape.md) 全景：四种运行模型 + 已研究项目
-- [notes/01-analysis-template.md](notes/01-analysis-template.md) 逐项目分析模板
-- [notes/02-requirements.md](notes/02-requirements.md) 需求定义（能力优先 + 可逆性）
-- [notes/03-rules-and-safety.md](notes/03-rules-and-safety.md) 规则层与可逆性设计
-- [notes/08-design-review.md](notes/08-design-review.md) **v1.2 评审：8 个 P0、P1 清单、v1.3 修订建议**
-- [notes/09-p0-evidence.md](notes/09-p0-evidence.md) 评审的本机实验记录
-- [notes/10-design-v1.3.md](notes/10-design-v1.3.md) v1.3 设计（daily/lab/rescue；已被 v1.4 取代）
-- [notes/11-design-v1.4.md](notes/11-design-v1.4.md) **full-capability：单一 full 档、128GB 镜像、完整 Android 视图/控制**
-- [notes/12-v1.4-verification.md](notes/12-v1.4-verification.md) v1.4 能力实测与未验证清单
-- [notes/13-incident-2026-10-26-selinux-remount.md](notes/13-incident-2026-10-26-selinux-remount.md) 2026-10-26 系统崩溃事故复盘与纠正
-- [notes/14-red-team-v1.4.md](notes/14-red-team-v1.4.md) **v1.4 红队审查：5 个 P0，暂不批准开工**
-- [notes/15-decisions-pending.md](notes/15-decisions-pending.md) **待拍板决策单：选项/代价/推荐**
-- [notes/16-hiddenness-first.md](notes/16-hiddenness-first.md) **应用层隐藏性模型：full 可保留；private ns/全局 prop/SELinux 是关键**
-- [notes/17-project-overview.md](notes/17-project-overview.md) **项目总览 v2：单一入口（目标/架构/隐藏性/P0/路线/决策）**
-- notes/analysis/ 逐项目深挖（进行中）
-
-## 已 clone 的项目
-
-见 [notes/_repo-list.txt](notes/_repo-list.txt)。当前 17 个，覆盖四类运行模型（新增 mini-panel、chroot-mcp-safe、astrbot-mubuntu 三个参考）：
-真 chroot 模块（dsh-alpine-ksu、DSH-Chroot、chroot-distro、lhroot）、
-proot APK（DSHA、xliaoy、kai6666666、Soodok、masgzy、cmyfqwq）、
-Termux 原生（dsh-termux）、AVF 指南（run-linux-on-android-guide、gunyah-on-sd-guide）。
+> 本项目不是安全沙箱。chroot 内是 root，full `/data`/`/dev`/`/sys`；所有挂载只在 private mount namespace，全局 SELinux/prop/挂载视图不动。应用层隐藏性边界见 [docs/hiddenness.md](docs/hiddenness.md)。

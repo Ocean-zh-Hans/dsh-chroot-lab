@@ -1,0 +1,22 @@
+#!/system/bin/sh
+# shellcheck shell=sh disable=SC3043
+# Namespace holder entrypoint — P1 stub.
+#
+# The real holder will be two-stage:
+#   host stage: mount image at /tmp/dsh-rootfs and all guest mounts under $ROOT
+#   chroot stage: fork/exec chroot "$ROOT" ... s6-svscan as a child; the
+#                 holder waits and forwards TERM/INT. Do not exec s6 over itself.
+#
+# P1 deliberately refuses to execute any mount. Do not "just try it" on the
+# primary device; P2 requires a spare device/VM and trap cleanup.
+
+set -u
+
+DSH_ROOT=${DSH_ROOT:-/data/adb/chroot}
+DSH_ROOTFS_DIR=${DSH_ROOTFS_DIR:-/tmp/dsh-rootfs}
+
+printf 'dsh-nsinit: P1 stub; apply is disabled.\n' >&2
+printf 'root=%s mountpoint=%s\n' "$DSH_ROOT" "$DSH_ROOTFS_DIR" >&2
+printf 'No mount/unshare/chroot was executed.\n' >&2
+printf 'P2 must implement and verify the two-stage holder on a spare device/VM.\n' >&2
+exit 3

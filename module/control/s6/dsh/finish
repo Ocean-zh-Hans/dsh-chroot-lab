@@ -1,0 +1,4 @@
+#!/bin/sh
+# s6 finish: small backoff to avoid a hot restart loop.
+sleep 1
+exit 0

@@ -1,0 +1,91 @@
+#!/system/bin/sh
+# shellcheck shell=sh disable=SC3043
+# dsh-ctl — P1 static controller.
+# Safety: doctor/plan/status are read-only. No mount/loop/unshare/chroot here.
+
+set -u
+
+DSH_VERSION=${DSH_VERSION:-0.1.0}
+DSH_PROG=dsh-ctl
+
+_self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || {
+  printf 'dsh-ctl: cannot resolve script directory\n' >&2
+  exit 2
+}
+DSH_MODULE_DIR=${DSH_MODULE_DIR:-$(CDPATH='' cd -- "$_self_dir/.." && pwd)}
+LIB_DIR=$DSH_MODULE_DIR/lib
+
+for _lib in common.sh config.sh log.sh proc.sh doctor.sh plan.sh status.sh; do
+  if [ ! -r "$LIB_DIR/$_lib" ]; then
+    printf 'dsh-ctl: missing library: %s\n' "$LIB_DIR/$_lib" >&2
+    exit 2
+  fi
+  # shellcheck disable=SC1090
+  . "$LIB_DIR/$_lib"
+done
+
+dsh_config_init
+
+dsh_usage() {
+  cat <<'EOF'
+Usage: dsh-ctl <command> [options]
+
+P1 read-only commands:
+  doctor [--for-apply]   read-only environment checks
+  plan [--check]         print mount/lifecycle plan; never executes
+  status [--json]        read-only holder/status check
+  config                 print resolved paths/knobs
+
+Other commands are placeholders in P1:
+  start stop restart diag log snapshot restore guard system-rw rescue purge fixperm
+
+Exit codes:
+  0 success
+  2 usage error
+  3 not implemented in P1
+  4 doctor/apply-readiness failed
+EOF
+}
+
+dsh_not_implemented() {
+  _cmd=$1
+  shift || true
+  printf '%s: command "%s" is not implemented in P1; no system changes were made.\n' "$DSH_PROG" "$_cmd" >&2
+  printf 'Use "dsh-ctl plan" to inspect the design; apply belongs to P2.\n' >&2
+  return 3
+}
+
+_cmd=${1:-help}
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+case $_cmd in
+help | -h | --help)
+  dsh_usage
+  ;;
+version | -V | --version)
+  printf '%s %s\n' "$DSH_PROG" "$DSH_VERSION"
+  ;;
+doctor)
+  dsh_doctor_run "$@"
+  ;;
+plan)
+  dsh_plan_run "$@"
+  ;;
+status)
+  dsh_status_run "$@"
+  ;;
+config)
+  dsh_config_check_paths || exit 2
+  dsh_config_dump
+  ;;
+start | stop | restart | diag | log | snapshot | restore | guard | system-rw | rescue | purge | fixperm | boot)
+  dsh_not_implemented "$_cmd" "$@"
+  ;;
+*)
+  printf '%s: unknown command: %s\n' "$DSH_PROG" "$_cmd" >&2
+  dsh_usage >&2
+  exit 2
+  ;;
+esac

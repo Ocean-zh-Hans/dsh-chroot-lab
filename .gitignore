@@ -3,3 +3,6 @@ experiments/artifacts/
 *.img
 *.tar.zst
 *.log
+dist/
+module/tools/bin/
+*.zip

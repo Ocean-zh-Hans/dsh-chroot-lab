@@ -1,0 +1,23 @@
+#!/system/bin/sh
+# shellcheck shell=sh disable=SC3043
+# Host watchdog — P1 stub.
+# Future: 30s holder/starttime/ns inode check; SELinux enforce assertion;
+# loop/backing-file check; reversible cleanup. Never restart blindly.
+
+set -u
+
+DSH_ROOT=${DSH_ROOT:-/data/adb/chroot}
+_self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 2
+DSH_CTL=${DSH_CTL:-$_self_dir/dsh-ctl}
+
+if [ "${1:-}" = "--status" ]; then
+  if [ -x "$DSH_CTL" ]; then
+    exec "$DSH_CTL" status
+  fi
+  printf 'dsh-watchdog: dsh-ctl not found: %s\n' "$DSH_CTL" >&2
+  exit 2
+fi
+
+printf 'dsh-watchdog: P1 stub; no monitoring/restart performed (root=%s).\n' "$DSH_ROOT" >&2
+printf 'Use "dsh-watchdog --status" for a read-only status projection.\n' >&2
+exit 3

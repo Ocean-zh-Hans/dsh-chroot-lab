@@ -1,0 +1,7 @@
+id=dsh_chroot
+name=DSH Ubuntu Chroot
+version=0.1.0
+versionCode=1
+author=dsh-chroot-lab
+description=Real Ubuntu 24.04 chroot for DSH (P1 static skeleton; apply not implemented)
+updateJson=

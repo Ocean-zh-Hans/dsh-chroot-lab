@@ -1,0 +1,33 @@
+> **ARCHIVED 2026-10-26 — historical only; not a current design or decision. See `docs/README.md` and `docs/design-v1.5.md`.**
+
+# 来源可信度评估
+
+- 日期：2026-10-26 ｜ 目的：避免「个人项目/博客说啥信啥」
+
+## 分级标准
+
+| 级 | 定义 | 本项目中如何使用 |
+|---|---|---|
+| A | 官方文档、AOSP/内核源码、上游仓库源码、本机实测（命令+输出） | 直接作为结论依据 |
+| B | issue 带复现步骤/日志/版本、维护者回复、发布说明 | 作为坑的依据；进入设计 |
+| C | 个人博客、CSDN/知乎/酷安帖、无出处的转述 | 只当线索；未验证不写进设计 |
+| D | AI 生成内容、无出处的经验 | 不采用 |
+
+## 对关键项目的判断
+
+| 项目 | 事实 | 可信度判断 |
+|---|---|---|
+| KernelSU / SukiSU 文档 | 官方站点 + 源码；但 #3693 证明文档会与实现分叉 | A（文档）+ 必须本机实测 |
+| chroot-distro | 163★/504★，v3.2.0 活跃，400+ 文件，docstring 详尽，issue 有维护者回复 | A/B：代码质量高；但 install 不校验哈希（其自身文档承认） |
+| dsh-alpine-ksu | 2★，2026-10-19 创建，单人，PoC；有 Release + CI；代码短小、注释写了踩坑原因 | B：思路可借鉴，不作为生产依赖；每条结论需本机验证 |
+| DSH-Chroot | 0★，2026-10-17 创建，无 Release，文档 3687 行（含 26 条 ADR） | B：文档价值 > 代码价值；为什么不做 的记录很值钱 |
+| DSHA | 成熟、292MB APK、有真机验收记录、但自述不是安全沙箱 | B：工程完成度高；其不设防声明值得抄 |
+| dsh-termux | 单人 hobby，README 自述单设备验证 | B/C：可用但要接受补丁漂移风险 |
+
+## 反面教材（我们主动避开的「看着对」的说法）
+
+1. 「Android targetSdk≥29 就不能从 app 数据 exec」——本机 Termux 在 untrusted_app_25，这条在本机不成立；不能外推。
+2. 「Alpine 更小所以更适合」——体积差（5–8MB vs 30–80MB）相对 DSH 的 500MB 是噪声；真正代价是 musl 预编译缺失与静默降级。
+3. 「chroot 是安全边界」——man page 与 DSH-Chroot 的威胁模型都明确：chroot 不是隔离。
+4. 「官方说 post-fs-data 和 Magisk 一样」——issue #3693 证伪。
+5. 「有 root 就能 loop 挂载任意位置」——实测 /data/adb、/data/local/tmp 全部 EIO（FBE），只有 /data/media/0 可以。
