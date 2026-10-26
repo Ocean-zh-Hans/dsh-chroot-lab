@@ -102,7 +102,7 @@
 2. **`/data`/`/mnt`/`/metadata` rw**：用户接受权限全开，但 `/mnt/vendor/persist`、`qmcs`、`/metadata` 写入可变砖；至少提供 `--protect-critical` 可选，不能把“全开”当“无风险”。
 3. **`/sys` rw**：除了 selinuxfs，还会改 cgroup/kernel tunables；建议 ro + debugfs/tracing 单独 rw。
 4. **`/dev` rbind**：含 `/dev/block`、`/dev/socket`、binder；完整控制 but 暴露面大；若保留，规则层不能假装能挡 root。
-5. **`/sys/fs/selinux` remount**：事故根因；设计已删 bind-ro，但**任何“只读 bind”都不要做**；只允许 private ns 的 tmpfs 遮罩。
+5. **`/sys/fs/selinux` remount**：事故高度怀疑关联、机制未证实；设计已删 bind-ro，但**任何“只读 bind”都不要做**；只允许 private ns 的 tmpfs 遮罩。
 6. **`getenforce`**：本机返回 Disabled 但 `enforce=1`；doctor 只读 `/sys/fs/selinux/enforce`；不要把 `getenforce` 写进验收。
 7. **`/data` full 与 root hiding**：`/data/adb`、`.dsh` 必须遮罩；否则chroot 内可改 KSU/模块/镜像；普通 App 仍不可见，但 root 可。
 8. **loop 可见性**：`/sys/block/loop*/loop/backing_file`、`losetup -a` 可暴露镜像路径；如果 root hiding 是硬指标，需评估 directory rootfs 或隐藏 loop 元数据；当前设计选择 image，必须承认这个代价。
@@ -129,6 +129,26 @@
 - **建议的折中**：保留 full 能力，但做 P0-1/P0-2 的遮罩、`/sys` ro、停止/快照/回滚；手机控制用 **宿主侧 thin agent** 补 UI 自动化/通知/剪贴板；chroot 只做 Linux/DSH 计算。这样比“chroot 内 root 硬做一切”更接近“可用的完美”。
 
 ---
+
+---
+
+## 附：Workflow-2 长任务追加（已只读核对）
+
+以下几条已在 `notes/11-design-v1.4.md` 修正，但仍属于 P0 级教训：
+
+| 问题 | 事实 | 修正 |
+|---|---|---|
+| `/run/dsh-rootfs` 不存在 | 本机 `/run` 不存在（root 是 ro erofs）；`/tmp` 是宿主 tmpfs | 改为 `/tmp/dsh-rootfs`；preflight 检查存在/可写 |
+| start 一行式没有 chroot | `/opt/dsh-control`、`/run/s6`、`s6-svscan` 都是 chroot 内路径；宿主没有 | 拆成 host 挂载段 + `chroot "$ROOT" ...` 两段；新增 `dsh-nsinit` holder |
+| `nsenter -m` 不换根 | toybox `nsenter` 没有 `-r`；`s6-svc` 在宿主不存在 | 用 `nsenter -t PID -m chroot $ROOT ...` |
+| `/proc/*/mountinfo` 路径校验假通过 | 第 5 字段相对该进程 root，不是宿主路径 | 用 `/proc/*/ns/mnt` inode 对比 |
+| toybox `flock` 只有 fd 形式 | mksh 的 fd>2 CLOEXEC，`flock -n 9` 报 Bad file descriptor | 用 `mkdir` 原子锁 |
+| 没有宿主 s6 | 宿主 `/system/bin` 无 s6 | s6 只在 chroot 内；通过 `chroot $ROOT` 调用 |
+| `/apex`/`/linkerconfig` `-o ro` 不生效 | bind 忽略 `ro` 标志；源是 rw tmpfs | `mount -o remount,ro,bind` 并验证 |
+| image 工具链未打包 | toybox `cp` 无 `--sparse`；toybox `losetup` 无 `--sector-size` | 模块自带 util-linux `losetup`、e2fsprogs、GNU cp/tar |
+| 事故单点机制未证实 | mount(2) 说 remount-bind 只影响该挂载点 | 改为“高度怀疑关联、机制未证实”；禁止所有宿主级测试 |
+
+**这些修正不等于设计已批准**：`/sys`、`/dev`、内部路径遮罩、宿主 agent 等仍需你按 `15-decisions-pending.md` 拍板。
 
 ## 结论
 

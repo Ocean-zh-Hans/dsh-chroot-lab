@@ -1,6 +1,6 @@
 # 设计 v1.4（full-capability）：完整 chroot + 完整手机控制
 
-> **2026-10-26 红队审查：本设计尚未批准开工。** 5 个 P0 反对意见见 [`14-red-team-v1.4.md`](14-red-team-v1.4.md)：rootfs 镜像/控制面自引用、`/sys` 与 hardguard 不是边界、stop 竞态、快照一致性、手机控制未验证。先修 P0 并出 v1.5，再谈 apply。
+> **2026-10-26 红队审查：本设计尚未批准开工。** 待拍板选项见 [`15-decisions-pending.md`](15-decisions-pending.md)。 5 个 P0 反对意见见 [`14-red-team-v1.4.md`](14-red-team-v1.4.md)：rootfs 镜像/控制面自引用、`/sys` 与 hardguard 不是边界、stop 竞态、快照一致性、手机控制未验证。先修 P0 并出 v1.5，再谈 apply。
 
 - 日期：2026-10-26 ｜ 设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
 - 取代：`10-design-v1.3.md`（v1.3 的 daily/lab 分档）。
@@ -51,7 +51,7 @@
 
 ### 1.1 Root 隐藏性不变量（硬约束）
 
-1. **SELinux 保持 Enforcing**：不默认 `setenforce 0`；`--permissive` 仅显式 break-glass，且要明确“本次接受隐藏性下降”。**绝不对 `/sys/fs/selinux` 做 bind/remount,ro**（本次事故根因）；要限制用 private ns 的 tmpfs 遮罩 + hardguard。
+1. **SELinux 保持 Enforcing**：不默认 `setenforce 0`；`--permissive` 仅显式 break-glass，且要明确“本次接受隐藏性下降”。**绝不对 `/sys/fs/selinux` 做 bind/remount,ro**（本次事故的高度怀疑关联操作；机制未证实，但一律禁止）；要限制用 private ns 的 tmpfs 遮罩 + hardguard。
 2. **不改全局 prop**：不用 `resetprop` 改 `ro.debuggable`/`ro.secure`/`init.svc.*` 等；不伪造 root 状态。
 3. **挂载不暴露到宿主 namespace**：所有 chroot 挂载在私有 mount ns；`make-rprivate`；不做全局 bind/共享挂载。
 4. **不把模块目录 bind 进 chroot**：避免 KSU 挂载视图穿透/被检测。
@@ -132,7 +132,7 @@ L0 宿主     KSU module: service.sh + boot-completed.sh
 
 ### 4.1 为什么用镜像
 
-- `/data` 1:1 rbind 需要 rootfs 不在 `/data` 子树内；镜像挂到 `/run/dsh-rootfs`，既不在 `/data` 也不在 `/mnt`，**彻底避免自递归**。
+- `/data` 1:1 rbind 需要 rootfs 不在 `/data` 子树内；镜像挂到 `/tmp/dsh-rootfs`，既不在 `/data` 也不在 `/mnt`，**彻底避免自递归**。
 - 空间不是约束：128GB sparse 镜像，实际 rootfs 12–16GB；`resize2fs` 可扩。
 - 快照=镜像文件冷复制；回滚=换镜像；比目录 tar 更“整存整删”。
 - 镜像必须放 `/data/media/0/.dsh/rootfs.img`（FBE 加密区 loop 会 EIO）。
@@ -146,8 +146,8 @@ mke2fs -t ext4 -b 4096 -d /data/adb/chroot/rootfs-staging /data/media/0/.dsh/roo
 # 或 truncate + mke2fs + mount + rsync
 truncate -s 128G /data/media/0/.dsh/rootfs.img
 mke2fs -t ext4 -b 4096 /data/media/0/.dsh/rootfs.img
-mount -o loop /data/media/0/.dsh/rootfs.img /run/dsh-rootfs
-rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
+mount -o loop /data/media/0/.dsh/rootfs.img /tmp/dsh-rootfs
+rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /tmp/dsh-rootfs/
 ```
 
 - `losetup --sector-size 4096 --direct-io=off` 需要 util-linux；toybox/busybox 不支持。模块 `bin/` 自带静态 util-linux `losetup`，或预生成镜像后 push。
@@ -171,7 +171,7 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 
 ### 4.3 镜像生命周期
 
-- start：`e2fsck -p` → `losetup --sector-size 4096` → 在 namespace 内 `mount -t ext4` 到 `/run/dsh-rootfs` → chroot。
+- start：`e2fsck -p` → `losetup --sector-size 4096` → 在 namespace 内 `mount -t ext4` 到 `/tmp/dsh-rootfs` → chroot。
 - stop：namespace 内 `sync` → `remount,ro` → `umount` → 宿主 `losetup -d`。
 - 快照：stop 后 `cp --sparse=always rootfs.img snapshots/rootfs-<ts>.img`（空间不优化；保留 7 份）；`sync`；sha256。
 - 回滚：stop → 校验 → 当前镜像改名 `rootfs.bad.<ts>.img` → 新镜像 rename → start → smoke；失败切回。
@@ -185,10 +185,10 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 
 | chroot 内路径 | 源 | 类型/选项 | 说明 |
 |---|---|---|---|
-| `/` | `/run/dsh-rootfs` | ext4 | 128GB 镜像 |
+| `/` | `/tmp/dsh-rootfs` | ext4 | 128GB 镜像 |
 | `/proc` | `proc` | `proc,nosuid,noexec,nodev` | 完整进程视图 |
 | `/sys` | `sysfs` | **rw** | 完整内核/设备视图 |
-| `/sys/fs/selinux` | — | **不要单独 bind/remount** | 2026-10-26 事故根因：`mount -o remount,ro,bind /sys/fs/selinux` 会使 selinuxfs 只读，zygote `selinux_android_setcontext` 写 `/sys/fs/selinux/context` 失败；如需限制，用 private ns 的 tmpfs 遮罩 + hardguard，绝不在 selinuxfs 上 remount |
+| `/sys/fs/selinux` | — | **不要单独 bind/remount** | 2026-10-26 事故关联（机制未证实）：`mount -o remount,ro,bind /sys/fs/selinux` 之后出现 zygote SELinux 上下文失败；mount(2) 说 remount-bind 只影响该挂载点，因此不能把它当已证实的单点根因；一律禁止。zygote `selinux_android_setcontext` 写 `/sys/fs/selinux/context` 失败是现象，不等于证明 remount 是唯一原因。如需限制，用 private ns 的 tmpfs 遮罩 + hardguard，绝不在 selinuxfs 上 remount |
 | `/dev` | `/dev` | **rbind** `nosuid`（去 noexec） | block/binder/ashmem/usb-ffs 全见 |
 | `/dev/pts` | `devpts` | `newinstance,ptmxmode=0666,mode=620` | 独立 pts；`/dev/ptmx` → `pts/ptmx` |
 | `/dev/shm` | tmpfs | `size=1g,mode=1777` | Chromium/Playwright |
@@ -215,8 +215,8 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 | `/product` | `/product` | rbind | ro |
 | `/vendor` | `/vendor` | rbind | ro；firmware/dsp 子挂载 |
 | `/odm` | `/odm` | rbind | ro |
-| `/apex` | `/apex` | **rbind ro** | plain bind 是空壳 |
-| `/linkerconfig` | `/linkerconfig` | bind ro | Android linker |
+| `/apex` | `/apex` | **rbind + remount,ro,bind** | plain bind 是空壳；`-o ro` 对 bind 会被忽略 |
+| `/linkerconfig` | `/linkerconfig` | bind + remount,ro,bind | 源是 rw tmpfs；必须显式 remount |
 | `/metadata` | `/metadata` | **bind rw** | 完整控制；可选 `--protect-critical` 改 ro |
 | `/mnt/vendor/persist` | 同名 | rw（随 `/mnt`） | 完整控制；可选 protect 改 ro |
 | `/mnt/vendor/qmcs` | 同名 | rw（随 `/mnt`） | 完整控制；可选 protect 改 ro |
@@ -224,7 +224,7 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 | `/sys/kernel/debug` | debugfs/宿主 bind | rw | BPF/kprobe/uprobe |
 | `/sys/kernel/tracing` | tracefs/宿主 bind | rw | ftrace/perf |
 
-**说明**：`/system` 等 erofs 物理只读；要写用 `dsh-ctl system-rw on` 的 overlay。**upper/work 必须放在 ext4 rootfs 内**（如 `/var/lib/dsh/overlays/<part>`），不能放 `/data`（f2fs 实测 `overlay: case-insensitive capable filesystem ... not supported`，EINVAL）。不是 `remount,rw`。`/metadata`/persist/qmcs 默认 rw（按“不要权限收束”）；`--protect-critical` 可一键改 ro，属于可选防手滑，不是默认限制。
+**说明**：`/system` 等 erofs 物理只读；`bind/ rbind` 后必须 `mount -o remount,ro,bind` 并 `findmnt` 验证，`-o ro` 单独用会被 bind 忽略。要写用 `dsh-ctl system-rw on` 的 overlay。**upper/work 必须放在 ext4 rootfs 内**（如 `/var/lib/dsh/overlays/<part>`），不能放 `/data`（f2fs 实测 `overlay: case-insensitive capable filesystem ... not supported`，EINVAL）。不是 `remount,rw`。`/metadata`/persist/qmcs 默认 rw（按“不要权限收束”）；`--protect-critical` 可一键改 ro，属于可选防手滑，不是默认限制。
 
 ### 5.3 挂载顺序
 
@@ -294,34 +294,40 @@ dsh-ctl system-rw on system vendor product odm system_ext
 
 ```
 dsh-ctl start [--permissive] [--protect-critical]  # 默认 Enforcing；--permissive 会降低 root 隐藏性
-  1. flock state/ctl/lock
-  2. doctor：root、namespaces、chroot、mount、seccomp、SELinux（读 `/sys/fs/selinux/enforce`，不要只看 `getenforce`）、TMPDIR、镜像、losetup、node-pty、DSH
-  3. e2fsck -p 镜像；losetup --sector-size 4096；记录 loopdev
-  4. setsid busybox unshare --mount --propagation private --uts -m sh -c '
-       mounts（镜像 mount 到 /run/dsh-rootfs）
-       cp -a /opt/dsh-control/s6/. /run/s6/
-       exec s6-svscan /run/s6'
-  5. 记录 launcher PID/PGID/starttime、loopdev、profile=full
-  6. 等 state/guest/url 或 nsenter s6-svstat；写 running
-  7. 失败：namespace 内逆序清理、loop detach、degraded
+  1. mkdir state/ctl/lock（原子；写 owner pid/starttime；stale 则清理）——不要用 toybox flock 的文件形式
+  2. doctor：root、namespaces、chroot、mount、seccomp、SELinux（读 /sys/fs/selinux/enforce）、TMPDIR、镜像、losetup、node-pty、DSH
+  3. e2fsck -p 镜像；losetup --sector-size 4096 --direct-io=off；记录 loopdev；检查同一 backing file 没有第二个 loop
+  4. setsid busybox unshare --mount --propagation private --uts -m /data/adb/chroot/bin/dsh-nsinit
+     # dsh-nsinit（宿主侧脚本）分两段：
+     #   host 段：ROOT=/tmp/dsh-rootfs（/tmp 是宿主 tmpfs，/run 在本机不存在）；mount 镜像到 ROOT；
+     #            所有 guest mount 都写成 $ROOT/proc、$ROOT/sys、$ROOT/dev、$ROOT/data、$ROOT/mnt、$ROOT/sdcard...
+     #            mount tmpfs $ROOT/run、$ROOT/tmp；bind control 到 $ROOT/opt/dsh-control；
+     #            cp -a $ROOT/opt/dsh-control/s6/. $ROOT/run/s6/
+     #   chroot 段：exec chroot "$ROOT" /usr/bin/env -i PATH=... /bin/sh -c
+     #            'echo $$ > /run/dsh/launcher.pid; exec s6-svscan /run/s6'
+  5. 从 state/guest/launcher.pid 读 PID；记录 PGID、/proc/PID/stat starttime、/proc/PID/ns/mnt inode
+  6. 等 state/guest/url 或 nsenter -t PID -m chroot /tmp/dsh-rootfs /usr/bin/s6-svstat /run/s6/dsh
+  7. 失败：先保留 holder 做逆序清理，再 loop detach、degraded
 ```
+
+**关键**：`dsh-nsinit` 是长驻 namespace holder；s6-svscan 是它的子进程。holder 活着时才能安全 unmount；不要先杀 holder 再 umount。
 
 ### 7.2 stop
 
 ```
 dsh-ctl stop
-  1. flock；写 state/ctl/stopped + 各服务 down
-  2. nsenter -t <launcher> -m sh -c 'sync; sync'
-  3. for s in dsh ttyd: nsenter ... s6-svc -d /run/s6/$s
-  4. for s: nsenter ... s6-svwait -d -t 10000 /run/s6/$s
-  5. 超时 s6-svc -k；PGID TERM；等 5–10s；KILL
-  6. 扫 /proc/*/root → rootfs 的进程，TERM/KILL
-  7. nsenter -t <launcher> -m sh -c '逆序 umount；remount,ro 镜像'
-  8. 宿主 losetup -d；扫 /proc/*/mountinfo 验证无 rootfs
+  1. mkdir lock；写 state/ctl/stopped + 各服务 down
+  2. 读 PID/starttime/ns inode；校验一致；不一致按 stale 处理并扫 /proc/*/ns/mnt
+  3. nsenter -t PID -m chroot /tmp/dsh-rootfs /bin/sh -c 'sync; sync'
+  4. for s in dsh ttyd: nsenter -t PID -m chroot /tmp/dsh-rootfs /usr/bin/s6-svc -d /run/s6/$s
+  5. for s: nsenter -t PID -m chroot /tmp/dsh-rootfs /usr/bin/s6-svwait -d -t 10000 /run/s6/$s
+  6. 超时：s6-svc -k；PGID TERM；等 5–10s；仍不退再 KILL；扫描 /proc/*/ns/mnt inode（不是 grep mountinfo 路径）
+  7. 保持 holder 活着：nsenter -t PID -m chroot /tmp/dsh-rootfs /bin/sh -c '逆序 umount -R /data /mnt /data_mirror /storage /sdcard /dev /sys /proc；remount,ro /'
+  8. 确认无同 ns inode 的进程后，KILL holder；宿主 losetup -d；等待 loop 真正消失（losetup -d 是 lazy，不能只看 rc=0）
   9. 恢复 SELinux 原状态（若启动时切了 permissive）；删 lock/pid；保留 logs；写 stopped
 ```
 
-**注意**：`/run` 是 namespace 内 tmpfs；s6 控制必须 `nsenter`；宿主 `/proc/self/mountinfo` 不能校验私有 ns。
+**注意**：toybox `nsenter` 没有 `-r/--root`；必须 `nsenter -t PID -m chroot $ROOT ...`。`/proc/PID/mountinfo` 第 5 字段是相对该进程 root 的路径，不能用 `grep $ROOT` 做通过条件；用 `/proc/*/ns/mnt` inode 对比。
 
 ### 7.3 命令
 
@@ -367,7 +373,8 @@ dsh-ctl stop
 
 ## 10. 打包
 
-- 模块 zip：`module.prop/customize.sh/service.sh/boot-completed.sh/uninstall.sh/action.sh/bin/dsh-ctl/bin/boot-bootstrap/control/*`；包根禁止 `install.sh`。
+- 模块 zip：`module.prop/customize.sh/service.sh/boot-completed.sh/uninstall.sh/action.sh/bin/dsh-ctl/bin/boot-bootstrap/bin/dsh-nsinit/control/*`；包根禁止 `install.sh`。
+- 工具链必须自带：静态 `losetup`（util-linux，支持 `--sector-size`）、`mke2fs/e2fsck/resize2fs`、支持 `--sparse` 的 `cp`（或改用 `tar`）、`flock`（或改用 `mkdir` 锁）；toybox 的 `cp`/`losetup` 不满足。
 - payload：`rootfs.tar.gz`（Ubuntu 24.04 + Node 24 + Go + Python + build-essential + s6/ttyd + Android 工具依赖；胖包，不裁空间）。
 - 镜像：首次 `mke2fs 128G` + rsync；或预生成 `rootfs.img` push 到 `/data/media/0/.dsh/`。
 - 构建门禁：busybox tar -xzf、mksh、shellcheck、node-pty、dsh web、doctor、full P0。
@@ -383,7 +390,7 @@ dsh-ctl stop
 4. `/dev/block`、binder/ashmem、`/dev/pts`、`/dev/shm` 可见；`/sys` rw；debugfs/tracefs 可读。
 5. Android CLI：`am`（无参数出 help）、`pm list packages`、`input`、`screencap -p /tmp/x.png`、`screenrecord --time-limit 1`、`cmd notification help` 可用；`uiautomator dump` 本机不可用（rc=137），只承诺 `uiautomator runtest`（需 jar）。
 6. `/apex` rbind 后 `com.android.runtime/bin` 非空；`/system` 等可见；`system-rw` overlay 可选通过。
-7. stop：全机 `/proc/*/mountinfo` 无 rootfs、`/proc/*/root` 无 rootfs 进程、无 launcher；镜像已 `losetup -d`。
+7. stop：没有与 holder 相同 `/proc/*/ns/mnt` inode 的进程；`/proc/*/root` 无 rootfs 进程；无 launcher；loop 已真正消失（不是只看 `losetup -d` 返回 0）。
 8. 镜像快照 → 破坏 → restore 一轮；state 同步；sha 校验。
 9. 开机自启（service.sh + boot-completed，非阻塞，10–60s 就绪）；重启/强杀自愈。
 10. `guard on` 时 deny/ask 生效；`guard off` 时审计仍记录。
