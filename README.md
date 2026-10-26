@@ -38,6 +38,7 @@ experiments/   非破坏验证（P0：Debian chroot + Go 编译，不动现有�
 - [notes/11-design-v1.4.md](notes/11-design-v1.4.md) **full-capability：单一 full 档、128GB 镜像、完整 Android 视图/控制**
 - [notes/12-v1.4-verification.md](notes/12-v1.4-verification.md) v1.4 能力实测与未验证清单
 - [notes/13-incident-2026-10-26-selinux-remount.md](notes/13-incident-2026-10-26-selinux-remount.md) 2026-10-26 系统崩溃事故复盘与纠正
+- [notes/14-red-team-v1.4.md](notes/14-red-team-v1.4.md) **v1.4 红队审查：5 个 P0，暂不批准开工**
 - notes/analysis/ 逐项目深挖（进行中）
 
 ## 已 clone 的项目

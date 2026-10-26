@@ -1,5 +1,7 @@
 # 设计 v1.4（full-capability）：完整 chroot + 完整手机控制
 
+> **2026-10-26 红队审查：本设计尚未批准开工。** 5 个 P0 反对意见见 [`14-red-team-v1.4.md`](14-red-team-v1.4.md)：rootfs 镜像/控制面自引用、`/sys` 与 hardguard 不是边界、stop 竞态、快照一致性、手机控制未验证。先修 P0 并出 v1.5，再谈 apply。
+
 - 日期：2026-10-26 ｜ 设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
 - 取代：`10-design-v1.3.md`（v1.3 的 daily/lab 分档）。
 - 用户新约束（2026-10-26）：**不考虑权限收束，不考虑空间占用；只做完美的 chroot，完美的手机控制。**

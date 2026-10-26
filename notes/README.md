@@ -12,6 +12,7 @@
 - `11-design-v1.4.md` **full-capability：单一 full 档、128GB 镜像、完整 Android 视图/控制**
 - `12-v1.4-verification.md` **v1.4 能力实测：SELinux/namespace/设备节点/Android CLI/overlay 的已验证与未验证清单**
 - `13-incident-2026-10-26-selinux-remount.md` **事故复盘：selinuxfs 只读 remount 导致的系统崩溃与纠正**
+- `14-red-team-v1.4.md` **v1.4 红队审查：5 个 P0 反对意见，暂不批准开工**
 - `08-design-review.md` **v1.2 评审：8 个 P0、P1 清单、v1.3 目录/挂载/停止状态机建议（2026-10-26）**
 - `09-p0-evidence.md` 评审的本机实验记录（chroot/node-pty/dsh web/s6/apt/权限/挂载）
 - `06-packaging.md` 模块打包清单与构建门禁
