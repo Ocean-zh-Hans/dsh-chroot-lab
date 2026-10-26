@@ -2,13 +2,13 @@
 
 - 日期：2026-10-26
 - 状态：**用户已决定“全部按推荐走”**；采用 full 能力组合 `1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`。
-- **先看 `16-hiddenness-first.md`**：如果“隐藏性”指游戏/银行不被抓到把柄，且你不在乎 chroot 内部/`.dsh` 名字，推荐 **full 能力 + private ns** 组合：`1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`。
+- **先看 `16-hiddenness-first.md`**：如果“隐藏性”指游戏/银行不被抓到把柄，且你不在乎 chroot 内部/`DSH-CHROOT` 名字，推荐 **full 能力 + private ns** 组合：`1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`。
 - 前提：只有一台手机；“chroot 内”只是同一台手机上的进程树，不是虚拟机/第二台设备。
 - 当前状态：v1.4 **未批准开工**，先修 5 个 P0；这份单子决定“修成什么样”。
 
 ---
 
-## 1. 内部路径遮罩：`/data/adb/chroot`、`/data/media/0/.dsh`、`/sdcard/.dsh`
+## 1. 内部路径遮罩：`/data/adb/chroot`、`/data/media/0/DSH-CHROOT`、`/sdcard/DSH-CHROOT`
 
 这些是控制面/rootfs 镜像，不是用户数据。`/data` 仍完整 rw，只遮内部路径。
 
@@ -20,7 +20,7 @@
 
 **区别一句话**：A 是“藏起来”，B 是“看得见但碰不得”，C 是“把刀递给自己的 rootfs”。
 
-> 红队 v2：**A 的三个路径不是完整保护**；`/data/user/0`、`/data_mirror`、`/mnt/*/emulated`、`/storage` 等别名都能到 `.dsh`/control。要 full `/data` 就按 §14 枚举测试；否则选 1B。
+> 红队 v2：**A 的三个路径不是完整保护**；`/data/user/0`、`/data_mirror`、`/mnt/*/emulated`、`/storage` 等别名都能到 `DSH-CHROOT`/control。要 full `/data` 就按 §14 枚举测试；否则选 1B。
 
 ---
 
@@ -181,7 +181,7 @@
 
 | 选项 | 具体做法 | 选它意味着 | 代价/风险 | 推荐 |
 |---|---|---|---|---|
-| A. full `/data` + 全别名遮罩 | 枚举所有别名，逐个 tmpfs/ro 遮 `.dsh`、`control`、`modules`、`ksu` | 保留 full `/data`；降低误删 | 别名动态、难穷尽；root 可 unmount；`/proc/1/root` 仍绕过 | 仅“全量控制优先” |
+| A. full `/data` + 全别名遮罩 | 枚举所有别名，逐个 tmpfs/ro 遮 `DSH-CHROOT`、`control`、`modules`、`ksu` | 保留 full `/data`；降低误删 | 别名动态、难穷尽；root 可 unmount；`/proc/1/root` 仍绕过 | 仅“全量控制优先” |
 | **B. 不 full `/data`** | 只给 `/sdcard` raw + 选定用户目录；镜像/控制面从 chroot 内不可见 | 镜像/控制面最难被写；最稳 | 失去 `/data/data`、`/data/system` 等完整视图 | ✅ 完整性/隐藏性优先 |
 | C. full `/data` 不遮 | 当前 v1.4 | 最大控制 | **P0 自引用/控制面可写**；可能毁 rootfs | ❌ |
 

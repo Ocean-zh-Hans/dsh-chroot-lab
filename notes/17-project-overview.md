@@ -49,7 +49,7 @@ Android 本机（唯一设备）
 │  ├─ dsh-ctl（生命周期/诊断/快照/恢复）
 │  └─ control/（hooks、s6、bin）
 ├─ 私有 mount namespace + chroot
-│  ├─ 128GB ext4 镜像 /data/media/0/.dsh/rootfs.img
+│  ├─ 128GB ext4 镜像 /data/media/0/DSH-CHROOT/rootfs.img
 │  ├─ /tmp/dsh-rootfs（宿主 tmpfs 挂载点）
 │  ├─ full /data /mnt /data_mirror /storage /sdcard /dev /sys
 │  ├─ Android 分区（/system、/apex、/linkerconfig...）
@@ -58,9 +58,31 @@ Android 本机（唯一设备）
 ```
 
 - **默认 full**：单一 full 档；不再 daily/lab 分档；`rescue` 只维修。
-- **rootfs**：ext4 **128GB 存储镜像**；128 起步、可 `resize2fs` 到 256GB；`.dsh` 名字不是隐藏硬指标。**128/256 是存储空间，不是内存**；实际 rootfs 12–16GB，其余是稀疏容量；loop/ext4 只用页缓存，不把整块镜像加载进 RAM。
+- **rootfs**：ext4 **128GB 存储镜像**；128 起步、可 `resize2fs` 到 256GB；目录名不是隐藏硬指标。**128/256 是存储空间，不是内存**；实际 rootfs 12–16GB，其余是稀疏容量；loop/ext4 只用页缓存，不把整块镜像加载进 RAM。
 - **私有 ns**：所有 chroot mount 只在 private mount namespace；App 的 `/proc/self/mountinfo` 看不到。
 - **可选宿主 agent**：`uiautomator dump` 本机不可用；要 UI 树/通知/剪贴板/包管理，用宿主 accessibility/Shizuku/ADB agent；不是隐藏必需，是“完美手机控制”补全。
+
+### 3.1 存储布局：镜像 ≠ DSH 工作目录
+
+```
+/data/adb/chroot/                  # 模块私有数据（标准-ish root 模块目录）
+├── control/                       # hooks/s6/bin（bind 到 chroot /opt/dsh-control）
+├── state/dsh-home/                # bind 到 chroot /root/.dsh（DSH 的 HOME）
+├── logs/                          # bind 到 chroot /var/log/dsh
+└── dsh/                           # DSH 运行时 versions/current/previous
+
+/data/media/0/DSH-CHROOT/          # 唯一放镜像的地方（/data/adb 下 loop 会 FBE EIO）
+└── rootfs.img                     # Ubuntu 24.04 的 ext4 磁盘镜像（128GB 稀疏）
+    snapshots/                     # 镜像冷快照
+
+/data/media/0/DSH/workspace/       # DSH 工作区（bind 到 chroot /sdcard/DSH/workspace）
+```
+
+- `rootfs.img` 是 **Ubuntu 的“虚拟磁盘”**，里面是 `/bin`、`/usr`、`/etc`、Node、apt 等；**不是 DSH 的 home，也不是工作区**。
+- `DSH 的 home` 是 chroot 内的 `/root/.dsh`，宿主对应 `/data/adb/chroot/state/dsh-home`；里面是 profiles/sessions/credentials。
+- `DSH 的工作区` 是 `/data/media/0/DSH/workspace`，chroot 内是 `/sdcard/DSH/workspace`。
+- `/data/media/0/DSH-CHROOT` 不是 Android 官方标准目录；它是我们为“loop 只能放未加密 media”做的例外。`/data/adb/chroot` 才是模块私有数据的主目录。
+- 顺序是：**先有 Ubuntu rootfs（镜像）→ 在镜像里装 Node/DSH → 启动时挂镜像、chroot、起 s6/DSH**；镜像不是 DSH 运行时本身。
 
 ---
 
@@ -87,12 +109,12 @@ Android 本机（唯一设备）
 3. **所有 chroot mount 在 private ns**；不全局 mount/overlay。
 4. **保持 KSU 隐藏特性**：`selinux_hide`/`mount_hide`/`avc_spoof`/`kernel_umount`。
 5. **DSH/ttyd 只监听 127.0.0.1**；宿主 `/proc` 保持 `hidepid=invisible`。
-6. **`/sdcard` 不放 `magisk`/`kernelsu`/`su` 这类明显 root 标记**；`.dsh`/`DSH` 名字可以接受，不为名字过度设计。
+6. **`/sdcard` 不放 `magisk`/`kernelsu`/`su` 这类明显 root 标记**；`DSH-CHROOT`/`DSH` 名字可以接受，不为名字过度设计。
 
 ### 不是隐藏问题
 - `u:r:ksu:s0` 是 KernelSU 的 permissive allow-all 域：**App 看不到别的进程域**；这是安全边界问题，不是应用检测问题。不需要为它写自定义 SELinux 域。
 - `/proc/1/root`、chroot 内 `/dev/block`、`/sys` rw：App 看不到；不用为隐藏砍掉。
-- `.dsh`/rootfs.img/loop：低强度信号；用户明确不在意为名字封号；不强制 directory rootfs。
+- `DSH-CHROOT`/rootfs.img/loop：低强度信号；用户明确不在意为名字封号；不强制 directory rootfs。
 - `getenforce` 结果不稳定；只以 `/sys/fs/selinux/enforce` + 域状态为准；App 通常读不到。
 - `selinux_hide` 不 fake enforce；不要靠 permissive 做隐藏。
 
@@ -100,12 +122,12 @@ Android 本机（唯一设备）
 
 ## 5. 挂载与目录（full）
 
-- 宿主：`/data/adb/chroot/{payload,rootfs,control,state,logs,snapshots,dsh,images}`；镜像实际 `/data/media/0/.dsh/rootfs.img`。
+- 宿主：`/data/adb/chroot/{payload,rootfs,control,state,logs,snapshots,dsh,images}`；镜像实际 `/data/media/0/DSH-CHROOT/rootfs.img`。
 - chroot 内：`/proc`、`/sys`、`/dev`、`/dev/pts`、`/dev/shm`、`/run`、`/tmp`、`/data`、`/mnt`、`/data_mirror`、`/storage`、`/sdcard`、`/system` 等、`/root/.dsh`、`/opt/dsh-control`、`/opt/dsh`、`/var/log/dsh`。
 - 关键事实：
   - `/run` 本机不存在；镜像挂 **`/tmp/dsh-rootfs`**（宿主 `/tmp` 是 tmpfs），start 前 `mkdir -p`。
   - `/tmp/dsh-rootfs` 不在 `/data`/`/mnt` 下，避免 `/data` rbind 自递归。
-  - `/data` rbind 有多个别名（`/data/user/0`、`/data_mirror/...`、`/mnt/*/emulated`、`/storage/emulated`）；只遮 `.dsh` 不足以防镜像被写，但**这不是 App 隐藏问题，是稳定性问题**。
+  - `/data` rbind 有多个别名（`/data/user/0`、`/data_mirror/...`、`/mnt/*/emulated`、`/storage/emulated`）；只遮 `DSH-CHROOT` 不足以防镜像被写，但**这不是 App 隐藏问题，是稳定性问题**。
   - `/storage` 要 rbind 整个 `/storage`，不能只挂 `/storage/emulated/0`。
   - `/apex`/`/linkerconfig` 的 `remount,ro,bind` 不递归；整树 ro 需 `mount_setattr(AT_RECURSIVE)`，否则如实写“顶层只读、子挂载可能 rw”。
   - 绝不对 `/sys/fs/selinux` 做 bind/remount,ro；事故复盘见 `13`。
@@ -141,7 +163,7 @@ Android 本机（唯一设备）
 
 - 128GB 镜像冷快照 7 份 + state 7 份；stop+unmount+e2fsck 后 `cp --sparse`/GNU cp；sha256 + 原子 rename；last-good。
 - `/sdcard/DSH`：`dsh-rm` 回收站 + restic 到 PC/NAS；`/data`/`/sdcard` 其余不承诺。
-- `purge` 删除 `/data/adb/chroot` **和** `/data/media/0/.dsh`（镜像/快照），确认无 loop。
+- `purge` 删除 `/data/adb/chroot` **和** `/data/media/0/DSH-CHROOT`（镜像/快照），确认无 loop。
 - 空间不是隐藏问题；128 起步、256 可选；ext4 只能增不能减。
 - 事故教训：`selinuxfs` remount 机制未证实；所有宿主级 mount/overlay/loop 测试禁止；只在备用机/VM/private ns + trap 做。
 
@@ -201,7 +223,7 @@ Android 本机（唯一设备）
 - 5A：full chroot；宿主 agent 可选。
 - 6B：`protect-critical` ro；防砖，不影响 App 隐藏。
 - 7A：`system-rw` off。
-- 8A：128GB 镜像；`.dsh` 名字不硬隐藏；256 可选。
+- 8A：128GB 镜像；`DSH-CHROOT` 名字不硬隐藏；256 可选。
 - 13A：接受 `u:r:ksu` permissive；App 看不到。
 - 14B/15A：`/apex` 递归 ro、`/storage` 完整 rbind。
 

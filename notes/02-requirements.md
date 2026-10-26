@@ -37,7 +37,7 @@ CONFIG_NAMESPACES=y
 - S1 把 DSH 搬进 chroot 并开机自启（摆脱 Termux 常驻）
 - S2 保留 DSHA 的移动 UI / 设备控制
 - S3 发行版：Ubuntu 24.04 base（glibc，省掉 musl 补丁链；Debian 12 等价备选）
-- S4 rootfs：128GB ext4 镜像（放 `/data/media/0/.dsh`，挂 `/run/dsh-rootfs`）
+- S4 rootfs：128GB ext4 镜像（放 `/data/media/0/DSH-CHROOT`，挂 `/tmp/dsh-rootfs`）
 - S5 本机专用（不追求多机型/发布）
 - S6 可选 Web 终端（ttyd）
 

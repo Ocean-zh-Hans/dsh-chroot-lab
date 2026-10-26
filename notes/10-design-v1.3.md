@@ -86,7 +86,7 @@ L0  宿主模块    KSU module: service.sh + boot-completed.sh
 | 维度 | `daily`（默认） | `lab`（显式） | `rescue`（手动） |
 |---|---|---|---|
 | 目的 | 日常 AI/开发/apt/Go | Agent 调试、逆向、设备控制 | 修 rootfs/DSH |
-| rootfs | 目录 `/data/adb/chroot/rootfs` | ext4 镜像 `/data/media/0/.dsh/rootfs.img`，挂 `/run/dsh-rootfs` | 目录 rootfs |
+| rootfs | 目录 `/data/adb/chroot/rootfs` | ext4 镜像 `/data/media/0/DSH-CHROOT/rootfs.img`，挂 `/run/dsh-rootfs` | 目录 rootfs |
 | `/data` | **不挂** | **rbind rw**（含 `/data/user/0`） | 不挂 |
 | `/sdcard` | bind `/data/media/0/DSH` → `/sdcard/DSH`（仅工作区） | raw `/data/media/0` rw + `/storage/emulated/0` rbind rw（完整视图） | 不挂 |
 | `/mnt`/`/data_mirror` | 不挂 | rbind rw；`persist`/`qmcs` ro | 不挂 |
@@ -116,7 +116,7 @@ L0  宿主模块    KSU module: service.sh + boot-completed.sh
 ├── rootfs/                   daily/rescue 活动根（或 symlink -> versions/<id>）
 ├── versions/                 rootfs 版本（可选）
 ├── images/
-│   └── rootfs.img -> /data/media/0/.dsh/rootfs.img
+│   └── rootfs.img -> /data/media/0/DSH-CHROOT/rootfs.img
 │                              lab ext4 镜像（实际在未加密区；这里只放 symlink/元数据）
 ├── dsh/
 │   ├── versions/<v>/         DSH 运行时
@@ -206,9 +206,9 @@ L0  宿主模块    KSU module: service.sh + boot-completed.sh
 - `/metadata`
 - `/system` `/system_ext` `/product` `/vendor` `/odm` `/apex` `/linkerconfig`
 
-**lab 的 `/data` 控制面保护**：`/data` rbind 会把 `/data/adb`（control/state/rootfs/modules）和 `/data/media/0/.dsh`（rootfs.img）暴露给chroot 内；挂载 `/data` 后立即 `mount -t tmpfs tmpfs $ROOT/data/adb` 和 `mount -t tmpfs tmpfs $ROOT/data/media/0/.dsh` 隐藏它们（需要模块时再单独 ro bind `/data/adb/modules`）。这挡不住 `/proc/1/root`，但能防手滑/误删控制面。
+**lab 的 `/data` 控制面保护**：`/data` rbind 会把 `/data/adb`（control/state/rootfs/modules）和 `/data/media/0/DSH-CHROOT`（rootfs.img）暴露给chroot 内；挂载 `/data` 后立即 `mount -t tmpfs tmpfs $ROOT/data/adb` 和 `mount -t tmpfs tmpfs $ROOT/data/media/0/DSH-CHROOT` 隐藏它们（需要模块时再单独 ro bind `/data/adb/modules`）。这挡不住 `/proc/1/root`，但能防手滑/误删控制面。
 
-**lab 的 `/data` 自递归**：rootfs 是 `/data/media/0/.dsh/rootfs.img`，挂到 **`/run/dsh-rootfs`** 后再 chroot。挂载点既不在 `/data` 也不在 `/mnt` 下，所以 `/data` rbind 和 `/mnt` rbind 都不会把挂载根塞进自身。**禁止**在目录 rootfs 下直接 rbind `/data`。
+**lab 的 `/data` 自递归**：rootfs 是 `/data/media/0/DSH-CHROOT/rootfs.img`，挂到 **`/run/dsh-rootfs`** 后再 chroot。挂载点既不在 `/data` 也不在 `/mnt` 下，所以 `/data` rbind 和 `/mnt` rbind 都不会把挂载根塞进自身。**禁止**在目录 rootfs 下直接 rbind `/data`。
 
 ### 6.4 挂载顺序与传播
 
@@ -398,7 +398,7 @@ exec ttyd -i 127.0.0.1 -p 7681 -c "dsh:$(cat /run/dsh/ttyd.pass)" /bin/bash -l
 - 块设备/分区：`mkfs*`、`mke2fs`、`fdisk`、`sfdisk`、`parted`、`wipefs`、`blkdiscard`、`flash_erase`、`fastboot`、`dd` 任意 `of=/dev/`、`cat/tee/cp/mv/truncate` 写 `/dev/block`、`debugfs`、`e2fsck -y`、`tune2fs`、`resize2fs`。
 - 系统/启动：`reboot`、`poweroff`、`halt`、`svc power reboot`、`setprop sys.powerctl`、`echo b > /proc/sysrq-trigger`、`insmod`、`rmmod`、`modprobe`、`ksud`、`magisk`、`setenforce 0`、写 `/sys/fs/selinux`、写 `/proc/sysrq-trigger`。
 - 逃逸：`/proc/[0-9]+/root`、`nsenter`、`chroot /proc/...`、`mount ... /proc/.../root`、`pivot_root`、`setns`。
-- 数据：`pm clear`、`rm -rf /data`、`/data/data`、`/data/user`、`/data/system`、`/data/adb`、`/data/media/0/.dsh` / `/sdcard/.dsh`（含 rootfs.img）、`/sdcard/DCIM`、`/sdcard/Android`、`/sdcard/Download`、`/data/media/0` 根。
+- 数据：`pm clear`、`rm -rf /data`、`/data/data`、`/data/user`、`/data/system`、`/data/adb`、`/data/media/0/DSH-CHROOT` / `/sdcard/DSH-CHROOT`（含 rootfs.img）、`/sdcard/DCIM`、`/sdcard/Android`、`/sdcard/Download`、`/data/media/0` 根。
 - 包/远程代码：`apt purge`、`apt autoremove`、`dpkg --purge`、`npm publish`、`curl ... | sh`、`wget ... | bash`、`base64 -d | sh`、`eval`。
 - 权限：`chmod -R 777 /`、`chown -R` 于 `/`、`/data`、`/system`。
 
