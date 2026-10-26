@@ -19,7 +19,7 @@
 |---|---|---|
 | 镜像/控制面自引用 | `1A`：private ns 内 tmpfs 遮罩控制面/镜像及已知别名；接受 `/proc/1/root` 绕过 | 代码已实现；P2 验证 |
 | `/sys` rw + hardguard 不是边界 | `2B`：`/sys` rw；`/sys/fs/selinux` 用 private tmpfs 遮罩；承认 hardguard 不是边界 | P2 |
-| stop/namespace 竞态 | 记录 PID + starttime + PGID + ns inode；先 s6 停止，再 TERM/KILL；holder 活着时逆序 umount | P2 |
+| stop/namespace 竞态 | 记录 PID + starttime + PGID + ns inode；先 s6 停止，再只向 holder TERM（由它转发）；holder 活着时逆序 umount | P2 |
 | 快照一致性 | stop + unmount + e2fsck 后冷复制；sha256 + 原子 rename；last-good | P2/P3 |
 | 手机控制未验证 | 建立 capability matrix；UI 用宿主 agent；未验证项不写“perfect” | P4 |
 

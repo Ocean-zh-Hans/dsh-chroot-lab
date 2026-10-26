@@ -6,7 +6,7 @@
 - 通知：NotificationListenerService。
 - 剪贴板：前台/受系统限制的 API。
 - 包管理/Activity：`PackageManager`、`am` 等价固定命令。
-- 连接：`/data/local/tmp/dsh-agent.sock`（0600 root），chroot 内通过固定
+- 连接：`127.0.0.1:17321` + token 文件（App 私有目录，root 可读）；chroot 内通过固定
   JSON 命令集调用；**不暴露任意 shell**。
 
 协议草案：

@@ -177,6 +177,15 @@ dsh_start_locked() {
       DSH_LOOP="$_loop" \
       DSH_PROTECT_CRITICAL="$_protect" \
       DSH_SELINUXFS_MASK="$DSH_SELINUXFS_MASK" \
+      DSH_ROOT="$DSH_ROOT" \
+      DSH_MODULE_DIR="$DSH_MODULE_DIR" \
+      DSH_IMAGE="$DSH_IMAGE" \
+      DSH_ROOTFS_DIR="$DSH_ROOTFS_DIR" \
+      DSH_MEDIA="$DSH_MEDIA" \
+      DSH_TMP="$DSH_TMP" \
+      DSH_PROC="$DSH_PROC" \
+      DSH_SYS="$DSH_SYS" \
+      DSH_CONFIG="$DSH_CONFIG" \
       setsid "$_unshare" --mount --propagation private --uts -m "$DSH_NSINIT"
   ) >>"$_log" 2>&1 &
   _launcher=$!
@@ -195,6 +204,7 @@ dsh_start_locked() {
   _pid=$(dsh_read_line "$DSH_PID_FILE" 2>/dev/null || true)
   _st=$(dsh_read_line "$DSH_STARTTIME_FILE" 2>/dev/null || true)
   _ns=$(dsh_read_line "$DSH_NS_FILE" 2>/dev/null || true)
+  _pgid=$(dsh_proc_pgid "$_pid" 2>/dev/null || true)
   _host_ns=$(dsh_proc_ns "$$" 2>/dev/null || true)
   if [ -z "$_ns" ] || [ "$_ns" = "$_host_ns" ]; then
     if [ "${DSH_TEST_ALLOW_SAME_NS:-0}" != 1 ]; then
@@ -212,12 +222,12 @@ dsh_start_locked() {
     fi
     dsh_warn "test override: holder shares caller mount namespace"
   fi
-  dsh_state_set "state=starting" "pid=$_pid" "starttime=$_st" "ns=$_ns" "loop=$_loop" "image=$DSH_IMAGE" "version=$DSH_VERSION"
+  dsh_state_set "state=starting" "pid=$_pid" "pgid=$_pgid" "starttime=$_st" "ns=$_ns" "loop=$_loop" "image=$DSH_IMAGE" "version=$DSH_VERSION"
 
   if ! dsh_wait_file "$DSH_URL_FILE" "${DSH_START_TIMEOUT:-90}"; then
     if dsh_proc_alive "$_pid"; then
       dsh_err "DSH URL not ready; holder kept alive for diagnosis"
-      dsh_state_set "state=degraded" "note=url-timeout" "pid=$_pid" "starttime=$_st" "ns=$_ns" "loop=$_loop"
+      dsh_state_set "state=degraded" "note=url-timeout" "pid=$_pid" "pgid=$_pgid" "starttime=$_st" "ns=$_ns" "loop=$_loop"
     else
       dsh_err "holder exited before URL; detaching loop"
       dsh_loop_detach "$_loop" || true
@@ -228,7 +238,7 @@ dsh_start_locked() {
   fi
 
   _url=$(dsh_read_line "$DSH_URL_FILE" 2>/dev/null || true)
-  dsh_state_set "state=running" "pid=$_pid" "starttime=$_st" "ns=$_ns" "loop=$_loop" "image=$DSH_IMAGE" "url=$_url" "started=$(dsh_timestamp)" "version=$DSH_VERSION"
+  dsh_state_set "state=running" "pid=$_pid" "pgid=$_pgid" "starttime=$_st" "ns=$_ns" "loop=$_loop" "image=$DSH_IMAGE" "url=$_url" "started=$(dsh_timestamp)" "version=$DSH_VERSION"
   printf '%s\n' "1" >"$DSH_CTL_DIR/autostart" 2>/dev/null || true
   printf '%s\n' "$DSH_IMAGE" >"$DSH_LAST_GOOD_FILE" 2>/dev/null || true
   printf '0\n' >"$DSH_CTL_DIR/boot-fails" 2>/dev/null || true
@@ -444,6 +454,10 @@ dsh_rescue() {
   printf 'rescue: rootfs is read-only; no /data/storage; exit bash to clean up\n' >&2
   (
     DSH_RESCUE=1 DSH_APPLY=1 DSH_LOOP="$_loop" \
+      DSH_ROOT="$DSH_ROOT" DSH_MODULE_DIR="$DSH_MODULE_DIR" \
+      DSH_IMAGE="$DSH_IMAGE" DSH_ROOTFS_DIR="$DSH_ROOTFS_DIR" \
+      DSH_MEDIA="$DSH_MEDIA" DSH_TMP="$DSH_TMP" \
+      DSH_PROC="$DSH_PROC" DSH_SYS="$DSH_SYS" DSH_CONFIG="$DSH_CONFIG" \
       "$_unshare" --mount --propagation private --uts -m "$DSH_NSINIT"
   )
   _rc=$?
