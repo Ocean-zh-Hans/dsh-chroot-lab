@@ -17,7 +17,7 @@ assert_contains "$out" "14B recursive ro /apex"
 assert_contains "$out" "15A full /storage"
 assert_contains "$out" "/sys/fs/selinux       private tmpfs mask"
 assert_contains "$out" "Masks are integrity guards, not a security boundary"
-assert_contains "$out" "P1 apply disabled"
+assert_contains "$out" "Apply is explicit"
 
 out=$(DSH_IMAGE_SIZE_GB=128 "$DSH_CTL" plan --check 2>&1) || {
   printf '%s\n' "$out"

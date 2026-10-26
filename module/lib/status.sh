@@ -30,6 +30,9 @@ dsh_status_run() {
   _recorded_ns=$(dsh_read_line "$DSH_NS_FILE" 2>/dev/null || true)
   _loop=$(dsh_read_line "$DSH_LOOP_FILE" 2>/dev/null || true)
   _last_good=$(dsh_read_line "$DSH_LAST_GOOD_FILE" 2>/dev/null || true)
+  _url=$(dsh_read_line "$DSH_URL_FILE" 2>/dev/null || true)
+  [ -n "$_url" ] || _url=$(dsh_status_file_value url 2>/dev/null || true)
+  _started=$(dsh_status_file_value started 2>/dev/null || true)
 
   _pid_valid=0
   _actual_st=''
@@ -71,6 +74,8 @@ dsh_status_run() {
     printf '"loop":"%s",' "$(dsh_json_escape "$_loop")"
     printf '"image":"%s",' "$(dsh_json_escape "$DSH_IMAGE")"
     printf '"image_present":%s,' "$([ "$_image_present" -eq 1 ] && printf true || printf false)"
+    printf '"url":"%s",' "$(dsh_json_escape "$_url")"
+    printf '"started":"%s",' "$(dsh_json_escape "$_started")"
     printf '"last_good":"%s"' "$(dsh_json_escape "$_last_good")"
     printf '}\n'
     return 0
@@ -90,6 +95,8 @@ dsh_status_run() {
   fi
   printf 'loop         : %s\n' "${_loop:-none}"
   printf 'image        : %s (%s)\n' "$DSH_IMAGE" "$([ "$_image_present" -eq 1 ] && printf present || printf missing)"
+  printf 'url          : %s\n' "${_url:-none}"
+  printf 'started      : %s\n' "${_started:-none}"
   printf 'last-good    : %s\n' "${_last_good:-none}"
   [ -n "$_status_note" ] && printf 'note         : %s\n' "$_status_note"
   return 0

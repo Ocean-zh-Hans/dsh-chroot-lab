@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DSH Agent</string>
+    <string name="service_desc">Optional DSH host bridge: UI tree, notifications, clipboard and fixed package/activity actions. Enable only if you want these capabilities.</string>
+</resources>

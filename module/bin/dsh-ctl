@@ -1,11 +1,11 @@
 #!/system/bin/sh
 # shellcheck shell=sh disable=SC3043
-# dsh-ctl — P1 static controller.
+# dsh-ctl — module controller (doctor/plan/status + lifecycle).
 # Safety: doctor/plan/status are read-only. No mount/loop/unshare/chroot here.
 
 set -u
 
-DSH_VERSION=${DSH_VERSION:-0.1.0}
+DSH_VERSION=${DSH_VERSION:-0.2.0}
 DSH_PROG=dsh-ctl
 
 _self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || {
@@ -15,7 +15,7 @@ _self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || {
 DSH_MODULE_DIR=${DSH_MODULE_DIR:-$(CDPATH='' cd -- "$_self_dir/.." && pwd)}
 LIB_DIR=$DSH_MODULE_DIR/lib
 
-for _lib in common.sh config.sh log.sh proc.sh doctor.sh plan.sh status.sh; do
+for _lib in common.sh config.sh log.sh proc.sh state.sh lock.sh loop.sh mount.sh doctor.sh plan.sh status.sh lifecycle.sh snapshot.sh systemrw.sh guard.sh image.sh; do
   if [ ! -r "$LIB_DIR/$_lib" ]; then
     printf 'dsh-ctl: missing library: %s\n' "$LIB_DIR/$_lib" >&2
     exit 2
@@ -30,27 +30,38 @@ dsh_usage() {
   cat <<'EOF'
 Usage: dsh-ctl <command> [options]
 
-P1 read-only commands:
-  doctor [--for-apply]   read-only environment checks
+Read-only:
+  doctor [--for-apply]   environment checks
   plan [--check]         print mount/lifecycle plan; never executes
-  status [--json]        read-only holder/status check
-  config                 print resolved paths/knobs
+  status [--json]        holder/status check
+  config                 resolved paths/knobs
 
-Other commands are placeholders in P1:
-  start stop restart diag log snapshot restore guard system-rw rescue purge fixperm
+Lifecycle (apply is explicit):
+  start --apply [--protect-critical=off] [--permissive]
+  stop | restart | boot | diag | log [n] | fixperm
+
+Data:
+  image create --source DIR [--size 128G] --apply
+  snapshot [create [name] | list | restore <name>]
+  restore <name> | purge --yes [--keep-image]
+
+Optional:
+  system-rw status|on|off [partition] [--apply]
+  guard status|on|off
+  rescue --apply
 
 Exit codes:
   0 success
   2 usage error
-  3 not implemented in P1
-  4 doctor/apply-readiness failed
+  3 explicit --apply missing
+  4 doctor/apply-readiness or lifecycle failure
 EOF
 }
 
 dsh_not_implemented() {
   _cmd=$1
   shift || true
-  printf '%s: command "%s" is not implemented in P1; no system changes were made.\n' "$DSH_PROG" "$_cmd" >&2
+  printf '%s: command "%s" is not implemented in this build; no system changes were made.\n' "$DSH_PROG" "$_cmd" >&2
   printf 'Use "dsh-ctl plan" to inspect the design; apply belongs to P2.\n' >&2
   return 3
 }
@@ -80,8 +91,64 @@ config)
   dsh_config_check_paths || exit 2
   dsh_config_dump
   ;;
-start | stop | restart | diag | log | snapshot | restore | guard | system-rw | rescue | purge | fixperm | boot)
-  dsh_not_implemented "$_cmd" "$@"
+start)
+  dsh_start "$@"
+  ;;
+stop)
+  dsh_stop
+  ;;
+restart)
+  dsh_restart "$@"
+  ;;
+boot)
+  dsh_boot
+  ;;
+diag)
+  dsh_diag
+  ;;
+log | logs)
+  dsh_logs "$@"
+  ;;
+fixperm)
+  dsh_fixperm
+  ;;
+image)
+  _sub=${1:-create}
+  if [ "$#" -gt 0 ]; then shift; fi
+  case $_sub in
+  create) dsh_image_create "$@" ;;
+  -h | --help) printf 'Usage: dsh-ctl image create --source DIR [--size 128G] --apply\n' ;;
+  *)
+    dsh_err "unknown image operation: $_sub"
+    exit 2
+    ;;
+  esac
+  ;;
+snapshot)
+  _sub=${1:-create}
+  if [ "$#" -gt 0 ]; then shift; fi
+  case $_sub in
+  create) dsh_snapshot_create "$@" ;;
+  list) dsh_snapshot_list ;;
+  restore) dsh_snapshot_restore "$@" ;;
+  -h | --help) printf 'Usage: dsh-ctl snapshot [create [name]|list|restore <name>]\n' ;;
+  *) dsh_snapshot_create "$_sub" "$@" ;;
+  esac
+  ;;
+restore)
+  dsh_snapshot_restore "$@"
+  ;;
+purge)
+  dsh_purge "$@"
+  ;;
+system-rw)
+  dsh_system_rw "$@"
+  ;;
+guard)
+  dsh_guard "$@"
+  ;;
+rescue)
+  dsh_rescue "$@"
   ;;
 *)
   printf '%s: unknown command: %s\n' "$DSH_PROG" "$_cmd" >&2

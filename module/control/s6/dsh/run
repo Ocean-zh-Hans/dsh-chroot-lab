@@ -11,9 +11,4 @@ export TERM=xterm-256color
 
 cd /sdcard/DSH/workspace 2>/dev/null || cd /root || exit 1
 
-if [ ! -x /opt/dsh/current/bin/dsh ]; then
-  echo "dsh-run: /opt/dsh/current/bin/dsh missing; install DSH in the rootfs"
-  exit 1
-fi
-
-exec /opt/dsh/current/bin/dsh web --host 127.0.0.1 --port 0 --no-open
+exec /opt/dsh-control/bin/dsh-run

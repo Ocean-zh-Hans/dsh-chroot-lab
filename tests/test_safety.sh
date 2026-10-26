@@ -28,7 +28,7 @@ assert_eq "$rc" 3
 [ ! -e "$marker" ] || fail "P1 dsh-nsinit called mount"
 
 hooks="$MODULE/control/hooks/hooks.json"
-grep -q '"hooks"[[:space:]]*:[[:space:]]*{}' "$hooks" || fail "P1 hooks must be inert"
-! grep -q 'PreToolUse' "$hooks" || fail "P1 hooks must not install a permissive pre-hook"
+grep -q 'PreToolUse' "$hooks" || fail "PreToolUse hook missing"
+grep -q 'hardguard' "$MODULE/control/hooks/pretool.sh" || fail "hardguard missing"
 
 printf 'test_safety: ok\n'

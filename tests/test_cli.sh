@@ -8,11 +8,11 @@ fixture_module "$case_dir/module"
 fixture_env "$case_dir"
 
 out=$("$DSH_CTL" version)
-assert_contains "$out" "dsh-ctl 0.1.0"
+assert_contains "$out" "dsh-ctl 0.2.0"
 
 out=$("$DSH_CTL" help)
 assert_contains "$out" "doctor [--for-apply]"
-assert_contains "$out" "not implemented in P1"
+assert_contains "$out" "rescue --apply"
 
 # Placeholder commands must report rc=3 and explicitly say no system changes.
 set +e
@@ -20,8 +20,15 @@ out=$("$DSH_CTL" start 2>&1)
 rc=$?
 set -e
 assert_eq "$rc" 3
-assert_contains "$out" "no system changes"
-assert_contains "$out" "not implemented in P1"
+assert_contains "$out" "requires the explicit --apply flag"
+assert_contains "$out" "DRY RUN ONLY"
+
+set +e
+out=$("$DSH_CTL" rescue 2>&1)
+rc=$?
+set -e
+assert_eq "$rc" 3
+assert_contains "$out" "requires the explicit --apply flag"
 
 set +e
 out=$("$DSH_CTL" definitely-not-a-command 2>&1)

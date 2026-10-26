@@ -4,6 +4,7 @@
 
 - P0：设计定稿、决策锁定、旧文档归档 — **完成**
 - P1：静态 module 骨架 + `dsh-ctl doctor/plan/status` — **完成（2026-10-26）**
+- P2/P3：mount holder、lifecycle、snapshot、system-rw、guard、rescue、DSH runner、bake 脚本 — **代码实现，待外部验证**
 - P2：备用机/VM 的 mount/ns/stop/loop 验证 — 未开始
 - **主力机 apply：未开始，且 P2 前禁止**
 
@@ -23,28 +24,28 @@
 - 归档旧设计/旧决策单/旧研究，建立当前单一事实源。
 - 修正 P0：两段式 holder、nsenter+chroot、PID/starttime/ns inode、`/storage` 完整、`/apex` 递归 ro、critical ro、selinuxfs tmpfs、工具链、`--apply` 门。
 
-## 2. P1：静态骨架（已完成）
+## 2. P1/P2/P3：静态骨架与运行时（代码完成）
 
-范围：
+当前代码范围：
 
-- `module/` 模块骨架、`module.prop`、安装/开机/卸载/action 脚本；
-- `module/bin/dsh-ctl`：`doctor/plan/status`；
-- `module/bin/dsh-nsinit`、`dsh-watchdog`：占位/拒绝 apply；
-- `module/lib/*`：配置、路径、日志、进程校验、doctor、plan、status；
-- `module/control/*`：s6 定义、Android 环境、hook 占位；
-- `build/build-module.sh`：构建 skeleton zip；
-- `build/check.sh`：shellcheck/shfmt/sh -n；
-- `tests/*`：纯本地、无系统修改。
+- `module/`：模块元数据、安装/开机/卸载/action；
+- `dsh-ctl`：`doctor/plan/status`、`start --apply/stop/restart/boot/diag/log`、
+  `snapshot create/list/restore`、`restore`、`purge`、`system-rw`、`guard`、`rescue`；
+- `dsh-nsinit`：private namespace holder，挂载镜像/Android 视图/控制面/遮罩，
+  fork/exec s6 子进程并等待；
+- `dsh-watchdog`：identity/SELinux 检查；
+- `control/bin/dsh-run`：DSH URL 发现；
+- `control/hooks`：hardguard + 可选 deny/ask；
+- `bake/`：host/VM 上的 Ubuntu rootfs 与 ext4 镜像脚本；
+- `tests/`：mock 外部命令，**不执行真实 mount/loop/unshare/chroot**。
 
-明确不做：
+本地测试边界：
 
-- 不调用 `mount`/`umount`/`losetup`/`unshare`/`chroot`；
-- 不写 `/data`；
-- 不读 `/proc/*/root` 做破坏性操作；
-- 不安装到模块目录；
-- 不在手机上跑 apply。
+- 所有危险命令在测试里都是 fake；
+- `start` 的 mock 测试只验证状态机/挂载调用序列，不证明内核挂载成功；
+- 真实 apply 只在 P2 备用机/VM 做。
 
-## 3. P2：隔离环境验证（未开始）
+## 3. P2：隔离环境验证（代码已备，未执行）
 
 前置：
 
@@ -59,7 +60,7 @@
 2. 128GB 镜像 mount/e2fsck；
 3. full 挂载表逐项；
 4. `dsh-nsinit` 两段式；
-5. `nsenter --mount=fd` + chroot；
+5. `nsenter --mount=/proc/PID/ns/mnt` + chroot；
 6. stop 20 次零残留；
 7. loop 真正 detach；
 8. `/apex` 递归 ro；
@@ -68,7 +69,7 @@
 
 **零残留定义**：没有同 ns inode 进程、没有 `dsh-rootfs` 挂载、没有 holder、没有测试 loop、没有 `/tmp/dsh-rootfs` 残留。
 
-## 4. P3：DSH 运行时（未开始）
+## 4. P3：DSH 运行时（代码已备，未验证）
 
 - Node 24 / node-pty / DSH web；
 - s6-svscan / dsh-run / URL；
@@ -77,7 +78,7 @@
 - approval-free + hooks 自检；
 - 开机自启、watchdog、last-good。
 
-## 5. P4：手机控制（未开始）
+## 5. P4：手机控制（最小 agent 源码/构建，未真机验证）
 
 - full Android CLI 能力矩阵；
 - 写操作负例；
@@ -86,7 +87,7 @@
 - `uiautomator runtest`；
 - 不在 P4 前写“perfect”。
 
-## 6. P5：打包/迁移/检测（未开始）
+## 6. P5：打包/迁移/检测（脚本已备，硬件验证未开始）
 
 - 正式模块 zip + payload；
 - 安装/卸载/重启自愈；

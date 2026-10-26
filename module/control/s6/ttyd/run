@@ -5,7 +5,7 @@
 exec >/var/log/dsh/ttyd.log 2>&1
 
 export HOME=/root
-export PATH=/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH=/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin:/system/xbin:/vendor/bin:/product/bin:/system_ext/bin:/odm/bin
 export TMPDIR=/tmp
 export LANG=C.UTF-8
 

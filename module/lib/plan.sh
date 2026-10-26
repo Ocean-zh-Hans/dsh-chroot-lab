@@ -78,9 +78,9 @@ dsh_plan_run() {
 1. mkdir atomic lock; doctor --for-apply; mkdir -p rootfs mountpoint
 2. e2fsck -p image; verify no second loop for the same backing file
 3. util-linux losetup --sector-size 4096 --direct-io=off
-4. setsid busybox unshare --mount --propagation private --uts -m dsh-nsinit
-5. dsh-nsinit: host mounts -> chroot -> exec s6-svscan (holder stays alive)
-6. record launcher pid, PGID, starttime, /proc/PID/ns/mnt
+4. setsid unshare --mount --propagation private --uts -m dsh-nsinit
+5. dsh-nsinit: host mounts -> chroot -> fork/exec s6-svscan child; holder waits
+6. record holder pid, PGID, starttime, /proc/PID/ns/mnt
 7. wait for URL/ready; on failure keep holder for reverse cleanup
 EOF
   printf '\n'
@@ -147,8 +147,8 @@ EOF
   printf '\n'
 
   printf '== Safety gate ==\n'
-  printf 'P1 apply disabled. P2 requires spare device/VM + trap cleanup + zero residue.\n'
-  printf 'Do not run any command above on the primary device yet.\n'
+  printf 'Apply is explicit (start --apply) and remains unverified until P2 spare-device/VM testing.\n'
+  printf 'Do not run the mount sequence on the primary device until P2 is signed off.\n'
   return 0
 }
 

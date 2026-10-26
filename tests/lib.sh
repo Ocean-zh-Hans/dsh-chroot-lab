@@ -6,7 +6,7 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 MODULE="$ROOT/module"
 DSH_CTL="$MODULE/bin/dsh-ctl"
 TMPBASE=$(mktemp -d "${TMPDIR:-/tmp}/dsh-tests.XXXXXX")
-trap 'rm -rf "$TMPBASE"' EXIT
+trap '[ "${DSH_TEST_KEEP:-0}" = 1 ] || rm -rf "$TMPBASE"' EXIT
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -19,8 +19,8 @@ assert_eq() {
 
 assert_contains() {
   case "$1" in
-    *"$2"*) ;;
-    *) fail "expected output to contain [$2], got:\n$1" ;;
+  *"$2"*) ;;
+  *) fail "expected output to contain [$2], got:\n$1" ;;
   esac
 }
 
@@ -40,6 +40,22 @@ exit 0
 EOF
     chmod 0755 "$_bin/$_c"
   done
+  cat >"$_bin/nsenter" <<'EOF'
+#!/bin/sh
+case "${1:-}" in
+  --help) printf '%s\n' '--mount' ;;
+esac
+exit 0
+EOF
+  cat >"$_bin/unshare" <<'EOF'
+#!/bin/sh
+case "${1:-}" in
+  --help) printf '%s\n' '--mount --propagation'; exit 0 ;;
+esac
+last=
+for arg in "$@"; do last=$arg; done
+exec "$last"
+EOF
   cat >"$_bin/losetup" <<'EOF'
 #!/bin/sh
 case "${1:-}" in
@@ -47,7 +63,7 @@ case "${1:-}" in
 esac
 exit 0
 EOF
-  chmod 0755 "$_bin/losetup"
+  chmod 0755 "$_bin/nsenter" "$_bin/unshare" "$_bin/losetup"
 }
 
 fixture_module() {

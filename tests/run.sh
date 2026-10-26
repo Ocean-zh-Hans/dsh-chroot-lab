@@ -11,6 +11,11 @@ tests=(
   "$ROOT/tests/test_doctor.sh"
   "$ROOT/tests/test_status.sh"
   "$ROOT/tests/test_safety.sh"
+  "$ROOT/tests/test_lifecycle.sh"
+  "$ROOT/tests/test_snapshot.sh"
+  "$ROOT/tests/test_guard.sh"
+  "$ROOT/tests/test_image.sh"
+  "$ROOT/tests/test_dsh_run.sh"
 )
 
 for t in "${tests[@]}"; do

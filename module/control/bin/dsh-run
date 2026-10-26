@@ -1,0 +1,57 @@
+#!/bin/sh
+# shellcheck shell=sh disable=SC2329
+# DSH web runner with URL discovery. Foreground process; s6 supervises it.
+# DSH prints: "dsh web: http://127.0.0.1:PORT/?token=..." with --no-open.
+
+set -u
+
+DSH_BIN=${DSH_BIN:-/opt/dsh/current/bin/dsh}
+DSH_WEB_PORT=${DSH_WEB_PORT:-0}
+LOG=${DSH_WEB_LOG:-/var/log/dsh/dsh.log}
+URL=${DSH_WEB_URL_FILE:-/run/dsh/url}
+URL_TMP=$URL.tmp.$$
+
+mkdir -p "$(dirname "$LOG")" "$(dirname "$URL")" 2>/dev/null || true
+: >"$URL" 2>/dev/null || true
+
+if [ ! -x "$DSH_BIN" ]; then
+  echo "dsh-run: missing executable: $DSH_BIN" >&2
+  exit 1
+fi
+
+"$DSH_BIN" web --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open >"$LOG" 2>&1 &
+CHILD=$!
+
+(
+  _i=0
+  while [ "$_i" -lt 240 ]; do
+    if grep -q '^dsh web: ' "$LOG" 2>/dev/null; then
+      _url=$(sed -n 's/^dsh web: \(http[^ ]*\).*/\1/p' "$LOG" | tail -n 1)
+      if [ -n "$_url" ]; then
+        printf '%s\n' "$_url" >"$URL_TMP" && mv -f "$URL_TMP" "$URL"
+        exit 0
+      fi
+    fi
+    kill -0 "$CHILD" 2>/dev/null || exit 1
+    sleep 1
+    _i=$((_i + 1))
+  done
+  exit 1
+) &
+WATCHER=$!
+
+dsh_run_term() {
+  trap - TERM INT
+  kill -TERM "$CHILD" 2>/dev/null || true
+  kill "$WATCHER" 2>/dev/null || true
+  wait "$CHILD" 2>/dev/null || true
+  rm -f "$URL" "$URL_TMP"
+  exit 143
+}
+trap dsh_run_term TERM INT
+
+wait "$CHILD"
+RC=$?
+kill "$WATCHER" 2>/dev/null || true
+rm -f "$URL" "$URL_TMP"
+exit "$RC"

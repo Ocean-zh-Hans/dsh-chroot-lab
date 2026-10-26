@@ -1,23 +1,90 @@
 #!/system/bin/sh
-# shellcheck shell=sh disable=SC3043
-# Host watchdog — P1 stub.
-# Future: 30s holder/starttime/ns inode check; SELinux enforce assertion;
-# loop/backing-file check; reversible cleanup. Never restart blindly.
+# shellcheck shell=sh disable=SC3043,SC2329
+# Host watchdog: read-only identity checks + SELinux restoration.
+# It never mounts/unmounts; dsh_stop owns mount cleanup through the holder.
 
 set -u
 
-DSH_ROOT=${DSH_ROOT:-/data/adb/chroot}
+DSH_VERSION=${DSH_VERSION:-0.2.0}
 _self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 2
-DSH_CTL=${DSH_CTL:-$_self_dir/dsh-ctl}
+DSH_MODULE_DIR=${DSH_MODULE_DIR:-$(CDPATH='' cd -- "$_self_dir/.." && pwd)}
+LIB_DIR=$DSH_MODULE_DIR/lib
 
-if [ "${1:-}" = "--status" ]; then
-  if [ -x "$DSH_CTL" ]; then
-    exec "$DSH_CTL" status
+for _lib in common.sh config.sh log.sh proc.sh state.sh lifecycle.sh; do
+  [ -r "$LIB_DIR/$_lib" ] || {
+    printf 'dsh-watchdog: missing library: %s\n' "$LIB_DIR/$_lib" >&2
+    exit 2
+  }
+  # shellcheck disable=SC1090
+  . "$LIB_DIR/$_lib"
+done
+
+dsh_config_init
+DSH_CTL=$DSH_MODULE_DIR/bin/dsh-ctl
+
+dsh_watchdog_once() {
+  _state=$(dsh_state_get state 2>/dev/null || true)
+  case $_state in
+  running | stopping | degraded) ;;
+  *)
+    return 0
+    ;;
+  esac
+
+  _pid=$(dsh_read_line "$DSH_PID_FILE" 2>/dev/null || true)
+  _st=$(dsh_read_line "$DSH_STARTTIME_FILE" 2>/dev/null || true)
+  _ns=$(dsh_read_line "$DSH_NS_FILE" 2>/dev/null || true)
+
+  if ! dsh_is_uint "$_pid" || ! dsh_proc_alive "$_pid"; then
+    dsh_warn "watchdog: holder is not alive (state=$_state pid=${_pid:-none})"
+    dsh_selinux_restore || true
+    DSH_APPLY=0 "$DSH_CTL" stop >/dev/null 2>&1 || true
+    return 1
   fi
-  printf 'dsh-watchdog: dsh-ctl not found: %s\n' "$DSH_CTL" >&2
-  exit 2
-fi
+  if ! dsh_proc_validate_identity "$_pid" "$_st" "$_ns"; then
+    dsh_err "watchdog: holder identity mismatch (pid $_pid); refusing to kill"
+    dsh_state_set state=stale note=watchdog-identity-mismatch
+    return 1
+  fi
 
-printf 'dsh-watchdog: P1 stub; no monitoring/restart performed (root=%s).\n' "$DSH_ROOT" >&2
-printf 'Use "dsh-watchdog --status" for a read-only status projection.\n' >&2
-exit 3
+  _enforce=$(dsh_read_line "$DSH_SYS/fs/selinux/enforce" 2>/dev/null || true)
+  if [ "$_enforce" != 1 ]; then
+    dsh_err "watchdog: global SELinux enforce=${_enforce:-unreadable}"
+    dsh_selinux_restore || true
+    return 1
+  fi
+  return 0
+}
+
+dsh_watchdog_daemon() {
+  trap 'exit 0' TERM INT
+  while :; do
+    dsh_watchdog_once || true
+    sleep "${DSH_WATCHDOG_INTERVAL:-30}"
+  done
+}
+
+case ${1:-} in
+--once)
+  dsh_watchdog_once
+  ;;
+--daemon)
+  dsh_watchdog_daemon
+  ;;
+--status)
+  exec "$DSH_CTL" status
+  ;;
+-h | --help)
+  cat <<'EOF'
+Usage: dsh-watchdog --once | --daemon | --status
+
+--once      check holder identity and SELinux enforce; safe cleanup if stale
+--daemon    run the check every DSH_WATCHDOG_INTERVAL seconds (default 30)
+--status    delegate to dsh-ctl status
+EOF
+  ;;
+*)
+  printf 'dsh-watchdog: unknown option: %s\n' "${1:-}" >&2
+  exit 2
+  ;;
+esac

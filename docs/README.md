@@ -1,8 +1,8 @@
 # DSH Ubuntu Chroot — 文档入口
 
-- 状态：**P1 静态骨架已完成**（2026-10-26）；apply 未实现
+- 状态：**P1 静态骨架 + P2/P3/P4 代码已实现**（2026-10-26）；外部验证未完成
 - 目标设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
-- 当前代码：模块骨架 + `dsh-ctl doctor/plan/status`；**没有 apply/mount 实现**
+- 当前代码：模块骨架 + `dsh-ctl doctor/plan/status/start/stop/snapshot/...`；**apply 需显式 `--apply`，尚未在主力机执行**
 - 当前设计：`design-v1.5.md`
 - 当前决策：`decisions.md`（已锁定）
 
@@ -33,8 +33,10 @@
 | [hiddenness.md](hiddenness.md) | 应用层隐藏性：App 能看到/看不到什么 |
 | [verification.md](verification.md) | 本机已验证、未验证、能力矩阵 |
 | [incident.md](incident.md) | 2026-10-26 系统崩溃复盘与禁止事项 |
-| [roadmap.md](roadmap.md) | P0–P5 阶段与当前 P1 范围 |
+| [roadmap.md](roadmap.md) | P0–P5 阶段、代码与验证状态 |
 | [packaging.md](packaging.md) | 模块 zip、payload、工具链、构建门禁 |
+| [../agent/README.md](../agent/README.md) | 宿主 thin agent 协议草案（P4） |
+| [../agent-app/README.md](../agent-app/README.md) | 最小宿主 agent App（可选，未真机验证） |
 | [archive/README.md](archive/README.md) | 旧笔记归档说明；旧文档不再有当前效力 |
 
 ## 2. 一页事实表
@@ -57,16 +59,16 @@
 
 ## 3. 当前阶段边界
 
-P1 **只允许**：
+P1/P2 静态与代码边界：
 
 - 读取系统状态（`doctor`）；
 - 打印挂载/生命周期计划（`plan`）；
 - 读取状态文件并校验 PID/starttime/ns inode（`status`）；
-- 静态模块骨架和构建/检查脚本。
+- 模块代码/构建/本地 mock 测试。
 
-P1 **禁止**：
+仍然禁止：
 
-- 执行任何 `mount`、`umount`、`losetup`、`unshare`、`chroot`、overlay、debugfs/tracefs 试验；
+- 在主力机执行任何 `mount`、`umount`、`losetup`、`unshare`、`chroot`、overlay、debugfs/tracefs 试验；
 - 改宿主 SELinux、全局 prop、全局 mount namespace；
 - 在主力机上做 apply/mount/loop 测试；
 - 把 `plan` 的输出说成“已经可用”。

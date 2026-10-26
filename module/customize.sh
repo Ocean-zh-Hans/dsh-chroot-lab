@@ -7,7 +7,7 @@ set -u
 
 MODPATH=${MODPATH:-$(dirname -- "$0")}
 CHROOT_HOME=${DSH_ROOT:-/data/adb/chroot}
-MODULE_VERSION=${MODULE_VERSION:-0.1.0}
+MODULE_VERSION=${MODULE_VERSION:-0.2.0}
 
 ui_print() { printf '%s\n' "$*"; }
 abort() {
@@ -45,6 +45,10 @@ for _f in "$CHROOT_HOME"/control/s6/*/run "$CHROOT_HOME"/control/s6/*/finish; do
   [ -e "$_f" ] || continue
   chmod 0755 "$_f" 2>/dev/null || true
 done
+for _f in "$CHROOT_HOME"/control/bin/*; do
+  [ -e "$_f" ] || continue
+  chmod 0755 "$_f" 2>/dev/null || true
+done
 for _f in "$CHROOT_HOME"/control/hooks/*.sh; do
   [ -e "$_f" ] || continue
   chmod 0755 "$_f" 2>/dev/null || true
@@ -55,5 +59,5 @@ chmod 0700 "$CHROOT_HOME" "$CHROOT_HOME/control" "$CHROOT_HOME/state" 2>/dev/nul
 printf '%s\n' "$MODULE_VERSION" >"$CHROOT_HOME/state/ctl/install-version" || abort "cannot write install marker"
 
 ui_print "- DSH Ubuntu Chroot skeleton installed"
-ui_print "- P1: apply/start is disabled; no mount or chroot was performed"
+ui_print "- install only; apply/start is a separate explicit step"
 ui_print "- Next: dsh-ctl doctor; dsh-ctl plan"

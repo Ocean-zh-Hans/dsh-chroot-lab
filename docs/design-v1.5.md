@@ -1,7 +1,7 @@
 # 设计 v1.5（当前唯一技术设计）
 
 - 日期：2026-10-26
-- 状态：**设计定稿；P1 静态骨架已完成；apply 未实现**
+- 状态：**设计定稿；P1 静态骨架 + P2/P3/P4 代码已实现；外部验证未完成**
 - 取代：v1.4、v1.3、v1.0；旧设计全部归档，不再有当前效力
 - 决策依据：`decisions.md`（`1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`）
 
@@ -17,7 +17,7 @@
 
 | P0 | 设计处理 | 代码状态 |
 |---|---|---|
-| 镜像/控制面自引用 | `1A`：private ns 内 tmpfs 遮罩控制面/镜像及已知别名；接受 `/proc/1/root` 绕过 | P2 实现；P1 只打印计划 |
+| 镜像/控制面自引用 | `1A`：private ns 内 tmpfs 遮罩控制面/镜像及已知别名；接受 `/proc/1/root` 绕过 | 代码已实现；P2 验证 |
 | `/sys` rw + hardguard 不是边界 | `2B`：`/sys` rw；`/sys/fs/selinux` 用 private tmpfs 遮罩；承认 hardguard 不是边界 | P2 |
 | stop/namespace 竞态 | 记录 PID + starttime + PGID + ns inode；先 s6 停止，再 TERM/KILL；holder 活着时逆序 umount | P2 |
 | 快照一致性 | stop + unmount + e2fsck 后冷复制；sha256 + 原子 rename；last-good | P2/P3 |
@@ -67,7 +67,7 @@ L1 chroot    ext4 128GB image + full mount set + chroot
              /data /mnt /data_mirror /storage /sdcard /dev /sys /proc
              Android partitions + debugfs/tracefs + Android wrappers
 L0 宿主      KSU module: service.sh / boot-completed.sh / uninstall.sh
-             dsh-ctl: doctor/plan/status/start/stop/... (P1 only first 3)
+             dsh-ctl: doctor/plan/status/start/stop/...
 ```
 
 原则：
@@ -123,8 +123,8 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 
 ### 5.1 顺序
 
-1. `busybox unshare --mount --propagation private --uts -m`（不 `--ipc`；IPC_NS 未编译）。
-2. `busybox mount --make-rprivate /`。
+1. `unshare --mount --propagation private --uts -m`（util-linux，模块自带；不 `--ipc`；IPC_NS 未编译）。
+2. `mount --make-rprivate /`。
 3. `mount -t ext4` 镜像到 `/tmp/dsh-rootfs`。
 4. 在 `$ROOT` 下先 `mkdir -p` 所有挂载点，再挂载：`/proc`、`/sys`、`/dev`、`/dev/pts`、`/dev/shm`、`/run`、`/tmp`。
 5. Android 视图：`/data`、`/mnt`、`/data_mirror`、`/storage`、`/sdcard`、`/system`、`/system_ext`、`/product`、`/vendor`、`/odm`、`/apex`、`/linkerconfig`。
@@ -146,7 +146,7 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 | `/dev/shm` | tmpfs | `size=1g,mode=1777` | Chromium/Playwright |
 | `/run` | tmpfs | `size=1g,mode=755` | s6/运行时 |
 | `/tmp` | tmpfs | `size=4g,mode=1777` | TMPDIR |
-| `/opt/dsh` | `$CHROOT_HOME/dsh` | bind ro | DSH 运行时 |
+| `/opt/dsh` | `$CHROOT_HOME/dsh` | bind ro（host runtime 非空时） | DSH 运行时；空则用 rootfs 内烘焙版本 |
 | `/opt/dsh-control` | `$CHROOT_HOME/control` | bind ro | hooks/s6/bin |
 | `/root/.dsh` | `$CHROOT_HOME/state/dsh-home` | bind rw | DSH home |
 | `/run/dsh` | `$CHROOT_HOME/state/guest` | bind rw | URL/ready/pid |
@@ -255,7 +255,7 @@ dsh-ctl start [--protect-critical=off] [--permissive]
   3. mkdir -p /tmp/dsh-rootfs && chmod 700
   4. e2fsck -p image；检查同一 backing file 无第二个 loop
   5. losetup --sector-size 4096 --direct-io=off；记录 loopdev
-  6. setsid busybox unshare --mount --propagation private --uts -m \
+  6. setsid unshare --mount --propagation private --uts -m \
        /data/adb/chroot/bin/dsh-nsinit >logs/nsinit.log 2>&1 &
        # setsid 可能 fork；不要依赖 shell 的 $! 当 holder PID
   7. dsh-nsinit（两段式，holder 不 exec 掉自己）：
@@ -282,13 +282,14 @@ dsh-ctl start [--protect-critical=off] [--permissive]
 dsh-ctl stop
   1. 加锁
   2. 读 PID/starttime/ns inode；不一致按 stale 处理
-  3. 打开 /proc/PID/ns/mnt 的 fd（固定 namespace）
-  4. nsenter --mount=/proc/self/fd/N chroot /tmp/dsh-rootfs /bin/sh -c 'sync; sync'
+  3. 重新校验 PID/starttime/ns inode；用 nsenter --mount=/proc/PID/ns/mnt 进入
+     （不在 shell 里 exec fd：mksh 的 special builtin 重定向失败会退出；nsenter 自己打开路径）
+  4. nsenter ... chroot /tmp/dsh-rootfs /bin/sh -c 'sync; sync'
   5. s6-svc -d dsh/ttyd；s6-svwait -d -t 10000
-  6. 超时：s6-svc -k；PGID TERM；等 5–10s；仍不退 KILL
-  7. holder 活着：nsenter ... chroot ... '逆序 umount；remount,ro /'
+  6. 超时：s6-svc -k；TERM holder（由 holder 转发给 s6 子进程）；等 5–10s；仍不退 KILL
+  7. holder 的 EXIT trap 逆序 umount；remount,ro /
   8. 扫描 /proc/*/ns/mnt inode（不是 grep mountinfo 路径）
-  9. 确认无同 ns 进程后 KILL holder
+  9. 确认无同 ns 进程；loop 仍被占用时等待
  10. 宿主 losetup -d；等待 loop 真正消失（lazy detach 不算）
  11. 恢复 SELinux（若曾 permissive）；写 stopped；删 lock/pid；保留 logs
 ```
@@ -308,16 +309,17 @@ dsh-ctl stop
 
 ### 7.4 开机
 
-- `service.sh`：立即返回，`setsid` 后台 `dsh-ctl boot`（P1 只写日志）。
+- `service.sh`：立即返回，`setsid` 后台 `dsh-ctl boot`；成功后启动 watchdog。
 - `boot-completed.sh`：等 `sys.boot_completed=1` **且** `sys.user.0.ce_available=1`，再启动。
 - boot counter：连续失败 3 次 → rescue，不无限重启。
 - 开机后断言 `enforce=1`；失败只记录/告警，不自动 setenforce（除非用户显式 break-glass）。
 
 ### 7.5 命令面
 
-`doctor/plan/status/start/stop/restart/diag/log/snapshot/restore/guard/system-rw/rescue/purge/fixperm`。
+`doctor/plan/status/start/stop/restart/diag/log/image/snapshot/restore/guard/system-rw/rescue/purge/fixperm`。
 
-- P1 只实现前三个；其余明确 `not implemented`，退出码 3。
+- 已实现：doctor/plan/status/config/start/stop/restart/boot/diag/log/snapshot/restore/guard/system-rw/rescue/purge/fixperm。
+- `start`/`rescue`/`system-rw on|off` 必须显式 `--apply`；没有 `--apply` 只打印计划。
 - `guard on|off`：可选 deny/ask；默认 off。
 - `system-rw on|off`：默认 off；private ns overlay；upper/work 放 ext4 rootfs `/var/lib/dsh/overlays`。
 - `purge`：stop + 校验 + 删除 `/data/adb/chroot` 和 `/data/media/0/ubuntu-rootfs`，确认无 loop；`--keep-image` 保留镜像。
@@ -334,16 +336,16 @@ dsh-ctl stop
   - `workspaceRoot: /sdcard/DSH/workspace`
   - 默认 `approval-free`：`danger-full-access` + `approval: never`
   - 可选 `approval-guard`：`danger-full-access` + `ask`
-- `hardguard` 始终启用（命令钩子）：拦 `setenforce`、写 `/sys/fs/selinux/*`、`resetprop` 改全局 prop、全局 mount 传播；**不是安全边界**。
+- `hardguard` 始终启用（命令钩子）：拦 `setenforce`、写 `/sys/fs/selinux/*`、`resetprop` 改全局 prop、全局 mount 传播；**不是安全边界**。DSH profile 必须通过 `dsh-hooks-claude-code` 指向 `/opt/dsh-control/hooks/hooks.json`；该 profile 接线在 P3 验证。
 - 工作区：`/sdcard/DSH/workspace`；`chmod 2777`、`umask 000`；文件 0666；`dsh-rm` 回收站。
 - `ttyd` 可选；127.0.0.1；密码 `state/guest/ttyd.pass`。
 
 ### 8.1 宿主 thin agent（4B）
 
 - 目的：补 UI 树、通知、剪贴板、包管理、部分 `am/pm` 写操作。
-- 形态：Android 本机 accessibility/Shizuku/ADB agent；chroot 通过 Unix socket 调固定命令集，不暴露任意 shell。
+- 形态：Android 本机 accessibility/Shizuku/ADB agent；当前最小实现是 `127.0.0.1:17321` + token 文件，固定 JSON 方法集，不暴露任意 shell。
 - 不是隐藏必需；不做也不影响 chroot 主体。
-- 未实现；P4。
+- 最小 App 源码在 `agent-app/`，可构建 debug APK；**未在真机验证**。
 
 ### 8.2 手机控制能力矩阵
 
@@ -369,17 +371,17 @@ dsh-ctl stop
 
 ## 10. 打包与工具链
 
-- 模块 zip：`module.prop/customize.sh/service.sh/boot-completed.sh/uninstall.sh/action.sh/bin/dsh-ctl/bin/dsh-nsinit/bin/dsh-watchdog/control/*/lib/*`。
+- 模块 zip：`module.prop/customize.sh/service.sh/boot-completed.sh/uninstall.sh/action.sh/bin/dsh-ctl/bin/dsh-nsinit/bin/dsh-watchdog/control/*/lib/*`；`control/bin/dsh-run` 负责 URL 发现。
 - 包根禁止 `install.sh`；payload 不放 zip。
 - 工具链必须自带：
   - util-linux `losetup`（支持 `--sector-size`）；
   - `mke2fs/e2fsck/resize2fs`；
   - GNU `cp`（`--sparse`）或 tar；
   - `dsh-mount-ro-recursive`（mount_setattr）；
-  - 可选静态 `busybox`/`nsenter`/`chroot`（Android 自带优先，但 doctor 检查）。
+  - util-linux `unshare`/`nsenter`（必须支持 `--propagation`/`--mount`）；`chroot`/`mount` 可用 Android toybox，doctor 检查。
 - payload：`rootfs.tar.gz`（Ubuntu 24.04 + Node 24 + Go + Python + build-essential + s6/ttyd + Android 工具依赖）。
 - `customize.sh` 只建目录/复制 control；不解压 payload；更新前必须 stop。
-- `action.sh`：`status/start/stop/restart/url/log/diag/system-rw/guard`；长任务后台。
+- `action.sh`：当前只读 `status`；长任务/启停动作由 `dsh-ctl` 显式执行，不把 action 按钮变成隐藏的自动启动。
 
 ---
 
@@ -420,7 +422,7 @@ dsh-ctl stop
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P0 | 设计定稿、决策锁定、文档归并 | 本次完成 |
-| P1 | 静态 module + `dsh-ctl doctor/plan/status`；不 apply | 本次实现 |
+| P1 | 静态 module + `dsh-ctl doctor/plan/status`；不 apply | 完成 |
 | P2 | 备用机/VM：mount/ns/stop/loop；零残留 | 待做 |
 | P3 | DSH/Node/s6/URL/工作区；快照/回滚 | 待做 |
 | P4 | full Android 视图 + 宿主 agent 手机控制 | 待做 |

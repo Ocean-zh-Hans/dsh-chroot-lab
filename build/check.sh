@@ -20,10 +20,10 @@ need zip
 need unzip
 
 mapfile -t scripts < <(
-  find module -type f |
+  find module bake agent-app -type f |
     while IFS= read -r f; do
       case "$f" in
-        *.sh | module/bin/* | module/control/s6/*/run | module/control/s6/*/finish) printf '%s\n' "$f" ;;
+        *.sh | module/bin/* | module/control/bin/* | module/control/s6/*/run | module/control/s6/*/finish) printf '%s\n' "$f" ;;
       esac
     done | sort
 )
@@ -64,8 +64,8 @@ fi
 
 printf '== module layout ==\n'
 for f in module.prop customize.sh service.sh boot-completed.sh uninstall.sh action.sh \
-  bin/dsh-ctl bin/dsh-nsinit bin/dsh-watchdog lib/common.sh lib/config.sh \
-  lib/log.sh lib/proc.sh lib/doctor.sh lib/plan.sh lib/status.sh; do
+  bin/dsh-ctl bin/dsh-nsinit bin/dsh-watchdog control/bin/dsh-run \
+  lib/common.sh lib/config.sh lib/log.sh lib/proc.sh lib/doctor.sh lib/plan.sh lib/status.sh; do
   [ -f "module/$f" ] || {
     printf 'missing module file: %s\n' "$f" >&2
     exit 2

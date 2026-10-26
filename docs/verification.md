@@ -192,3 +192,15 @@ ls /sdcard/ubuntu-rootfs               # Permission denied
 | `getenforce` 判断 | 不稳定 | 读 `/sys/fs/selinux/enforce` |
 | `/sys/kernel/debug` 默认可用 | 默认未挂 | 启动显式挂载 |
 | `/run/dsh-rootfs` | `/run` 不存在 | `/tmp/dsh-rootfs` |
+
+## 12. 代码状态（2026-10-26，静态/mock）
+
+- `build/check.sh`：sh/mksh 语法、shellcheck、shfmt、C 语法、docs、mock 测试全过。
+- `test_lifecycle.sh`：用 fake `mount/umount/losetup/unshare/chroot/nsenter` 验证
+  start → status running → stop → stopped；**不证明真实内核挂载**。
+- `test_snapshot.sh`：真实 `cp/sha256sum/tar` 的小文件快照/恢复/purge（非镜像）。
+- `test_guard.sh`：hardguard 和 deny/ask hook 的本地输入/输出。
+- `agent-app/build.sh`：已用 Termux aapt2/d8/apksigner 构建 `dsh-agent-0.1.0.apk`（21KB，v3 签名），未安装/未真机验证。
+- 真实 `mount`/`loop`/`nsenter`/`chroot` 没有在本机执行。
+
+因此当前只能声明“代码路径和静态门禁通过”，不能声明“chroot 已可用”。

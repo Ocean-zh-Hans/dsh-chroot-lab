@@ -1,3 +1,28 @@
 {
-  "hooks": {}
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/dsh-control/hooks/pretool.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/dsh-control/hooks/posttool.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
 }

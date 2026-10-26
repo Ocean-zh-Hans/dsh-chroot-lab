@@ -6,3 +6,6 @@ experiments/artifacts/
 dist/
 module/tools/bin/
 *.zip
+agent-app/build/
+agent-app/dist/
+agent-app/debug.keystore

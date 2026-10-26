@@ -29,7 +29,7 @@ dsh_config_load_file() {
       ;;
     esac
     case $_key in
-    DSH_IMAGE_DIR | DSH_IMAGE | DSH_ROOTFS_DIR | DSH_MEDIA | DSH_TMP | DSH_PROC | DSH_SYS | DSH_IMAGE_SIZE_GB | DSH_PROTECT_CRITICAL | DSH_SELINUXFS_MASK | DSH_SYSTEM_RW | DSH_APPLY)
+    DSH_IMAGE_DIR | DSH_IMAGE | DSH_ROOTFS_DIR | DSH_MEDIA | DSH_TMP | DSH_PROC | DSH_SYS | DSH_IMAGE_SIZE_GB | DSH_PROTECT_CRITICAL | DSH_SELINUXFS_MASK | DSH_SYSTEM_RW)
       eval "_is_set=\${$_key+x}"
       if [ "$_is_set" != x ]; then
         eval "$_key=\$_val"

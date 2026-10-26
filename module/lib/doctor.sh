@@ -181,7 +181,7 @@ dsh_doc_check_state() {
 }
 
 dsh_doc_check_tools() {
-  _required="busybox chroot mount umount nsenter setsid sha256sum sync mke2fs e2fsck resize2fs"
+  _required="chroot mount umount nsenter setsid unshare sha256sum sync mke2fs e2fsck resize2fs mountpoint cp tar truncate"
   for _c in $_required; do
     if dsh_cmd_exists "$_c"; then
       dsh_doc_pass "command present: $_c"
@@ -204,6 +204,23 @@ dsh_doc_check_tools() {
     fi
   else
     dsh_doc_required "losetup missing"
+  fi
+
+  _nsenter=$(dsh_tool_path nsenter || true)
+  if [ -n "$_nsenter" ]; then
+    if "$_nsenter" --help 2>&1 | grep -q -- '--mount'; then
+      dsh_doc_pass "nsenter supports --mount: $_nsenter"
+    else
+      dsh_doc_required "nsenter lacks --mount (util-linux needed): $_nsenter"
+    fi
+  fi
+  _unshare=$(dsh_tool_path unshare || true)
+  if [ -n "$_unshare" ]; then
+    if "$_unshare" --help 2>&1 | grep -q -- '--propagation'; then
+      dsh_doc_pass "unshare supports --propagation: $_unshare"
+    else
+      dsh_doc_required "unshare lacks --propagation (util-linux needed): $_unshare"
+    fi
   fi
 
   if [ -x "$DSH_NSINIT" ]; then
@@ -283,7 +300,7 @@ dsh_doctor_run() {
   if [ "$DSH_DOC_STRICT" -eq 1 ]; then
     printf 'Mode: apply-readiness (missing apply dependencies are FAIL)\n'
   else
-    printf 'Mode: static/P1 (missing apply dependencies are WARN)\n'
+    printf 'Mode: static/read-only (missing apply dependencies are WARN)\n'
   fi
   printf 'Device root: %s\n\n' "$DSH_ROOT"
 

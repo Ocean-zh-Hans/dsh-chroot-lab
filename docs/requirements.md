@@ -27,7 +27,7 @@
 | G1 | 真 chroot | 非 proot；`uname -r` 与宿主一致；Go 产物直接执行 |
 | G2 | 完整 Ubuntu | Ubuntu 24.04 glibc、apt、Node 24、DSH、s6、常用工具链 |
 | G3 | 生命周期 | 开机非阻塞自启；s6 监督；start/stop/status/diag；坏了自己回滚 |
-| G4 | 完整 Android 视图 | full `/data`、`/mnt`、`/data_mirror`、`/storage`、`/sdcard`、`/dev`、`/sys`、Android 分区；完整控制命令 |
+| G4 | 完整 Android 视图 | full `/data`、`/mnt`、`/data_mirror`、`/storage`、`/sdcard`、`/dev`、`/sys`、Android 分区；`/sys/fs/selinux` 用 private tmpfs 遮罩；完整控制命令 |
 | G5 | 应用层隐藏性 | 不改全局 prop、不默认改全局 SELinux、不把 chroot mount 暴露到 App 的 mountinfo；KSU 隐藏特性保持 |
 | G6 | 可逆性 | 镜像/state 冷快照；last-good；boot counter；`purge` 删除镜像/快照/loop 校验 |
 | G7 | 可维护 | 文档单一事实源；代码可静态检查；P1 不碰系统；P2 只在备用机/VM 验证 |
@@ -64,4 +64,4 @@
 - 出错可回滚；
 - 不把“没测过”写成“已支持”。
 
-当前状态：**功能设计完成，代码 P1，apply 未开始，手机控制写操作未验证。**
+当前状态：**功能设计完成，P2/P3 代码已实现但未在备用机/VM 验证；手机控制写操作未验证。**

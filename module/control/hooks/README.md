@@ -1,6 +1,11 @@
-# Hooks (P1 placeholder)
+# Hooks
 
-`hooks.json` is intentionally empty in P1. The real PreToolUse deny/ask and
-PostToolUse audit wiring lands in P3, after the DSH tool names and hook payloads
-are re-verified. Do not enable a placeholder that silently allows dangerous
-commands and call it a guard.
+`hooks.json` wires the PreToolUse hardguard/guard and PostToolUse audit hooks.
+The DSH profile must reference `/opt/dsh-control/hooks/hooks.json` via
+`dsh-hooks-claude-code`; that profile wiring is part of P3 verification.
+
+- hardguard: always on; blocks obvious global SELinux/prop/mount changes.
+- deny/ask lists: active only when `/run/dsh/guard` contains `1`
+  (`dsh-ctl guard on`).
+- This is a command-path guardrail, not a security boundary. ttyd, compiled
+  binaries, direct syscalls, and `/proc/1/root` can bypass it.

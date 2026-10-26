@@ -39,6 +39,15 @@ dsh_cmd_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+dsh_tool_path() {
+  # Prefer a module-bundled tool over the host PATH.
+  if [ -n "${DSH_MODULE_DIR:-}" ] && [ -x "$DSH_MODULE_DIR/tools/bin/$1" ]; then
+    printf '%s\n' "$DSH_MODULE_DIR/tools/bin/$1"
+    return 0
+  fi
+  command -v "$1" 2>/dev/null
+}
+
 dsh_json_escape() {
   printf '%s' "${1:-}" | awk '
     BEGIN { ORS = "" }
