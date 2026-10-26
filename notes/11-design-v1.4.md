@@ -2,13 +2,13 @@
 
 > **2026-10-26 红队审查：本设计尚未批准开工。** 待拍板选项见 [`15-decisions-pending.md`](15-decisions-pending.md)。
 >
-> **如果“隐藏性”指游戏/银行/Play Integrity 不抓到本模块把柄：本 full 设计可以保留**，只要所有 chroot mount 在 private ns、全局 prop/SELinux 不动、KSU 隐藏特性开着；`DSH-CHROOT`/rootfs.img 名字不是标准检测项。详见 [`16-hiddenness-first.md`](16-hiddenness-first.md)。
+> **如果“隐藏性”指游戏/银行/Play Integrity 不抓到本模块把柄：本 full 设计可以保留**，只要所有 chroot mount 在 private ns、全局 prop/SELinux 不动、KSU 隐藏特性开着；`ubuntu-rootfs`/rootfs.img 名字不是标准检测项。详见 [`16-hiddenness-first.md`](16-hiddenness-first.md)。
 >
 > 5 个 P0 反对意见见 [`14-red-team-v1.4.md`](14-red-team-v1.4.md)：rootfs 镜像/控制面自引用、`/sys` 与 hardguard 不是边界、stop 竞态、快照一致性、手机控制未验证。先修 P0 并出 v1.5，再谈 apply。
 >
 > **红队 v2 追加（必须知道）**：
 > - 本机 `u:r:ksu:s0` 是 KernelSU 的 **permissive + allow all** 域（`kernel/selinux/rules.c`：`ksu_permissive(KERNEL_SU_DOMAIN)` + `ksu_allow(ALL,ALL,ALL)`）；全局 `enforce=1` 不等于 chroot 域受约束，不能再写“SELinux 保证”。
-> - `/data` rbind 有多个别名（`/data/user/0`、`/data_mirror/data_ce/null/0`、`/mnt/pass_through/0/emulated` 等），只遮 `/data/media/0/DSH-CHROOT` + `/sdcard/DSH-CHROOT` **不够**；镜像/控制面仍可经别名写。
+> - `/data` rbind 有多个别名（`/data/user/0`、`/data_mirror/data_ce/null/0`、`/mnt/pass_through/0/emulated` 等），只遮 `/data/media/0/ubuntu-rootfs` + `/sdcard/ubuntu-rootfs` **不够**；镜像/控制面仍可经别名写。
 > - `/storage` 不是完整 rbind，只挂了 `/storage/emulated/0`；`/storage/self`、其他用户视图缺失。
 > - `/apex`、`/linkerconfig` 的 `remount,ro,bind` 不递归；`/apex/com.android.conscrypt/cacerts` 仍是 rw 子挂载，不能声称整树只读。
 > - `/tmp/dsh-rootfs` 需要显式 `mkdir -p`；本机 `/tmp` 是宿主 tmpfs，`/run` 不存在。
@@ -57,7 +57,7 @@
 | 内核 | 6.6.66 GKI；`USER_NS`/`PID_NS`/`LANDLOCK` 未编译 | 没有文件系统隔离；只有 mount ns/chroot/caps |
 | `/data` | f2fs `nosuid,nodev`，无 `noexec` | rootfs 可执行；image 放 `/data/media/0` |
 | `/sdcard` | FUSE `noexec` | 执行必须走 raw `/data/media/0` |
-| loop | 仅 `/data/media/0` 可用（`/data/adb` FBE EIO） | 镜像放 `/data/media/0/DSH-CHROOT/rootfs.img` |
+| loop | 仅 `/data/media/0` 可用（`/data/adb` FBE EIO） | 镜像放 `/data/media/0/ubuntu-rootfs/rootfs.img` |
 | 快照 | f2fs 无 reflink；硬链接原地写污染 | 冷镜像复制/tar；不做“假快照” |
 
 **永远成立**：chroot 内 root 可通过 `/proc/1/root` 访问宿主 `/`；`/dev/block`、`/data` 不挂也能到。v1.4 不再把任何挂载限制写成安全边界。
@@ -68,7 +68,7 @@
 2. **不改全局 prop**：不用 `resetprop` 改 `ro.debuggable`/`ro.secure`/`init.svc.*` 等；不伪造 root 状态。
 3. **挂载不暴露到宿主 namespace**：所有 chroot 挂载在私有 mount ns；`make-rprivate`；不做全局 bind/共享挂载。
 4. **不把模块目录 bind 进 chroot**：避免 KSU 挂载视图穿透/被检测。
-5. **数据目录最小可见**：`/data/adb/chroot` 0700；镜像目录 `/data/media/0/DSH-CHROOT` 0700 + `.nomedia`；`/sdcard/DSH` 只放工作区，不放 root 标记。
+5. **数据目录最小可见**：`/data/adb/chroot` 0700；镜像目录 `/data/media/0/ubuntu-rootfs` 0700 + `.nomedia`；`/sdcard/DSH` 只放工作区，不放 root 标记。
 6. **保留 SukiSU 隐藏特性**：`su_compat`/`kernel_umount`/`selinux_hide` 保持启用；不在 chroot 内改 SELinux 策略。
 7. **不改 `/system`**：模块不落 `/system`；`system-rw` overlay 只在私有 ns，可随时关。
 8. **Loop 设备**：镜像 loop 是 Android 常见形态（APEX 也用 loop）；不创建可疑命名/多余 loop；镜像文件 0700、`.nomedia`。
@@ -85,7 +85,7 @@
 | 维度 | `full`（默认，唯一运行档） | `rescue`（手动维修） |
 |---|---|---|
 | 目的 | 完美 chroot + 完美手机控制 | 修 rootfs/DSH/镜像 |
-| rootfs | ext4 镜像 128GB（`/data/media/0/DSH-CHROOT/rootfs.img`） | 同一镜像 ro，或临时目录 |
+| rootfs | ext4 镜像 128GB（`/data/media/0/ubuntu-rootfs/rootfs.img`） | 同一镜像 ro，或临时目录 |
 | `/data` | **rbind rw** | 不挂 |
 | `/mnt`/`/data_mirror` | **rbind rw** | 不挂 |
 | `/storage`/`/sdcard` | **rbind/bind rw**（完整） | 不挂 |
@@ -148,18 +148,18 @@ L0 宿主     KSU module: service.sh + boot-completed.sh
 - `/data` 1:1 rbind 需要 rootfs 不在 `/data` 子树内；镜像挂到 `/tmp/dsh-rootfs`，既不在 `/data` 也不在 `/mnt`，**彻底避免自递归**。
 - 空间不是约束：128GB sparse 镜像，实际 rootfs 12–16GB；`resize2fs` 可扩。
 - 快照=镜像文件冷复制；回滚=换镜像；比目录 tar 更“整存整删”。
-- 镜像必须放 `/data/media/0/DSH-CHROOT/rootfs.img`（FBE 加密区 loop 会 EIO）。**镜像不是 DSH home/workspace**：它是 Ubuntu rootfs 的虚拟磁盘；DSH home 是 `/root/.dsh`，工作区是 `/sdcard/DSH/workspace`。
-- 目录权限：`chmod 700 /data/media/0/DSH-CHROOT`；放 `.nomedia`；rootfs.img 0600。这样普通 App/文件管理器看不到镜像，不增加 root 可见标记。
+- 镜像必须放 `/data/media/0/ubuntu-rootfs/rootfs.img`（FBE 加密区 loop 会 EIO）。**镜像不是 DSH home/workspace**：它是 Ubuntu rootfs 的虚拟磁盘；DSH home 是 `/root/.dsh`，工作区是 `/sdcard/DSH/workspace`。命名原则：基础系统用发行版名 `ubuntu-rootfs`；DSH 名字只用于 DSH 运行时/home/工作区。
+- 目录权限：`chmod 700 /data/media/0/ubuntu-rootfs`；放 `.nomedia`；rootfs.img 0600。这样普通 App/文件管理器看不到镜像，不增加 root 可见标记。
 
 ### 4.2 创建/扩容
 
 ```sh
 # 首次：从烘焙好的 rootfs 目录建镜像
-mke2fs -t ext4 -b 4096 -d /data/adb/chroot/rootfs-staging /data/media/0/DSH-CHROOT/rootfs.img 128G
+mke2fs -t ext4 -b 4096 -d /data/adb/chroot/rootfs-staging /data/media/0/ubuntu-rootfs/rootfs.img 128G
 # 或 truncate + mke2fs + mount + rsync
-truncate -s 128G /data/media/0/DSH-CHROOT/rootfs.img
-mke2fs -t ext4 -b 4096 /data/media/0/DSH-CHROOT/rootfs.img
-mount -o loop /data/media/0/DSH-CHROOT/rootfs.img /tmp/dsh-rootfs
+truncate -s 128G /data/media/0/ubuntu-rootfs/rootfs.img
+mke2fs -t ext4 -b 4096 /data/media/0/ubuntu-rootfs/rootfs.img
+mount -o loop /data/media/0/ubuntu-rootfs/rootfs.img /tmp/dsh-rootfs
 rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /tmp/dsh-rootfs/
 ```
 
@@ -237,7 +237,7 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /tmp/dsh-rootfs/
 | `/sys/kernel/debug` | debugfs/宿主 bind | rw | BPF/kprobe/uprobe |
 | `/sys/kernel/tracing` | tracefs/宿主 bind | rw | ftrace/perf |
 
-**P0 别名警告**：`/data` rbind 会同时暴露 `/data/user/0`、`/data_mirror/data_ce/null/0`、`/mnt/pass_through/0/emulated`、`/mnt/installer/0/emulated`、`/mnt/androidwritable/0/emulated`、`/mnt/user/0/emulated`、`/storage/emulated` 等别名；只遮 `/data/media/0/DSH-CHROOT` + `/sdcard/DSH-CHROOT` 不够，镜像/控制面仍可经别名写。要么不 full `/data`，要么枚举所有别名并测试（见决策 14）。
+**P0 别名警告**：`/data` rbind 会同时暴露 `/data/user/0`、`/data_mirror/data_ce/null/0`、`/mnt/pass_through/0/emulated`、`/mnt/installer/0/emulated`、`/mnt/androidwritable/0/emulated`、`/mnt/user/0/emulated`、`/storage/emulated` 等别名；只遮 `/data/media/0/ubuntu-rootfs` + `/sdcard/ubuntu-rootfs` 不够，镜像/控制面仍可经别名写。要么不 full `/data`，要么枚举所有别名并测试（见决策 14）。
 
 **说明**：`/system` 等 erofs 物理只读；`bind/ rbind` 后 `-o ro` 会被忽略，`remount,ro,bind` 也只到顶层。要整树只读需 `mount_setattr(AT_RECURSIVE)`（util-linux/mount 支持时）并验证子挂载；否则如实写“顶层只读、子挂载可能 rw”。要写用 `dsh-ctl system-rw on` 的 overlay。**upper/work 必须放在 ext4 rootfs 内**（如 `/var/lib/dsh/overlays/<part>`），不能放 `/data`（f2fs 实测 `overlay: case-insensitive capable filesystem ... not supported`，EINVAL）。不是 `remount,rw`。`/metadata`/persist/qmcs 默认 rw（按“不要权限收束”）；`--protect-critical` 可一键改 ro，属于可选防手滑，不是默认限制。
 
@@ -358,7 +358,7 @@ dsh-ctl stop
 - `system-rw on|off`：可选 overlay。
 - `snapshot/restore`：镜像 + state。
 - `rescue`：最小挂载 + `/bin/bash`。
-- `purge`：stop + 校验 + 删除 `/data/adb/chroot` **和** `/data/media/0/DSH-CHROOT`（镜像、快照、`.nomedia`），并确认无 loop；`--keep-image` 可保留。
+- `purge`：stop + 校验 + 删除 `/data/adb/chroot` **和** `/data/media/0/ubuntu-rootfs`（镜像、快照、`.nomedia`），并确认无 loop；`--keep-image` 可保留。
 
 ---
 
@@ -388,7 +388,7 @@ dsh-ctl stop
 - 快照：镜像 `cp --sparse=always` 7 份 + state tar 7 份；manifest sha256/DSH 版本/时间；空间不优化，保留多份。
 - `/sdcard`/`/data`：完整 rw；若要做全量备份，用 `restic` 到 PC/NAS（空间不优化，按需）。
 - 回滚：stop → 校验 → 当前镜像改名 → 新镜像 rename → start → smoke；失败切回。
-- 卸载：stop + 全机扫描 + `losetup -d`；模块卸载保留 `/data/adb/chroot`；`purge` 显式全删（含 `/data/media/0/DSH-CHROOT` 镜像/快照）。
+- 卸载：stop + 全机扫描 + `losetup -d`；模块卸载保留 `/data/adb/chroot`；`purge` 显式全删（含 `/data/media/0/ubuntu-rootfs` 镜像/快照）。
 
 ---
 
@@ -397,7 +397,7 @@ dsh-ctl stop
 - 模块 zip：`module.prop/customize.sh/service.sh/boot-completed.sh/uninstall.sh/action.sh/bin/dsh-ctl/bin/boot-bootstrap/bin/dsh-nsinit/control/*`；包根禁止 `install.sh`。
 - 工具链必须自带：静态 `losetup`（util-linux，支持 `--sector-size`）、`mke2fs/e2fsck/resize2fs`、支持 `--sparse` 的 `cp`（或改用 `tar`）、`flock`（或改用 `mkdir` 锁）；toybox 的 `cp`/`losetup` 不满足。
 - payload：`rootfs.tar.gz`（Ubuntu 24.04 + Node 24 + Go + Python + build-essential + s6/ttyd + Android 工具依赖；胖包，不裁空间）。
-- 镜像：首次 `mke2fs 128G` + rsync；或预生成 `rootfs.img` push 到 `/data/media/0/DSH-CHROOT/`。
+- 镜像：首次 `mke2fs 128G` + rsync；或预生成 `rootfs.img` push 到 `/data/media/0/ubuntu-rootfs/`。
 - 构建门禁：busybox tar -xzf、mksh、shellcheck、node-pty、dsh web、doctor、full P0。
 - `action.sh`：`status/start/stop/restart/url/log/diag/system-rw/guard`；长任务后台，不同步跑部署。
 

@@ -2,8 +2,8 @@
 
 - 日期：2026-10-26
 - 用户定义：**游戏、银行、Play Integrity、普通 root 检测 App 不会因为本模块发现 root/异常**；不是防住 chroot 内 root 的安全边界。
-- 用户补充：**不在乎 chroot 里藏什么，全开都行**；`/sdcard` 里一个自定义名字（如 `DSH-CHROOT`）本身不应被当成封号理由，不需要为了“名字不正常”过度设计。
-- 结论：**full v1.4 可以保留**，只要满足“应用可见信号”不泄漏；不需要为了隐藏把 full `/data`/镜像/Android 视图砍掉。真正要管的是：全局 prop、全局 SELinux、应用自己的 mountinfo、进程/端口、KSU/模块痕迹，而不是 `DSH-CHROOT` 这个名字。
+- 用户补充：**不在乎 chroot 里藏什么，全开都行**；`/sdcard` 里一个自定义名字（如 `ubuntu-rootfs`）本身不应被当成封号理由，不需要为了“名字不正常”过度设计。
+- 结论：**full v1.4 可以保留**，只要满足“应用可见信号”不泄漏；不需要为了隐藏把 full `/data`/镜像/Android 视图砍掉。真正要管的是：全局 prop、全局 SELinux、应用自己的 mountinfo、进程/端口、KSU/模块痕迹，而不是 `ubuntu-rootfs` 这个名字。
 
 ---
 
@@ -14,8 +14,8 @@
 | 全局 `ro.debuggable`/`ro.secure`/`init.svc.*`/`persist.*` | **能**（`getprop`） | **绝不改**；不 resetprop |
 | 全局 SELinux 是否 permissive | 通常不能直接读 `/sys/fs/selinux/enforce`（untrusted_app 有 neverallow）；特权/root 检测可能能 | 保持全局 Enforcing；**不默认 setenforce 0**；不靠 permissive |
 | 应用自己的 `/proc/self/mountinfo` | **能** | chroot 所有 mount 必须在 private mount ns；App 看不到；不要全局 bind/overlay |
-| `/sdcard` 下的目录名 | 能（有存储权限） | `DSH-CHROOT`/`DSH` 名字本身不是标准 root 信号；**不为名字过度设计**；不把 `su`/`magisk`/`kernelsu` 之类放进 `/sdcard` |
-| `/sdcard/DSH-CHROOT/rootfs.img` 文件 | 能（如果目录可进） | 不是标准检测信号；如果要干净可改名/放 `/data/adb`，但**不是隐藏性硬要求** |
+| `/sdcard` 下的目录名 | 能（有存储权限） | `ubuntu-rootfs`/`DSH` 名字本身不是标准 root 信号；**不为名字过度设计**；不把 `su`/`magisk`/`kernelsu` 之类放进 `/sdcard` |
+| `/sdcard/ubuntu-rootfs/rootfs.img` 文件 | 能（如果目录可进） | 不是标准检测信号；如果要干净可改名/放 `/data/adb`，但**不是隐藏性硬要求** |
 | 多出来的 loop 设备 | 普通 App 多半读不到 `/sys/block`/`/proc/partitions`；root/特权检测可读到 | 记住它是“低强度信号”，不是封号主因；介意的可选 directory rootfs，不强制 |
 | `/data/adb`、`/data/adb/modules`、`/data/adb/chroot` | 普通 App 不可读（0700 root） | 不需要为“App 看到”改名/搬家；保持 0700 |
 | `/data/data`、`/data/system` | 普通 App 不可读；chroot 内 root 可见 | 对 App 隐藏无影响；对 chroot 完整性有影响（另说） |
@@ -26,7 +26,7 @@
 | 监听端口（DSH/ttyd 127.0.0.1） | App 可扫 localhost | 不是 root 信号；保持 loopback；可用 Unix socket 进一步减少 |
 | KSU 管理器/模块包名 | App 可通过 PackageManager 看到管理器包；模块目录不可读 | 保留 `selinux_hide`/`mount_hide`/`avc_spoof`/`kernel_umount`；不额外暴露模块名 |
 
-**一句话**：App 看不到 chroot 的内部；它看的是**全局 prop、全局 SELinux、自己的 mountinfo、包/进程/端口、少数 sdcard 名字**。`DSH-CHROOT` 这个名字不是标准检测项。
+**一句话**：App 看不到 chroot 的内部；它看的是**全局 prop、全局 SELinux、自己的 mountinfo、包/进程/端口、少数 sdcard 名字**。`ubuntu-rootfs` 这个名字不是标准检测项。
 
 ---
 
@@ -39,7 +39,7 @@
 5. **KSU 隐藏特性保持启用**：`selinux_hide`/`mount_hide`/`avc_spoof`/`kernel_umount`；不关。
 6. **服务只监听 loopback**：DSH/ttyd 绑定 127.0.0.1；不 `0.0.0.0`；端口不是 root 信号，但不做广告。
 7. **进程可见性**：doctor 检查宿主 `/proc` 的 `hidepid=invisible`；本机已满足；不同 ROM 可能不同。
-8. **`/sdcard` 不放明显 root 标记**：不叫 `magisk`/`kernelsu`/`su`；`DSH-CHROOT`/`DSH` 可以接受，不为名字过度设计。
+8. **`/sdcard` 不放明显 root 标记**：不叫 `magisk`/`kernelsu`/`su`；`ubuntu-rootfs`/`DSH` 可以接受，不为名字过度设计。
 
 **不要求**：
 - 不要求 directory rootfs；full ext4 镜像可以。
@@ -52,12 +52,12 @@
 ## 3. 因此 full v1.4 怎么保留
 
 - **full `/data`、`/mnt`、`/data_mirror`、`/storage`、`/sdcard`、`/dev`、`/sys`、Android 分区**：都可以保留；只要在 **private mount namespace** 里，App 看不到这些 mount。
-- **128GB ext4 镜像 / `DSH-CHROOT`**：可以保留；`DSH-CHROOT` 名字、rootfs.img 不是标准检测项；不为了“名字”强制改 directory rootfs。若要更干净，可改名/放 `/data/adb`（但 loop 只能 `/data/media/0`）。
+- **128GB ext4 镜像 / `ubuntu-rootfs`**：可以保留；`ubuntu-rootfs` 名字、rootfs.img 不是标准检测项；不为了“名字”强制改 directory rootfs。若要更干净，可改名/放 `/data/adb`（但 loop 只能 `/data/media/0`）。
 - **approval-free**：保留；不弹批准。
 - **`u:r:ksu` permissive**：接受；App 看不到域；但**全局 Enforcing + 不改 prop** 仍要守。
 - **`/sys` rw、`/dev` rbind、`/data` full**：App 看不到；可以保留；但它们是安全边界问题，不是 App 隐藏问题。
 - **`system-rw` overlay**：App 看不到 private ns；但 PIF Detector 类工具可能看自己的 mountinfo（不是 chroot 的），所以 private 即可；默认仍建议 off。
-- **`DSH-CHROOT` 名字**：用户明确说不在意为名字封号；不把“隐藏 DSH-CHROOT”当硬需求。
+- **`ubuntu-rootfs` 名字**：用户明确说不在意为名字封号；不把“隐藏 ubuntu-rootfs”当硬需求。
 
 **唯一必须改的**：v1.4 里 `/data` rbind 的 **self-reference 可靠性**（镜像可被 chroot root 写坏）——这是稳定性问题，不是 App 隐藏问题。是否遮内部路径由你决定；不遮也能跑，只是 AI 可能毁自己的 rootfs。
 
@@ -74,7 +74,7 @@
 6. 宿主 `/proc` hidepid=invisible（本机已满足）。
 
 **可选（低强度信号，不必过度）**
-- `DSH-CHROOT`/DSH 名字、rootfs.img 文件名。
+- `ubuntu-rootfs`/DSH 名字、rootfs.img 文件名。
 - loop 设备存在。
 - sdcard 工作区 2777。
 - ttyd 端口。
@@ -90,6 +90,6 @@
 ## 5. 结论
 
 - **full v1.4 可以保留**，只要 mount 全部 private、全局 prop/SELinux 不动、KSU 隐藏特性开着。
-- `DSH-CHROOT`/rootfs.img 名字不是封号理由；不需要因此砍 full `/data` 或换 directory rootfs。
+- `ubuntu-rootfs`/rootfs.img 名字不是封号理由；不需要因此砍 full `/data` 或换 directory rootfs。
 - 真正要防的是：**全局 prop、全局 permissive、全局 mount/overlay、可被 App 读到的包/进程/端口**；这些才是游戏/银行会看的。
 - 如果以后要更干净，可选 directory rootfs / 不挂 `/data`；但那是“更谨慎”，不是“必须”。

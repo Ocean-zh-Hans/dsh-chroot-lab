@@ -9,20 +9,20 @@
 ## P0-1 rootfs 镜像与chroot 内 `/data` 自引用
 
 **问题**
-- v1.4 把 `/data` rbind rw 进 chroot 内，同时 rootfs 镜像在 `/data/media/0/DSH-CHROOT/rootfs.img`。
+- v1.4 把 `/data` rbind rw 进 chroot 内，同时 rootfs 镜像在 `/data/media/0/ubuntu-rootfs/rootfs.img`。
 - chroot 内（root）可以写/删/改名自己的 backing file；一旦 truncate/rename/unlink，loop 仍持有旧 inode，ext4 元数据与宿主 f2fs 都可能损坏；重启/快照/卸载逻辑也会找不到镜像。
-- 0700 只能挡普通 App，挡不住 chroot 内的 root；`/sdcard` 侧也可能看到 `DSH-CHROOT`。
+- 0700 只能挡普通 App，挡不住 chroot 内的 root；`/sdcard` 侧也可能看到 `ubuntu-rootfs`。
 
 **修法**
 - 在chroot 内里 **遮住内部路径**（不是遮用户数据）：
   - `/data/adb/chroot`（control/state/rootfs/versions）→ `mount -t tmpfs tmpfs`
-  - `/data/media/0/DSH-CHROOT`（rootfs.img）→ `mount -t tmpfs tmpfs`
-  - `/sdcard/DSH-CHROOT` → `mount -t tmpfs tmpfs`（如果 `/sdcard` 是 raw bind）
+  - `/data/media/0/ubuntu-rootfs`（rootfs.img）→ `mount -t tmpfs tmpfs`
+  - `/sdcard/ubuntu-rootfs` → `mount -t tmpfs tmpfs`（如果 `/sdcard` 是 raw bind）
 - 宿主 `dsh-ctl` 仍通过 `/data/...` 访问；chroot 内看不到。
 - 或者把镜像放到 `/data/adb/dsh/` 并同样遮罩；关键是**chroot 内不能写自己的 backing file**。
 - 这不是权限收束，是完整性：只隐藏内部控制面/镜像，其他 `/data` 仍全开。
 
-**验收**：chroot 内 `ls /data/media/0/DSH-CHROOT`、`ls /data/adb/chroot` 为空/不可见；`stat` 不能改镜像；宿主仍可 `dsh-ctl snapshot`。
+**验收**：chroot 内 `ls /data/media/0/ubuntu-rootfs`、`ls /data/adb/chroot` 为空/不可见；`stat` 不能改镜像；宿主仍可 `dsh-ctl snapshot`。
 
 ---
 
@@ -104,7 +104,7 @@
 4. **`/dev` rbind**：含 `/dev/block`、`/dev/socket`、binder；完整控制 but 暴露面大；若保留，规则层不能假装能挡 root。
 5. **`/sys/fs/selinux` remount**：事故高度怀疑关联、机制未证实；设计已删 bind-ro，但**任何“只读 bind”都不要做**；只允许 private ns 的 tmpfs 遮罩。
 6. **`getenforce`**：本机返回 Disabled 但 `enforce=1`；doctor 只读 `/sys/fs/selinux/enforce`；不要把 `getenforce` 写进验收。
-7. **`/data` full 与 root hiding**：`/data/adb`、`DSH-CHROOT` 必须遮罩；否则chroot 内可改 KSU/模块/镜像；普通 App 仍不可见，但 root 可。
+7. **`/data` full 与 root hiding**：`/data/adb`、`ubuntu-rootfs` 必须遮罩；否则chroot 内可改 KSU/模块/镜像；普通 App 仍不可见，但 root 可。
 8. **loop 可见性**：`/sys/block/loop*/loop/backing_file`、`losetup -a` 可暴露镜像路径；如果 root hiding 是硬指标，需评估 directory rootfs 或隐藏 loop 元数据；当前设计选择 image，必须承认这个代价。
 9. **`unshare --uts`**：可用；`IPC_NS` 未编译，已修正；不要再写 `--ipc`。
 10. **`uiautomator`**：已修正。
@@ -165,7 +165,7 @@
 | P1 | `selinux_hide` 不 fake `enforce` | 源码只 hook `SEL_STATUS`/context/access；`SEL_ENFORCE` 是独立 inode；permissive 更可见 | 不把 `selinux_hide` 当 permissive 隐藏；`--permissive` 是检测破坏 |
 | P1 | `/sdcard/DSH` 2777 + approval-free 是 app→root 路径 | 任意存储 App 可写脚本，DSH 可执行；hook 看不到脚本内容 | 工作区专用组/UID，或 root-only 执行目录；不要 root 执行 world-writable |
 | P1 | `mount_hide`/`kernel_umount` 不隐藏 loop/mount | 只过滤 app `/proc` mount 记录；不隐藏 `/sys/block/loopN`、`/proc/partitions`；chroot 不是 zygote | 不把它们当 chroot 隐藏；单独做 app-UID mount 扫描 |
-| P1 | `purge` 不删 `/data/media/0/DSH-CHROOT` | 镜像/快照留下，`DSH-CHROOT` 仍是 root artifact | purge 删除 `DSH-CHROOT` + 镜像/快照 + loop 校验 |
+| P1 | `purge` 不删 `/data/media/0/ubuntu-rootfs` | 镜像/快照留下，`ubuntu-rootfs` 仍是 root artifact | purge 删除 `ubuntu-rootfs` + 镜像/快照 + loop 校验 |
 | P1 | 无宿主 watchdog | v1.4 只写“watchdog 恢复”，没有组件；permissive 崩溃后无人恢复 | 实现独立 30s watchdog + boot enforce 断言 |
 | P2 | `uiautomator`/`am`/`pm` 多数只 help-only | `uiautomator dump` rc=137；`am start`/`pm install` 写操作未验证 | capability matrix + 负例测试；不要写 perfect |
 | P2 | PIF Detector README 只是二手证据 | 不是 Google Play Integrity 官方；不能证明“无 SELinux check” | 官方文档 + 实际检测；标注未验证 |
