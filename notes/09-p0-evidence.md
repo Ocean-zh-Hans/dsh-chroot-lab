@@ -160,7 +160,7 @@ chroot ... /usr/bin/env -i PATH=... HOME=/root TMPDIR=/tmp \
 # Setting up ca-certificates ... 120 added, 0 removed; done.
 ```
 
-**结论**：所有宿主→客机命令必须 `env -i`，至少固定 `PATH`、`HOME`、`TMPDIR`、`LANG`、`TERM`、`DEBIAN_FRONTEND`。
+**结论**：所有宿主→chroot 内命令必须 `env -i`，至少固定 `PATH`、`HOME`、`TMPDIR`、`LANG`、`TERM`、`DEBIAN_FRONTEND`。
 
 ---
 

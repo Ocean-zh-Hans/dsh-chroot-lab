@@ -13,7 +13,7 @@
 1. **默认 `daily`**：目录 rootfs、只挂 `/sdcard/DSH` 工作区（不暴露整块内部存储）、最小 `/dev`、`/data` 不挂、Android 分区不挂；DSH 可用、apt/Go 可用、可快照/回滚。适合日常。
 2. **显式 `lab`**：ext4 镜像 rootfs（放 `/data/media/0`，挂 `/run/dsh-rootfs` 后再 chroot）+ `/data`/`/mnt`/`/storage`/`/dev` rbind + Android 分区 ro + debugfs/tracefs；适合 Agent 调试/逆向/设备控制。**必须显式开启，开机不自动进 lab。**
 3. **`rescue`**：目录 rootfs、最小挂载、只起 `/bin/bash`，用于 DSH/rootfs 坏掉后的修复；不启动 DSH。
-4. **控制面必须在客机可见**：`control/` → `/opt/dsh-control` ro，`logs/` → `/var/log/dsh` rw，`state/dsh-home` → `/root/.dsh`；否则 hooks/audit/s6 都是“宿主路径，客机看不到”。
+4. **控制面必须在chroot 内可见**：`control/` → `/opt/dsh-control` ro，`logs/` → `/var/log/dsh` rw，`state/dsh-home` → `/root/.dsh`；否则 hooks/audit/s6 都是“宿主路径，chroot 内看不到”。
 5. **生命周期以 namespace 为中心**：`busybox unshare --propagation private -m`；stop 用 `nsenter` 进 namespace 做 `s6-svc`/sync/umount，再 PGID + `/proc/*/root` 扫描；不依赖宿主 `umount`。
 6. **DSH 仍是 root、仍然不是沙箱**：`/proc/1/root` 就是宿主 `/`；规则层/审计层是护栏，真正的兜底是**冷快照 + `/sdcard/DSH` 外部备份 + 高危区 ro**。
 7. **`.tar.zst` 全部改 `.tar.gz`**：KSU busybox tar 不支持 zstd；payload、快照、state 统一 gzip。
@@ -51,7 +51,7 @@
 | ADR-008 | 不把 mini-panel 作为核心/依赖 | AGPL、Docker/DockRoot 路线冲突、Agent 重复 | 可选 sidecar/UX 参考 |
 | ADR-009 | 不把 APK 的 proot/Alpine 纳入运行时 | 与 H1/H2/H3 冲突；musl 原生模块坑 | 只借鉴原生 UX/模型管理 |
 | ADR-010 | s6-svscan + `dsh-run` 包装器 | 需要监督/URL/ready；DSH 不写 notification-fd | 多一个 Node/shell 包装器 |
-| ADR-011 | 控制面 bind（ro）+ 运行目录 tmpfs | 客机可见；s6 可写 | 多一层目录设计 |
+| ADR-011 | 控制面 bind（ro）+ 运行目录 tmpfs | chroot 内可见；s6 可写 | 多一层目录设计 |
 | ADR-012 | 快照/state 成对、原子、校验、空间守卫 | 避免“假回滚” | 需要停机/空间 |
 
 ---
@@ -149,7 +149,7 @@ L0  宿主模块    KSU module: service.sh + boot-completed.sh
 
 ### 6.1 公共（所有 profile）
 
-| 客机路径 | 源 | 类型/选项 | 说明 |
+| chroot 内路径 | 源 | 类型/选项 | 说明 |
 |---|---|---|---|
 | `/proc` | `proc` | `proc,nosuid,noexec,nodev` | 无 PID ns；会看到宿主进程 |
 | `/sys` | `sysfs` | daily/rescue `ro`；lab `rw` | lab 需要 mkdir debugfs/tracefs |
@@ -167,7 +167,7 @@ L0  宿主模块    KSU module: service.sh + boot-completed.sh
 
 ### 6.2 daily
 
-| 客机路径 | 源 | 类型/选项 | 说明 |
+| chroot 内路径 | 源 | 类型/选项 | 说明 |
 |---|---|---|---|
 | `/sdcard/DSH` | `/data/media/0/DSH` | bind rw | **只暴露工作区**；raw，exec；2777/0666 |
 | `/storage/emulated/0` | symlink → `/sdcard/DSH` | symlink | 兼容硬编码路径；不暴露其它媒体 |
@@ -181,7 +181,7 @@ L0  宿主模块    KSU module: service.sh + boot-completed.sh
 
 ### 6.3 lab
 
-| 客机路径 | 源 | 类型/选项 | 说明 |
+| chroot 内路径 | 源 | 类型/选项 | 说明 |
 |---|---|---|---|
 | `/data` | `/data` | **rbind rw** | 含 `/data/user/0` 等子挂载 |
 | `/mnt` | `/mnt` | **rbind rw** | 多用户视图；`persist`/`qmcs` 强制 ro |
@@ -206,7 +206,7 @@ L0  宿主模块    KSU module: service.sh + boot-completed.sh
 - `/metadata`
 - `/system` `/system_ext` `/product` `/vendor` `/odm` `/apex` `/linkerconfig`
 
-**lab 的 `/data` 控制面保护**：`/data` rbind 会把 `/data/adb`（control/state/rootfs/modules）和 `/data/media/0/.dsh`（rootfs.img）暴露给客机；挂载 `/data` 后立即 `mount -t tmpfs tmpfs $ROOT/data/adb` 和 `mount -t tmpfs tmpfs $ROOT/data/media/0/.dsh` 隐藏它们（需要模块时再单独 ro bind `/data/adb/modules`）。这挡不住 `/proc/1/root`，但能防手滑/误删控制面。
+**lab 的 `/data` 控制面保护**：`/data` rbind 会把 `/data/adb`（control/state/rootfs/modules）和 `/data/media/0/.dsh`（rootfs.img）暴露给chroot 内；挂载 `/data` 后立即 `mount -t tmpfs tmpfs $ROOT/data/adb` 和 `mount -t tmpfs tmpfs $ROOT/data/media/0/.dsh` 隐藏它们（需要模块时再单独 ro bind `/data/adb/modules`）。这挡不住 `/proc/1/root`，但能防手滑/误删控制面。
 
 **lab 的 `/data` 自递归**：rootfs 是 `/data/media/0/.dsh/rootfs.img`，挂到 **`/run/dsh-rootfs`** 后再 chroot。挂载点既不在 `/data` 也不在 `/mnt` 下，所以 `/data` rbind 和 `/mnt` rbind 都不会把挂载根塞进自身。**禁止**在目录 rootfs 下直接 rbind `/data`。
 

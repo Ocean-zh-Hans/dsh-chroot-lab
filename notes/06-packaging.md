@@ -23,7 +23,7 @@ control/s6/dsh/run
 control/s6/ttyd/run
 ```
 
-**关键**：模块目录 `/data/adb/modules/<id>` 不会被 bind 进 chroot；`customize.sh` 必须把 `control/` 复制到 `/data/adb/chroot/control`（宿主路径），运行时再 bind 到客机 `/opt/dsh-control`。不要把 `hooks/`、`etc/s6/` 留在模块根目录指望客机可见。
+**关键**：模块目录 `/data/adb/modules/<id>` 不会被 bind 进 chroot；`customize.sh` 必须把 `control/` 复制到 `/data/adb/chroot/control`（宿主路径），运行时再 bind 到chroot 内 `/opt/dsh-control`。不要把 `hooks/`、`etc/s6/` 留在模块根目录指望chroot 内可见。
 
 **禁止**：包根出现 `install.sh`（触发 legacy 分支，只解压三个文件，装不上）；payload 放进 zip。
 

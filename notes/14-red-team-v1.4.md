@@ -6,23 +6,23 @@
 
 ---
 
-## P0-1 rootfs 镜像与客机 `/data` 自引用
+## P0-1 rootfs 镜像与chroot 内 `/data` 自引用
 
 **问题**
-- v1.4 把 `/data` rbind rw 进客机，同时 rootfs 镜像在 `/data/media/0/.dsh/rootfs.img`。
-- 客机（root）可以写/删/改名自己的 backing file；一旦 truncate/rename/unlink，loop 仍持有旧 inode，ext4 元数据与宿主 f2fs 都可能损坏；重启/快照/卸载逻辑也会找不到镜像。
+- v1.4 把 `/data` rbind rw 进chroot 内，同时 rootfs 镜像在 `/data/media/0/.dsh/rootfs.img`。
+- chroot 内（root）可以写/删/改名自己的 backing file；一旦 truncate/rename/unlink，loop 仍持有旧 inode，ext4 元数据与宿主 f2fs 都可能损坏；重启/快照/卸载逻辑也会找不到镜像。
 - 0700 只能挡普通 App，挡不住 chroot 内的 root；`/sdcard` 侧也可能看到 `.dsh`。
 
 **修法**
-- 在客机里 **遮住内部路径**（不是遮用户数据）：
+- 在chroot 内里 **遮住内部路径**（不是遮用户数据）：
   - `/data/adb/chroot`（control/state/rootfs/versions）→ `mount -t tmpfs tmpfs`
   - `/data/media/0/.dsh`（rootfs.img）→ `mount -t tmpfs tmpfs`
   - `/sdcard/.dsh` → `mount -t tmpfs tmpfs`（如果 `/sdcard` 是 raw bind）
-- 宿主 `dsh-ctl` 仍通过 `/data/...` 访问；客机看不到。
-- 或者把镜像放到 `/data/adb/dsh/` 并同样遮罩；关键是**客机不能写自己的 backing file**。
+- 宿主 `dsh-ctl` 仍通过 `/data/...` 访问；chroot 内看不到。
+- 或者把镜像放到 `/data/adb/dsh/` 并同样遮罩；关键是**chroot 内不能写自己的 backing file**。
 - 这不是权限收束，是完整性：只隐藏内部控制面/镜像，其他 `/data` 仍全开。
 
-**验收**：客机 `ls /data/media/0/.dsh`、`ls /data/adb/chroot` 为空/不可见；`stat` 不能改镜像；宿主仍可 `dsh-ctl snapshot`。
+**验收**：chroot 内 `ls /data/media/0/.dsh`、`ls /data/adb/chroot` 为空/不可见；`stat` 不能改镜像；宿主仍可 `dsh-ctl snapshot`。
 
 ---
 
@@ -37,12 +37,12 @@
 
 **修法（保留最大能力，但承认边界）**
 - `/sys` 改 **ro**；`debugfs`/`tracefs` 单独挂到 `/sys/kernel/debug`、`/sys/kernel/tracing` rw（父 ro 不阻止子挂载；本机 debugfs/tracefs 挂载已验证）。
-- `/sys/fs/selinux` 在客机用 **tmpfs 遮罩**（private ns；绝不对宿主 selinuxfs remount，见事故复盘）。
+- `/sys/fs/selinux` 在chroot 内用 **tmpfs 遮罩**（private ns；绝不对宿主 selinuxfs remount，见事故复盘）。
 - `/dev` 是否保留 rbind 是用户取舍：保留=完整设备控制但 root 可写块设备；不保留=更隐藏但失去 loop/USB。无法两全。
 - `hardguard` 改名/定位为 **guardrail/telemetry**，不叫安全边界。
 - 在文档中明确：**root-free + root 权限 + 无 userns/PIDns 不可能保证“root 隐藏性绝对不降”**；只能保证不改全局 props、不 remount selinuxfs、不全局挂载、默认 Enforcing。
 
-**验收**：客机内 `cat /sys/fs/selinux/enforce` 不存在/不可写；`/sys` 只读；debugfs/tracing 可读；`/proc/1/root` 仍可逃逸（如实记录）。
+**验收**：chroot 内内 `cat /sys/fs/selinux/enforce` 不存在/不可写；`/sys` 只读；debugfs/tracing 可读；`/proc/1/root` 仍可逃逸（如实记录）。
 
 ---
 
@@ -69,7 +69,7 @@
 
 **问题**
 - 对运行中的 ext4 镜像做 `cp --sparse` 会得到 torn image；7×128GB 在镜像填满时超过 `/data` 容量；`/data`/`/sdcard` 不在快照里；快照后没有 `e2fsck`/sha 验证。
-- `rootfs.img` 被客机暴露时，快照还可能复制到被篡改的镜像。
+- `rootfs.img` 被chroot 内暴露时，快照还可能复制到被篡改的镜像。
 
 **修法**
 - 只做 **stop + unmount + e2fsck** 后的冷复制；`cp --sparse=always` 到临时文件 → `sync` → `sha256` → `mv` 原子改名；保留 `last-good` 指针。
@@ -104,7 +104,7 @@
 4. **`/dev` rbind**：含 `/dev/block`、`/dev/socket`、binder；完整控制 but 暴露面大；若保留，规则层不能假装能挡 root。
 5. **`/sys/fs/selinux` remount**：事故根因；设计已删 bind-ro，但**任何“只读 bind”都不要做**；只允许 private ns 的 tmpfs 遮罩。
 6. **`getenforce`**：本机返回 Disabled 但 `enforce=1`；doctor 只读 `/sys/fs/selinux/enforce`；不要把 `getenforce` 写进验收。
-7. **`/data` full 与 root hiding**：`/data/adb`、`.dsh` 必须遮罩；否则客机可改 KSU/模块/镜像；普通 App 仍不可见，但 root 可。
+7. **`/data` full 与 root hiding**：`/data/adb`、`.dsh` 必须遮罩；否则chroot 内可改 KSU/模块/镜像；普通 App 仍不可见，但 root 可。
 8. **loop 可见性**：`/sys/block/loop*/loop/backing_file`、`losetup -a` 可暴露镜像路径；如果 root hiding 是硬指标，需评估 directory rootfs 或隐藏 loop 元数据；当前设计选择 image，必须承认这个代价。
 9. **`unshare --uts`**：可用；`IPC_NS` 未编译，已修正；不要再写 `--ipc`。
 10. **`uiautomator`**：已修正。

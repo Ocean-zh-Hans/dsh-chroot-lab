@@ -9,7 +9,15 @@
 
 ---
 
-## 0. “完美”的验收定义
+## 0. 术语（先澄清）
+
+- **本机 / 宿主**：这台 Android 手机，只有一台；Android 系统、内核、SELinux、`/data`、`/dev` 都属于它。
+- **chroot 内**：同一台手机上的一个进程树，根目录切到 Ubuntu rootfs；共用同一内核/网络/硬件，**不是虚拟机、不是 proot、不是另一台机器**。
+- **不再使用“客机”**：之前文档里的“客机”是错误借词，已统一改为“chroot 内”。
+
+---
+
+## 0.1 “完美”的验收定义
 
 | 维度 | 必须做到 |
 |---|---|
@@ -175,7 +183,7 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 
 ### 5.1 基础
 
-| 客机路径 | 源 | 类型/选项 | 说明 |
+| chroot 内路径 | 源 | 类型/选项 | 说明 |
 |---|---|---|---|
 | `/` | `/run/dsh-rootfs` | ext4 | 128GB 镜像 |
 | `/proc` | `proc` | `proc,nosuid,noexec,nodev` | 完整进程视图 |
@@ -195,7 +203,7 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 
 ### 5.2 完整 Android 视图
 
-| 客机路径 | 源 | 类型/选项 | 说明 |
+| chroot 内路径 | 源 | 类型/选项 | 说明 |
 |---|---|---|---|
 | `/data` | `/data` | **rbind rw** | 含 `/data/user/0`、`/data/data`、`/data/system`、`/data/adb` |
 | `/mnt` | `/mnt` | **rbind rw** | 多用户视图；含 `/mnt/user/0`、`/mnt/installer/0`、`/mnt/androidwritable/0` |

@@ -6,7 +6,7 @@
 - 设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
 - 结论先行：**方向正确、命门可跑，但现稿不能直接进入打包。**
   - 已复验通过：真 chroot、Ubuntu glibc、Node 24、`node-pty` PTY、`dsh web --port 0`、s6 监督、apt 装 s6/ttyd、raw media 执行。
-  - 必须返工：**8 个 P0**（挂载命名空间/停止语义、宿主/客机路径、工作区权限、payload 压缩、chroot 环境、DSH 工作区、`/dev/block` 与 `/proc/1/root`、钩子 fail-open 与可逆性覆盖）。
+  - 必须返工：**8 个 P0**（挂载命名空间/停止语义、宿主/chroot 内路径、工作区权限、payload 压缩、chroot 环境、DSH 工作区、`/dev/block` 与 `/proc/1/root`、钩子 fail-open 与可逆性覆盖）。
   - 最根本的一条：**chroot 内是 root，`/proc/1/root` 就是宿主 `/`；所有“只读挂载/不绑 /dev/block”都只是防手滑，不是安全边界。** 设计里必须把这句话写到醒目的位置，并把“可逆性”从 rootfs 扩展到真正值钱的数据。
 
 ---
@@ -104,19 +104,19 @@ for p in /proc/[0-9]*/root; do [ "$(readlink "$p")" = "$ROOT" ] && echo "$p"; do
 
 ---
 
-### P0-2 宿主路径/客机路径混用：hooks、audit、s6 服务目录在 chroot 内根本不存在
+### P0-2 宿主路径/chroot 内路径混用：hooks、audit、s6 服务目录在 chroot 内根本不存在
 
 **问题**
-- 设计目录树把 `hooks/`、`logs/`、`etc/s6/` 放在 `/data/adb/chroot/`（宿主路径），但 DSH 运行在 chroot 内，看到的 `/` 是 rootfs；`/data/adb/chroot/...` 在客机里**不存在**。
+- 设计目录树把 `hooks/`、`logs/`、`etc/s6/` 放在 `/data/adb/chroot/`（宿主路径），但 DSH 运行在 chroot 内，看到的 `/` 是 rootfs；`/data/adb/chroot/...` 在chroot 内里**不存在**。
 - 具体会坏的地方：
-  - `hooks.json` 的 `command` 指向 `/data/adb/chroot/hooks/pretool.sh` → 客机找不到 → 钩子启动失败 → **fail open**，规则完全不生效。
-  - `PostToolUse` 写 `/data/adb/chroot/logs/audit/...` → 客机路径不存在 → 审计丢失。
-  - s6 的 `etc/s6/dsh/run` 放在宿主路径 → `s6-svscan` 在客机里看不到服务目录 → 服务起不来。
-- 这不是“路径写错一个字符”，而是**控制面没有设计进客机**。
+  - `hooks.json` 的 `command` 指向 `/data/adb/chroot/hooks/pretool.sh` → chroot 内找不到 → 钩子启动失败 → **fail open**，规则完全不生效。
+  - `PostToolUse` 写 `/data/adb/chroot/logs/audit/...` → chroot 内路径不存在 → 审计丢失。
+  - s6 的 `etc/s6/dsh/run` 放在宿主路径 → `s6-svscan` 在chroot 内里看不到服务目录 → 服务起不来。
+- 这不是“路径写错一个字符”，而是**控制面没有设计进chroot 内**。
 
 **修法：增加一个只读控制面 bind，运行时目录放 tmpfs**
 ```
-宿主                                    客机                  模式
+宿主                                    chroot 内                  模式
 /data/adb/chroot/control/             /opt/dsh-control/      ro
   hooks/{hooks.json,pretool.sh,posttool.sh,deny.txt,ask.txt,selftest.sh}
   s6/{dsh/run,dsh/finish,ttyd/run,ttyd/finish}
@@ -126,7 +126,7 @@ for p in /proc/[0-9]*/root; do [ "$(readlink "$p")" = "$ROOT" ] && echo "$p"; do
 /data/adb/chroot/logs/                /var/log/dsh/          rw
 ```
 - s6 服务目录**不能直接 ro bind**：`s6-svscan`/`s6-supervise` 要在服务目录里创建 `.s6-svscan/`、`supervise/`。启动时把 `control/s6` **复制到 `/run/s6`（tmpfs）**，再 `s6-svscan /run/s6`。
-- `hooks.json` 的 `configPath` 用**客机绝对路径** `/opt/dsh-control/hooks/hooks.json`；`command` 用 `/opt/dsh-control/hooks/pretool.sh`。
+- `hooks.json` 的 `configPath` 用**chroot 内绝对路径** `/opt/dsh-control/hooks/hooks.json`；`command` 用 `/opt/dsh-control/hooks/pretool.sh`。
 - `audit` 路径用 `/var/log/dsh/audit/YYYY-MM-DD.jsonl`。
 - `pretool.sh` 要可执行（0755），且 `hooks.json` 里 `timeout: 10`（秒）。
 
@@ -222,7 +222,7 @@ chroot "$ROOT" /bin/sh -c 'node -e "require(\"node-pty\").spawn(\"/bin/sh\",[\"-
 - 这不是“偶发”，是**烘焙阶段必踩**；`07-roadmap` 阶段 0 的 `chroot rootfs /bin/bash: apt update` 会直接失败。
 
 **修法**
-- 所有宿主→客机命令统一走一个 helper：
+- 所有宿主→chroot 内命令统一走一个 helper：
   ```sh
   chroot_exec() {
     chroot "$ROOT" /usr/bin/env -i \
@@ -344,13 +344,13 @@ chroot_exec /bin/sh -c 'cd /sdcard/DSH/workspace && pwd'
 - 快照要**原子**：`tar -czf snap.tmp` → `sync` → `mv snap.tmp snap.tar.gz`；失败不留半成品。
 - 快照后**验证**：`tar -tzf` 能列目录；记录 sha256；定期做一次“恢复演练”。
 - **空间守卫**：`/data` 剩余 < 5GiB 时拒绝新快照并告警；保留策略 1 golden + 3 recent + 1 pre-change；state 7 份。
-- **pre-change 触发**：`apt`/`npm -g`/`pip install` 前自动快照。hook 里直接调 `dsh-ctl snapshot` 不现实（客机看不到宿主路径）；做一个 `dsh-apt`/`dsh-npm` 包装器，或在维护流程里手动 `dsh-ctl snapshot --tag pre-change`。设计要写清楚“谁在什么时候触发”。
+- **pre-change 触发**：`apt`/`npm -g`/`pip install` 前自动快照。hook 里直接调 `dsh-ctl snapshot` 不现实（chroot 内看不到宿主路径）；做一个 `dsh-apt`/`dsh-npm` 包装器，或在维护流程里手动 `dsh-ctl snapshot --tag pre-change`。设计要写清楚“谁在什么时候触发”。
 - `tar` 排除 `/proc`、`/sys`、`/dev`、`/run`、`/tmp`；确保 stop 后这些挂载已随 namespace 消失。
 - **rootfs 版本指针**：如果要做原子切换，`rootfs` 用 symlink 指向 `versions/<id>`，`ln -sfn` + `mv -Tf` 原子替换；比 `mv rootfs rootfs.old` 两个 rename 更稳。
 
 ### P1-4 审计的可用性与防篡改
 
-- 审计路径改为客机 `/var/log/dsh/audit/YYYY-MM-DD.jsonl`，bind 宿主 logs；`PostToolUse` 写；`PreToolUse` 的 deny/ask 也要写一条（否则被拒绝的命令没有记录）。
+- 审计路径改为chroot 内 `/var/log/dsh/audit/YYYY-MM-DD.jsonl`，bind 宿主 logs；`PostToolUse` 写；`PreToolUse` 的 deny/ask 也要写一条（否则被拒绝的命令没有记录）。
 - **脱敏**：`tool_input` 可能包含 API key、token、`Authorization`；写日志前用 `jq` 删/替换 `token|api_key|authorization|password` 字段。
 - **截断**：`tool_response` 可能几 MB；只写前 4KB + 总长度。
 - **轮转/保留**：按天 + 总大小上限；不要无限增长。
@@ -405,7 +405,7 @@ chroot_exec /bin/sh -c 'cd /sdcard/DSH/workspace && pwd'
 ├── rootfs/                  活动根（或 symlink -> versions/<id>）
 ├── versions/                可选：rootfs 版本
 ├── dsh/                     versions/<v>/ + current + previous
-├── control/                 hooks/ + s6/ + bin/（只读 bind 进客机）
+├── control/                 hooks/ + s6/ + bin/（只读 bind 进chroot 内）
 ├── state/
 │   ├── dsh-home/            bind -> /root/.dsh
 │   └── ctl/                 launcher.pid/starttime、lock、url、stopped、degraded
@@ -414,9 +414,9 @@ chroot_exec /bin/sh -c 'cd /sdcard/DSH/workspace && pwd'
 └── tmp/                     可选
 ```
 
-### 5.2 挂载（客机路径）
+### 5.2 挂载（chroot 内路径）
 
-| 客机路径 | 宿主来源 | 模式 | 用途/备注 |
+| chroot 内路径 | 宿主来源 | 模式 | 用途/备注 |
 |---|---|---|---|
 | `/` | `rootfs/` | rw | chroot 根 |
 | `/proc` | fresh proc | rw | 无 PID ns，会看到宿主进程；必须接受 |
@@ -586,7 +586,7 @@ chroot_exec /bin/sh -c 'cd /sdcard/DSH/workspace && pwd'
 ## 11. 结论
 
 - **路线成立**：本机已经把最难的三件事跑通（chroot + node-pty + dsh web），Ubuntu glibc 的选择是对的；s6/apt/raw media 也都验证。
-- **但 v1.2 是“能跑”的稿，不是“能交付”的稿**：挂载命名空间与 stop 语义、宿主/客机路径、工作区权限、`.tar.zst`、chroot 环境、DSH cwd、`/dev/block` 与 `/proc/1/root`、钩子 fail-open 这 8 条，任意一条都会让“开机自启/可回滚/规则生效”中的一项落空。
+- **但 v1.2 是“能跑”的稿，不是“能交付”的稿**：挂载命名空间与 stop 语义、宿主/chroot 内路径、工作区权限、`.tar.zst`、chroot 环境、DSH cwd、`/dev/block` 与 `/proc/1/root`、钩子 fail-open 这 8 条，任意一条都会让“开机自启/可回滚/规则生效”中的一项落空。
 - **最重要的认知修正**：root chroot 不是“能力优先但稍微危险”，而是“**没有任何文件系统隔离**”。`/proc/1/root` 就是宿主根；`/data` 不绑也能读写；`/dev/block` 不绑也能通过 `/proc/1/root` 访问。因此：
   - 不要把 ro bind/不绑 `/dev/block` 当安全边界；
   - 把预算从“更多挂载限制”转到“**外部备份 + 冷快照 + 规则拦截 + 审计**”；
