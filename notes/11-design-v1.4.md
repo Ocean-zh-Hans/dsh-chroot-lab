@@ -41,7 +41,7 @@
 
 ### 1.1 Root 隐藏性不变量（硬约束）
 
-1. **SELinux 保持 Enforcing**：不默认 `setenforce 0`；`--permissive` 仅显式 break-glass，且要明确“本次接受隐藏性下降”。
+1. **SELinux 保持 Enforcing**：不默认 `setenforce 0`；`--permissive` 仅显式 break-glass，且要明确“本次接受隐藏性下降”。**绝不对 `/sys/fs/selinux` 做 bind/remount,ro**（本次事故根因）；要限制用 private ns 的 tmpfs 遮罩 + hardguard。
 2. **不改全局 prop**：不用 `resetprop` 改 `ro.debuggable`/`ro.secure`/`init.svc.*` 等；不伪造 root 状态。
 3. **挂载不暴露到宿主 namespace**：所有 chroot 挂载在私有 mount ns；`make-rprivate`；不做全局 bind/共享挂载。
 4. **不把模块目录 bind 进 chroot**：避免 KSU 挂载视图穿透/被检测。
@@ -178,7 +178,7 @@ rsync -aHAX --numeric-ids /data/adb/chroot/rootfs-staging/ /run/dsh-rootfs/
 | `/` | `/run/dsh-rootfs` | ext4 | 128GB 镜像 |
 | `/proc` | `proc` | `proc,nosuid,noexec,nodev` | 完整进程视图 |
 | `/sys` | `sysfs` | **rw** | 完整内核/设备视图 |
-| `/sys/fs/selinux` | `/sys/fs/selinux` | bind **ro**（实测 bind+remount,ro rc=0；enforce=1） | 防止 chroot 内 `setenforce 0`/改策略 |
+| `/sys/fs/selinux` | — | **不要单独 bind/remount** | 2026-10-26 事故根因：`mount -o remount,ro,bind /sys/fs/selinux` 会使 selinuxfs 只读，zygote `selinux_android_setcontext` 写 `/sys/fs/selinux/context` 失败；如需限制，用 private ns 的 tmpfs 遮罩 + hardguard，绝不在 selinuxfs 上 remount |
 | `/dev` | `/dev` | **rbind** `nosuid`（去 noexec） | block/binder/ashmem/usb-ffs 全见 |
 | `/dev/pts` | `devpts` | `newinstance,ptmxmode=0666,mode=620` | 独立 pts；`/dev/ptmx` → `pts/ptmx` |
 | `/dev/shm` | tmpfs | `size=1g,mode=1777` | Chromium/Playwright |
@@ -411,6 +411,7 @@ dsh-ctl stop
 - KernelSU PR #3457（feature: selinux hide）：<https://github.com/tiann/KernelSU/pull/3457>
 - PIF Detector README（untrusted_app 对 `/sys/fs/selinux/enforce` 有 neverallow；其引擎无 SELinux check）：<https://raw.githubusercontent.com/IR0NBYTE/playIntegrityFixDetector/refs/heads/main/README.md>
 - 本机验证详细命令/结果：`12-v1.4-verification.md`。
+- 2026-10-26 系统崩溃事故复盘：`13-incident-2026-10-26-selinux-remount.md`（`selinuxfs` 只读 remount 的教训）。
 
 ---
 

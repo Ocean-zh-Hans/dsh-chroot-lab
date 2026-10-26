@@ -22,7 +22,7 @@ CONFIG_NAMESPACES=y
 - 这些结论只对本机成立：不同机型的 kernel config 不同，**换机必须重测**（见 notes/analysis/dsh-chroot.md §7）。
 
 ## 硬需求
-- H0 **不降低本机 root 隐藏性**：SELinux 保持 Enforcing；不改全局 prop；chroot 挂载只在私有 namespace；保留 SukiSU `su_compat`/`kernel_umount`/`selinux_hide`
+- H0 **不降低本机 root 隐藏性**：SELinux 保持 Enforcing；不改全局 prop；**绝不对 `/sys/fs/selinux` 做 bind/remount,ro**；chroot 挂载只在私有 namespace；保留 SukiSU `su_compat`/`kernel_umount`/`selinux_hide`
 - H1 真 chroot（非 proot），Go 可编译且产物可直接执行
 - H2 工作区在共享存储可见（手机文件管理器可改），产物仍可执行 → raw `/data/media/0` 完整绑定（full 档）
 - H3 开机自启，且不阻塞开机（service.sh 立刻返回 + 后台 bootstrap）
