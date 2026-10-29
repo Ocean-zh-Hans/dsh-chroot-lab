@@ -16,5 +16,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "dsh-chroot-lab"
 include(":agent-app")
+include(":agent-core")
 include(":agent-root-helper")
 include(":console-app")
