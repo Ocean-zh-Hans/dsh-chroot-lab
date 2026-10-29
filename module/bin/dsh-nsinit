@@ -363,24 +363,22 @@ fi
 dsh_mount_remount_ro "$ROOT/opt/dsh" || exit 5
 dsh_mount_bind "$DSH_CONTROL_DIR" "$ROOT/opt/dsh-control" || exit 5
 dsh_mount_remount_ro "$ROOT/opt/dsh-control" || exit 5
-dsh_mount_bind "$DSH_DSH_HOME_DIR" "$ROOT/root/.dsh" || exit 5
-dsh_mount_bind "$DSH_GUEST_RUNTIME_DIR" "$ROOT/run/dsh" || exit 5
-if [ -n "$DSH_WORKSPACE_SOURCE" ]; then
-  [ -d "$DSH_WORKSPACE_SOURCE" ] || {
-    dsh_err "linked DSH workspace is unavailable: $DSH_DSH_HOME_DIR/workspace"
-    exit 5
-  }
-  dsh_mount_bind "$DSH_WORKSPACE_SOURCE" "$ROOT$DSH_WORKSPACE_DIR" || exit 5
-elif [ "$DSH_WORKSPACE_DIR" = /sdcard/DSH/workspace ]; then
-  mkdir -p "$ROOT$DSH_WORKSPACE_DIR" || {
-    dsh_err "cannot create DSH workspace; refusing silent /root fallback"
-    exit 5
-  }
-  chmod 2777 "$ROOT$DSH_WORKSPACE_DIR" || exit 5
-elif [ ! -d "$ROOT$DSH_WORKSPACE_DIR" ]; then
-  dsh_err "configured DSH workspace is unavailable: $DSH_WORKSPACE_DIR"
+if [ -e "$DSH_DSH_HOME_DIR/workspace" ] || [ -L "$DSH_DSH_HOME_DIR/workspace" ]; then
+  dsh_err "legacy DSH-home workspace must be migrated before start"
   exit 5
 fi
+dsh_mount_bind "$DSH_DSH_HOME_DIR" "$ROOT/root/.dsh" || exit 5
+dsh_mount_bind "$DSH_GUEST_RUNTIME_DIR" "$ROOT/run/dsh" || exit 5
+[ -d "$DSH_WORKSPACE_HOST_DIR" ] && [ ! -L "$DSH_WORKSPACE_HOST_DIR" ] || {
+  dsh_err "independent workspace is unavailable: $DSH_WORKSPACE_HOST_DIR"
+  exit 5
+}
+[ ! -L "$ROOT$DSH_WORKSPACE_DIR" ] || {
+  dsh_err "workspace destination must not be a symlink: $DSH_WORKSPACE_DIR"
+  exit 5
+}
+mkdir -p "$ROOT$DSH_WORKSPACE_DIR" || exit 5
+dsh_mount_bind "$DSH_WORKSPACE_HOST_DIR" "$ROOT$DSH_WORKSPACE_DIR" || exit 5
 dsh_mount_bind_ro_file "$DSH_GUEST_DIR/module.json" "$ROOT/run/dsh/module.json" || exit 5
 dsh_mount_bind_ro_file "$DSH_GUEST_DIR/module.sha256" "$ROOT/run/dsh/module.sha256" || exit 5
 dsh_mount_bind "$DSH_LOG_DIR" "$ROOT/var/log/dsh" || exit 5

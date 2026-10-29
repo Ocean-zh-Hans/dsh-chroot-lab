@@ -56,7 +56,7 @@
 | 模块私有数据 | `/data/adb/chroot` |
 | DSH 运行时 | `/data/adb/chroot/dsh` → chroot `/opt/dsh` |
 | DSH home | `/data/adb/chroot/state/dsh-home` → chroot `/root/.dsh` |
-| DSH 工作区 | 优先已有 `state/dsh-home/workspace`（真实目录或链接目标）；否则 `/data/media/0/DSH/workspace` → `/sdcard/DSH/workspace` |
+| DSH 工作区 | `/data/adb/chroot/state/workspace` → chroot `/root/workspace`；独立于 DSH home |
 | 控制面 | `/data/adb/chroot/control` → chroot `/opt/dsh-control` |
 
 ## 3. 当前设备边界

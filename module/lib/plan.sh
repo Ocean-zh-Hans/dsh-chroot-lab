@@ -59,7 +59,7 @@ dsh_plan_run() {
   printf 'logs            : %s\n' "$DSH_LOG_DIR"
   printf 'DSH runtime     : %s\n' "$DSH_RUNTIME_DIR"
   printf 'DSH home        : %s\n' "$DSH_DSH_HOME_DIR"
-  printf 'DSH workspace   : %s/DSH/workspace\n\n' "$DSH_MEDIA"
+  printf 'DSH workspace   : %s -> %s\n\n' "$DSH_WORKSPACE_HOST_DIR" "$DSH_WORKSPACE_DIR"
 
   printf '== Image ==\n'
   if [ -e "$DSH_IMAGE" ]; then
@@ -116,7 +116,8 @@ EOF
 /sys/kernel/tracing   tracefs rw
 /opt/dsh              bind runtime ro
 /opt/dsh-control      bind control ro
-/root/.dsh            bind dsh-home rw
+/root/.dsh            bind dsh-home rw (DSH only)
+/root/workspace       bind independent workspace rw
 /run/dsh              bind guest state rw
 /var/log/dsh          bind logs rw
 EOF

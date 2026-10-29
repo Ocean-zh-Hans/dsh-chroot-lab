@@ -8,6 +8,7 @@ fixture_module "$case_dir/module"
 fixture_env "$case_dir"
 export DSH_PROC=/proc
 export CASE
+export DSH_TEST_ROOT="$CASE"
 cat >"$case_dir/worker-lib.sh" <<'EOF'
 . "$DSH_MODULE_DIR/lib/common.sh"
 . "$DSH_MODULE_DIR/lib/config.sh"
@@ -55,6 +56,23 @@ set -e
 [ -s "$case_dir/a.success" ] || fail "worker a made no progress"
 [ -s "$case_dir/b.success" ] || fail "worker b made no progress"
 [ ! -e "$DSH_ROOT/state/ctl/lock" ] || fail "lock metadata remained after release"
+. "$case_dir/worker-lib.sh"
+mkdir "$DSH_CTL_DIR/lifecycle.claim"
+(
+  sleep 0.2
+  rmdir "$DSH_CTL_DIR/lifecycle.claim" 2>/dev/null || true
+) &
+export DSH_LIFECYCLE_CLAIM_TIMEOUT=5
+dsh_lifecycle_exec -c ':' || fail "lifecycle claim did not wait for a transient owner"
+: >"$CASE/helper.log"
+set +e
+dsh_lifecycle_exec -c 'printf "called\n" >>"$CASE/child-calls"; exit 7'
+rc=$?
+set -e
+assert_eq "$rc" '7'
+assert_eq "$(wc -l <"$CASE/helper.log")" '1'
+assert_eq "$(wc -l <"$CASE/child-calls")" '1'
+unset DSH_LIFECYCLE_CLAIM_TIMEOUT
 . "$case_dir/worker-lib.sh"
 mkdir "$DSH_LOCK_DIR"
 printf '99999999\n' >"$DSH_LOCK_DIR/pid"

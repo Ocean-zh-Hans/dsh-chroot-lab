@@ -748,12 +748,12 @@ dsh_logs() {
 }
 
 dsh_fixperm() {
-  _ws=$DSH_MEDIA/DSH/workspace
-  mkdir -p "$_ws" || return 1
-  chmod 2777 "$_ws" || return 1
-  find "$_ws" -type d -exec chmod 2777 {} + 2>/dev/null || true
-  find "$_ws" -type f -exec chmod 0666 {} + 2>/dev/null || true
-  printf 'workspace permissions fixed: %s\n' "$_ws"
+  [ -d "$DSH_WORKSPACE_HOST_DIR" ] && [ ! -L "$DSH_WORKSPACE_HOST_DIR" ] || {
+    dsh_err "independent workspace is unavailable: $DSH_WORKSPACE_HOST_DIR"
+    return 1
+  }
+  chmod 0700 "$DSH_WORKSPACE_HOST_DIR" || return 1
+  printf 'workspace permissions fixed: %s\n' "$DSH_WORKSPACE_HOST_DIR"
 }
 
 dsh_rescue() {

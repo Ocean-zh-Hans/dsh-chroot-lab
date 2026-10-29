@@ -86,17 +86,8 @@ dsh_config_init() {
   DSH_GUEST_DIR=$DSH_STATE_DIR/guest
   DSH_GUEST_RUNTIME_DIR=$DSH_STATE_DIR/runtime
   DSH_DSH_HOME_DIR=$DSH_STATE_DIR/dsh-home
-  DSH_WORKSPACE_SOURCE=
-  if [ "${DSH_WORKSPACE_DIR+x}" != x ]; then
-    if [ -L "$DSH_DSH_HOME_DIR/workspace" ]; then
-      DSH_WORKSPACE_DIR=/run/dsh/workspace
-      DSH_WORKSPACE_SOURCE=$(readlink -f "$DSH_DSH_HOME_DIR/workspace" 2>/dev/null || true)
-    elif [ -d "$DSH_DSH_HOME_DIR/workspace" ]; then
-      DSH_WORKSPACE_DIR=/root/.dsh/workspace
-    else
-      DSH_WORKSPACE_DIR=/sdcard/DSH/workspace
-    fi
-  fi
+  DSH_WORKSPACE_HOST_DIR=$DSH_STATE_DIR/workspace
+  : "${DSH_WORKSPACE_DIR:=/root/workspace}"
   DSH_LOG_DIR=$DSH_ROOT/logs
   DSH_RUNTIME_DIR=$DSH_ROOT/dsh
   DSH_SNAPSHOT_DIR=$DSH_ROOT/snapshots
@@ -149,6 +140,12 @@ dsh_config_check_paths() {
       ;;
     esac
   done
+  case $DSH_WORKSPACE_DIR in
+  /root | /root/.dsh | /root/.dsh/*)
+    dsh_err "workspace must be outside DSH home: $DSH_WORKSPACE_DIR"
+    _rc=1
+    ;;
+  esac
   if [ "$DSH_IMAGE_DIR" = "$DSH_MEDIA" ] || [ "$DSH_IMAGE_DIR" = "$DSH_ROOT" ]; then
     dsh_err "image directory must not equal the media or data root"
     _rc=1
@@ -179,6 +176,7 @@ DSH_ROOTFS_DIR=$DSH_ROOTFS_DIR
 DSH_TMP=$DSH_TMP
 DSH_GUEST_TMP=$DSH_GUEST_TMP
 DSH_WORKSPACE_DIR=$DSH_WORKSPACE_DIR
+DSH_WORKSPACE_HOST_DIR=$DSH_WORKSPACE_HOST_DIR
 DSH_IMAGE_SIZE_GB=$DSH_IMAGE_SIZE_GB
 DSH_PROTECT_CRITICAL=$DSH_PROTECT_CRITICAL
 DSH_SELINUXFS_MASK=$DSH_SELINUXFS_MASK

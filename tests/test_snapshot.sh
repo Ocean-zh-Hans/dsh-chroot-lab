@@ -9,6 +9,7 @@ fixture_env "$case_dir"
 
 printf 'abc' >"$DSH_IMAGE"
 printf 'before' >"$DSH_ROOT/state/dsh-home/setting"
+printf 'workspace-before\n' >"$DSH_ROOT/state/workspace/marker"
 printf '{"version":"old"}\n' >"$DSH_ROOT/state/guest/module.json"
 printf 'old-module-hash\n' >"$DSH_ROOT/state/guest/module.sha256"
 chmod 0600 "$DSH_IMAGE"
@@ -37,9 +38,31 @@ out=$("$DSH_CTL" restore s1 --apply)
 assert_contains "$out" "restored image"
 assert_eq "$(cat "$DSH_IMAGE")" "abc"
 assert_eq "$(cat "$DSH_ROOT/state/dsh-home/setting")" "before"
+assert_eq "$(cat "$DSH_ROOT/state/workspace/marker")" 'workspace-before'
 [ ! -e "$DSH_TMP/dsh-recovery" ] || fail "restore retained the recovery directory"
 [ ! -e "$DSH_ROOT/state/guest/module.json" ] || fail "restore revived old module metadata"
 [ ! -e "$DSH_ROOT/state/guest/module.sha256" ] || fail "restore revived old module hashes"
+mkdir "$CASE/legacy"
+tar -xzf "$CASE/archive.good" -C "$CASE/legacy"
+mv "$CASE/legacy/state/workspace" "$CASE/legacy/state/dsh-home/workspace"
+printf 'legacy-workspace\n' >"$CASE/legacy/state/dsh-home/workspace/marker"
+tar -czf "$archive" -C "$CASE/legacy" state
+legacy_hash=$(sha256sum "$archive" | awk '{print $1}')
+python3 - "$manifest" "$legacy_hash" <<'PY'
+import sys
+path, digest = sys.argv[1:]
+with open(path) as f:
+    lines = f.readlines()
+with open(path, 'w') as f:
+    for line in lines:
+        f.write('state_sha256=' + digest + '\n' if line.startswith('state_sha256=') else line)
+PY
+out=$("$DSH_CTL" restore s1 --apply)
+assert_contains "$out" 'restored image'
+assert_eq "$(cat "$DSH_ROOT/state/workspace/marker")" 'legacy-workspace'
+[ ! -e "$DSH_ROOT/state/dsh-home/workspace" ] || fail 'legacy snapshot restored a workspace inside DSH home'
+cp "$CASE/archive.good" "$archive"
+cp "$CASE/manifest.good" "$manifest"
 set +e
 "$DSH_CTL" restore s1 >/dev/null 2>&1
 rc=$?
@@ -208,7 +231,7 @@ out=$("$DSH_CTL" start --apply 2>&1)
 rc=$?
 set -e
 [ "$rc" -ne 0 ] || fail "a new start entered during purge"
-assert_contains "$out" "lock is held"
+[ ! -e "$DSH_ROOT" ] || fail "start did not wait for the locked purge to finish"
 set +e
 wait "$PURGE_PID"
 rc=$?

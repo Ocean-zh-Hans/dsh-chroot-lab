@@ -144,14 +144,29 @@ EOF
 if [ -n "${DSH_TEST_ROOT:-}" ]; then
   printf 'helper %s\n' "$*" >>"$DSH_TEST_ROOT/helper.log" 2>/dev/null || true
 fi
-if [ "${1:-}" = --claim ]; then
-  _claim_guard=$2
+if [ "${1:-}" = --claim ] || [ "${1:-}" = --claim-wait ]; then
+  _claim_wait=0
+  if [ "$1" = --claim-wait ]; then
+    _claim_wait=$2
+    case $_claim_wait in
+    '' | *[!0-9]*) exit 2 ;;
+    esac
+    shift 2
+  else
+    shift
+  fi
+  _claim_guard=$1
   case $_claim_guard in
   "$DSH_ROOT"/*) ;;
   *) exit 1 ;;
   esac
-  mkdir "$_claim_guard" || exit 1
-  shift 2
+  _claim_i=0
+  until mkdir "$_claim_guard" 2>/dev/null; do
+    [ "$_claim_i" -lt "$_claim_wait" ] || exit 1
+    sleep 1 || exit 1
+    _claim_i=$((_claim_i + 1))
+  done
+  shift
   "$@"
   _claim_rc=$?
   rm -rf "$_claim_guard"
@@ -202,7 +217,7 @@ fixture_env() {
   export PATH="$CASE/bin:$PATH"
 
   mkdir -p "$DSH_ROOT/control" "$DSH_ROOT/state/ctl" "$DSH_ROOT/state/guest" "$DSH_ROOT/state/runtime" \
-    "$DSH_ROOT/state/dsh-home" "$DSH_ROOT/logs" "$DSH_ROOT/dsh" "$DSH_IMAGE_DIR" "$DSH_TMP" "$DSH_PROC/self/attr" \
+    "$DSH_ROOT/state/dsh-home" "$DSH_ROOT/state/workspace" "$DSH_ROOT/logs" "$DSH_ROOT/dsh" "$DSH_IMAGE_DIR" "$DSH_TMP" "$DSH_PROC/self/attr" \
     "$DSH_SYS/fs/selinux" "$DSH_ROOTFS_DIR" "$CASE/bin"
   cp -a "$DSH_MODULE_DIR/control/." "$DSH_ROOT/control/"
   for _path in data mnt data_mirror storage metadata system system_ext product vendor odm apex linkerconfig dev; do

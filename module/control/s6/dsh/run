@@ -10,7 +10,7 @@ export TERM=xterm-256color
   exit 1
 }
 
-cd "${DSH_WORKSPACE_DIR:-/sdcard/DSH/workspace}" || {
+cd "${DSH_WORKSPACE_DIR:-/root/workspace}" || {
   echo 'dsh service: required workspace is unavailable' >&2
   exit 1
 }

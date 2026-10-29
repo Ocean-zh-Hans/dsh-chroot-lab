@@ -304,27 +304,37 @@ grep -q 'mount -t selinuxfs -o ro selinuxfs ' "$CASE/mounts.log" || {
   fail "read-only selinuxfs mount missing"
 }
 "$DSH_CTL" stop >/dev/null
-mkdir -p "$DSH_ROOT/state/dsh-home/workspace"
-chmod 0700 "$DSH_ROOT/state/dsh-home/workspace"
-before_mode=$(/usr/bin/stat -c %a "$DSH_ROOT/state/dsh-home/workspace")
+chmod 0700 "$DSH_ROOT/state/workspace"
+before_mode=$(/usr/bin/stat -c %a "$DSH_ROOT/state/workspace")
 start_ok
 assert_contains "$out" "started:"
-grep -q 'DSH_WORKSPACE_DIR=/root/.dsh/workspace' "$CASE/chroot.log" || fail 'real dsh-home workspace was not selected'
-assert_eq "$(/usr/bin/stat -c %a "$DSH_ROOT/state/dsh-home/workspace")" "$before_mode"
-if grep -F "2777 $DSH_ROOT/state/dsh-home/workspace" "$CASE/chmod.log" >/dev/null; then
-  fail 'real workspace permissions were broadened'
+grep -q 'DSH_WORKSPACE_DIR=/root/workspace' "$CASE/chroot.log" || fail 'independent root workspace was not selected'
+grep -F -- "--bind $DSH_ROOT/state/workspace $DSH_ROOTFS_DIR/root/workspace" "$CASE/helper.log" >/dev/null || fail 'independent workspace was not bound'
+[ ! -e "$DSH_ROOTFS_DIR/root/.dsh/workspace" ] || fail 'workspace remained inside DSH home'
+assert_eq "$(/usr/bin/stat -c %a "$DSH_ROOT/state/workspace")" "$before_mode"
+if grep -F "2777 $DSH_ROOT/state/workspace" "$CASE/chmod.log" >/dev/null; then
+  fail 'independent workspace permissions were broadened'
 fi
 "$DSH_CTL" stop >/dev/null
+mkdir -p "$DSH_ROOT/state/dsh-home/workspace"
+set +e
+out=$("$DSH_CTL" start --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -ne 0 ] || fail 'legacy DSH-home workspace was accepted'
+assert_contains "$out" 'legacy'
 rm -rf "$DSH_ROOT/state/dsh-home/workspace"
-mkdir -p "$CASE/custom workspace"
-MSYS=winsymlinks:nativestrict ln -s "$CASE/custom workspace" "$DSH_ROOT/state/dsh-home/workspace"
-[ -L "$DSH_ROOT/state/dsh-home/workspace" ] || fail 'test did not create a workspace symlink'
+export DSH_WORKSPACE_DIR=/root/custom-workspace
 start_ok
 assert_contains "$out" "started:"
-grep -q 'DSH_WORKSPACE_DIR=/run/dsh/workspace' "$CASE/chroot.log" || fail 'linked dsh-home workspace was not selected'
-grep -F -- "--bind $CASE/custom workspace $DSH_ROOTFS_DIR/run/dsh/workspace" "$CASE/helper.log" >/dev/null || fail 'linked workspace target was not bound'
+grep -F -- "--bind $DSH_ROOT/state/workspace $DSH_ROOTFS_DIR/root/custom-workspace" "$CASE/helper.log" >/dev/null || fail 'custom guest workspace was not bound from independent storage'
 "$DSH_CTL" stop >/dev/null
-rm -f "$DSH_ROOT/state/dsh-home/workspace"
+unset DSH_WORKSPACE_DIR
+printf 'keep-permission-content\n' >"$DSH_ROOT/state/workspace/marker"
+out=$("$DSH_CTL" fixperm)
+assert_contains "$out" "$DSH_ROOT/state/workspace"
+assert_eq "$(cat "$DSH_ROOT/state/workspace/marker")" 'keep-permission-content'
+[ ! -e "$DSH_MEDIA/DSH/workspace" ] || fail 'fixperm recreated the legacy sdcard workspace'
 unset DSH_SELINUXFS_MODE
 export DSH_SELINUXFS_MODE=invalid
 set +e

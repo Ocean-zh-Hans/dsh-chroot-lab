@@ -637,3 +637,20 @@ fccd162a950f2a77ba25c6e90028c319208f92080f121b66f270066d6ca39c3f
 - 前台实际包为 `mark.via.gp`。SystemUI 时钟存在时连续两次 `session.analyze` 均 `reused:true`，实测约 1 ms、0 ms，没有再出现每次 700–1800 ms 的持续全量重析。该结果只代表本次界面，不是性能承诺。
 - 对象 selector 命中 102 个节点；对象和字符串两种 `ui.flag` 均保存成功；`ui.explain` 返回 21 层节点；`find|count` 的 `result.count=89`。缺少 epoch 的 `ui.click` 在输入前返回 `INVALID_ARGUMENT`。Activity 无法可靠确认时返回空串，不再误填 Launcher 类名；当次 `fallbackReason=null`、`reanalyzed=false`。
 - **未解决项**：`backend.selftest` 的 token 检查仍为 `ok=false, err=TOKEN_INVALID`，尽管 App/run-as 均可读取 32 字节 token 且客户端实际认证成功。该项没有写成通过，也不靠轮换 token 掩盖。500 条事件压测、force-stop 自动恢复、真实模型会话、真实 hooks 审计事件以及所有 ROM 的兼容性仍未验证。
+
+## 37. Agent token 自检与原生生命周期锁（2026-10-29）
+
+- §36 的 token 自检已定位为固定把 `TOKEN_INVALID` 传给结果构造器，即使 token 非空也会失败；现只在 token 为空时传入该错误。没有轮换或输出 token。修复 APK 已保留数据安装，设备实际安装 SHA256 为 `f62c8da26740ec09e7a6ec165543b9b60d1ce126286f16bf65f2f9e89d06e2e2`，与工作区构建一致，仍为 debug 签名。
+- 升级后系统设置为 `accessibility_enabled=0` 且服务列表为空，因此初次连接被拒绝，不能记作自检通过。恢复原已使用的 Agent 无障碍组件后，实测 `backend.selftest` 的 socket、token、a11y、dump、shot 均为 `ok=true`；input 为 `ok=true, executed=false`，明确没有注入输入。uiautomation/shell 仍按普通 App 权限返回 `NO_ROOT`，root helper 未启用。
+- 生命周期锁改为原生 `--claim-wait`：只对锁竞争做有界等待，子命令失败立即返回，避免把 stop 等操作作为锁冲突重放。主机 `test_lock: ok` 覆盖竞争、stale 回收、短暂锁等待、失败子命令只执行一次和退出码保留。
+- 新 ARM64 helper 在主力机独立临时目录实测通过：阻塞锁释放后命令只执行一次并返回原退出码 7；零等待遇忙返回非零且不执行子命令，结果为 `device_claim_wait=ok`。该测试不使用正式 lifecycle 锁、镜像或 chroot 数据，临时文件已清理。
+- watchdog 全套回归已通过，覆盖正常启停、身份不符拒绝、跨启动 owner 回收、健康检查及遇忙零等待。周期检查不再阻塞在 stop 持有的生命周期锁上，避免 holder 无法及时处理 TERM。完整标准构建和正式升级结果见 §38。
+
+## 38. 工作区与 DSH home 职责分离（2026-10-29）
+
+- 用户明确重新选择 `/root/workspace` 作为工作区，并把 `/root/.dsh` 完全交给 DSH。新版不再采用 §33 的 `.dsh/workspace` 或链接方案：宿主 `state/workspace` 是独立真实目录，`state/dsh-home` 仅保存 DSH 数据。s6 默认 cwd、`DSH_WORKSPACE_DIR`、plan、doctor 和 `fixperm` 均按此职责调整。
+- 安装只在其它步骤全部完成后，将旧的 `state/dsh-home/workspace` 原子重命名为 `state/workspace`；前期失败不移动旧目录。新旧目录同时存在、legacy 链接或目标链接均拒绝自动处理。`DSH_WORKSPACE_DIR` 不允许覆盖整个 `/root` 或落入 `.dsh`。
+- 旧快照恢复在暂存区执行同样的真实目录迁移，并将独立工作区纳入替换与回滚；失败不得合并两份数据。工作文件随 state 归档，仍不写入 rootfs.img。
+- 主机回归确认安装前期复制失败时旧目录保持原位、成功后 marker 保留、冲突不合并。最终标准构建日志 `build/.tools/build-0.2.2-final.log` 包含 `all tests passed`、`all host checks passed` 和模块打包成功；ZIP SHA256 为 `69859e507705dbde64d9b778d9a95680de379394ce02898c67e49a37ac2148a7`。
+- 真机核对发现当前项目已在 rootfs `/root/workspace`，旧宿主目录只剩 5 个文件，不能直接用旧目录绑定遮住当前项目。维护脚本停止 DSH 写入、建立只读 bind，将当前工作区复制到独立存储并执行 `diff -qr`；6092 个文件比较一致后发布，原 rootfs 内容保留作备份，旧宿主目录另存为 `state/legacy-workspace-pre-independent`。没有删除原项目或用旧快照覆盖。
+- 正式安装 staged doctor 为 **61 pass / 1 warn / 0 fail**，启动、full hooks、watchdog 和 SELinux 均通过；独立目录设备号/inode 在安装前后不变，权限为 0700。真实重启为 `initial_boot=ok`，holder/watchdog 的 boot_id 和身份匹配，日志为 0600，guest 内 `/root/workspace` 与 `/root/.dsh` 分离且项目可访问，`reboot_upgrade_verified=ok`。last-good 仍为 `pre-compose-upgrade-20261029`。

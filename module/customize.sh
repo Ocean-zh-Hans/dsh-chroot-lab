@@ -61,6 +61,17 @@ if [ -e "$CHROOT_HOME/state/guest/loopdev" ]; then
   ui_print "- runtime records retained; use the updated controller to recover them"
 fi
 
+if [ -L "$CHROOT_HOME/state/dsh-home/workspace" ]; then
+  abort "legacy linked workspace requires explicit migration; move its target to state/workspace and remove the old link"
+fi
+[ ! -L "$CHROOT_HOME/state/workspace" ] || abort "independent workspace must be a real directory"
+if [ -e "$CHROOT_HOME/state/dsh-home/workspace" ]; then
+  [ -d "$CHROOT_HOME/state/dsh-home/workspace" ] || abort "legacy workspace is not a real directory"
+  [ ! -e "$CHROOT_HOME/state/workspace" ] || abort "both legacy and independent workspaces exist; refusing to merge them"
+else
+  mkdir -p "$CHROOT_HOME/state/workspace" || abort "cannot create the independent workspace"
+  chmod 0700 "$CHROOT_HOME/state/workspace" || abort "cannot protect the independent workspace"
+fi
 mkdir -p "$CHROOT_HOME/control" "$CHROOT_HOME/state/ctl" "$CHROOT_HOME/state/guest" \
   "$CHROOT_HOME/state/dsh-home" "$CHROOT_HOME/logs" "$CHROOT_HOME/dsh" \
   "$CHROOT_HOME/snapshots" "$CHROOT_HOME/payload" "$CHROOT_HOME/rootfs-staging" || abort "cannot create $CHROOT_HOME"
@@ -92,6 +103,10 @@ done
 chmod 0700 "$CHROOT_HOME" "$CHROOT_HOME/control" "$CHROOT_HOME/state" 2>/dev/null || abort "cannot set permissions"
 
 printf '%s\n' "$MODULE_VERSION" >"$CHROOT_HOME/state/ctl/install-version" || abort "cannot write install marker"
+if [ -e "$CHROOT_HOME/state/dsh-home/workspace" ]; then
+  chmod 0700 "$CHROOT_HOME/state/dsh-home/workspace" || abort "cannot protect the legacy workspace before migration"
+  mv "$CHROOT_HOME/state/dsh-home/workspace" "$CHROOT_HOME/state/workspace" || abort "cannot migrate the independent workspace"
+fi
 
 ui_print "- DSH Ubuntu Chroot installed"
 ui_print "- install only; apply/start is a separate explicit step"

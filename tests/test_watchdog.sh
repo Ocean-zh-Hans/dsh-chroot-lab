@@ -11,6 +11,7 @@ export DSH_PROC=/proc
 export DSH_WATCHDOG_LOCK_TIMEOUT=2
 export DSH_WATCHDOG_INTERVAL=1
 export DSH_WATCHDOG_STOP_TIMEOUT=5
+export DSH_TEST_SKIP_NS_SCAN=1
 . "$DSH_MODULE_DIR/lib/common.sh"
 . "$DSH_MODULE_DIR/lib/config.sh"
 . "$DSH_MODULE_DIR/lib/proc.sh"
@@ -31,6 +32,12 @@ start_daemon() {
 }
 
 start_daemon
+i=0
+while [ "$i" -lt 50 ] && ! grep -q -- '--claim-wait 0 .*/lifecycle.claim' "$CASE/helper.log"; do
+  sleep 0.1
+  i=$((i + 1))
+done
+grep -q -- '--claim-wait 0 .*/lifecycle.claim' "$CASE/helper.log" || fail "watchdog periodic check can block behind lifecycle stop"
 bash "$DSH_WATCHDOG" --stop --disable
 wait "$WPID"
 [ -f "$DSH_CTL_DIR/watchdog.disabled" ] || fail "watchdog disable marker is missing"
@@ -41,15 +48,17 @@ WPID=
 : >"$CASE/helper.log"
 bash "$DSH_WATCHDOG" --enable
 [ ! -e "$DSH_CTL_DIR/watchdog.disabled" ] || fail "watchdog enable did not clear the marker"
-grep -q -- '--claim .*/lifecycle.claim' "$CASE/helper.log" || fail "direct watchdog enable bypassed the lifecycle claim"
+grep -q -- '--claim-wait 120 .*/lifecycle.claim' "$CASE/helper.log" || fail "direct watchdog enable bypassed the lifecycle claim"
 
 start_daemon
 printf '1\n' >"$DSH_CTL_DIR/watchdog.owner/starttime"
+: >"$CASE/helper.log"
 set +e
 bash "$DSH_WATCHDOG" --stop >/dev/null 2>&1
 rc=$?
 set -e
 [ "$rc" -ne 0 ] || fail "watchdog stopped with a mismatched birth time"
+grep -q -- '_lifecycle-claimed --stop' "$CASE/helper.log" || fail "mismatched birth time test did not reach watchdog stop"
 kill -0 "$WPID" 2>/dev/null || fail "watchdog was killed despite identity mismatch"
 printf '%s\n' "$(dsh_proc_starttime "$WPID")" >"$DSH_CTL_DIR/watchdog.owner/starttime"
 bash "$DSH_WATCHDOG" --stop

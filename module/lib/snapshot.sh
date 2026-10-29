@@ -399,7 +399,28 @@ dsh_snapshot_restore_state() {
       }
     fi
   done
-  for _child in dsh-home guest runtime; do
+  if [ -e "$_stage/new/state/dsh-home/workspace" ] || [ -L "$_stage/new/state/dsh-home/workspace" ]; then
+    if [ -e "$_stage/new/state/workspace" ] || [ -L "$_stage/new/state/workspace" ]; then
+      dsh_err "state archive contains both legacy and independent workspaces"
+      rm -rf "$_stage"
+      return 1
+    fi
+    if [ ! -d "$_stage/new/state/dsh-home/workspace" ] || [ -L "$_stage/new/state/dsh-home/workspace" ]; then
+      dsh_err "legacy linked workspace requires explicit migration"
+      rm -rf "$_stage"
+      return 1
+    fi
+    mv "$_stage/new/state/dsh-home/workspace" "$_stage/new/state/workspace" || {
+      rm -rf "$_stage"
+      return 1
+    }
+  elif [ ! -e "$_stage/new/state/workspace" ] && [ ! -L "$_stage/new/state/workspace" ]; then
+    if ! mkdir "$_stage/new/state/workspace" || ! chmod 0700 "$_stage/new/state/workspace"; then
+      rm -rf "$_stage"
+      return 1
+    fi
+  fi
+  for _child in dsh-home guest runtime workspace; do
     if [ ! -d "$_stage/new/state/$_child" ] || [ -L "$_stage/new/state/$_child" ]; then
       dsh_err "state archive lacks a real directory: $_child"
       rm -rf "$_stage"
@@ -410,7 +431,7 @@ dsh_snapshot_restore_state() {
     rm -f "$_stage/new/state/guest/$_name"
   done
   rm -f "$_stage/new/state/runtime/url" "$_stage/new/state/runtime/health"
-  for _child in dsh-home guest runtime; do
+  for _child in dsh-home guest runtime workspace; do
     if [ -e "$DSH_STATE_DIR/$_child" ]; then
       mv "$DSH_STATE_DIR/$_child" "$_stage/old/$_child" || {
         dsh_snapshot_state_rollback "$_stage" "$_changed" "$_ctl_changed"

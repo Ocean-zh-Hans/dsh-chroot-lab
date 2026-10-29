@@ -13,8 +13,13 @@ dsh_lifecycle_exec() {
     return 1
   }
   dsh_state_ensure || return 1
-  DSH_LIFECYCLE_CLAIM_ACTIVE=1 "$_helper" --claim "$DSH_CTL_DIR/lifecycle.claim" \
-    "${DSH_TEST_SHELL:-/system/bin/sh}" "$@"
+  local _lifecycle_timeout
+  _lifecycle_timeout=${DSH_LIFECYCLE_CLAIM_TIMEOUT:-120}
+  case $_lifecycle_timeout in
+  '' | *[!0-9]*) return 2 ;;
+  esac
+  DSH_LIFECYCLE_CLAIM_ACTIVE=1 "$_helper" --claim-wait "$_lifecycle_timeout" \
+    "$DSH_CTL_DIR/lifecycle.claim" "${DSH_TEST_SHELL:-/system/bin/sh}" "$@"
 }
 
 dsh_lock_path_safe() {

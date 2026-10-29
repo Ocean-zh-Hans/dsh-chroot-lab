@@ -25,7 +25,7 @@
 | `DSH_ROOTFS_DIR` | `/tmp/dsh-rootfs` | 配置文件；启动 | 宿主 private namespace 的镜像挂载点。不是 guest TMPDIR。 |
 | `DSH_TMP` | `/tmp` | 配置文件；宿主控制操作 | 宿主恢复脚本等临时文件位置。**不要用它设置 guest TMPDIR。** |
 | `DSH_GUEST_TMP` | `/var/tmp` | 配置文件；下次启动 | s6、DSH 和 guest 进程的 TMPDIR，位于 rootfs 磁盘而不是 `/tmp` tmpfs。创建为 1777。不会清理既有 `/tmp` 垃圾或释放其 RAM。 |
-| `DSH_WORKSPACE_DIR` | 见下节 | 配置文件/自动检测；下次启动 | DSH 工作目录的 **guest 路径**。自定义路径必须已存在，不静默回退 `/root`。 |
+| `DSH_WORKSPACE_DIR` | `/root/workspace` | 配置文件；下次启动 | DSH 工作目录的 **guest 路径**。宿主来源固定为 `state/workspace`；不得放在 `/root/.dsh` 内。 |
 | `DSH_IMAGE_DIR` | `/data/media/0/ubuntu-rootfs` | 配置文件；镜像操作/启动 | 镜像及快照位置。默认在 guest 遮蔽。 |
 | `DSH_IMAGE` | `$DSH_IMAGE_DIR/rootfs.img` | 配置文件；镜像操作/启动 | 活动 ext4 镜像。禁止并发写、删或绕过生命周期操作。 |
 | `DSH_MEDIA` | `/data/media/0` | 配置文件；启动 | Android 媒体根目录。 |
@@ -39,15 +39,13 @@
 | `DSH_LOOP` | 控制器分配 | 启动 holder 时 | 当前镜像的 loop 设备。不得手工替换记录或 detach 陌生设备。 |
 | `DSH_PROC` / `DSH_SYS` / `DSH_MOUNTINFO` | `/proc`、`/sys`、proc mountinfo | 测试/内部 | 生产环境不要随意覆盖，否则身份与清理判断会失真。 |
 
-## 工作区兼容
+## 工作区与 DSH home
 
-未显式设置 `DSH_WORKSPACE_DIR` 时：
-
-1. `state/dsh-home/workspace` 是真实目录：使用 `/root/.dsh/workspace`。
-2. 它是链接：解析真实目标后绑定到 `/run/dsh/workspace`。目标不存在则启动失败，不重建旧 sdcard 链接。
-3. 它不存在：使用 `/sdcard/DSH/workspace`，创建并设为 2777。
-
-自定义内部工作区不在每次启动时执行 `chmod 2777`。正常模块安装只更新模块/control，不替换用户 DSH runtime、插件或 dsh-home；恢复快照可能包含旧 dsh-home，不能用它无声覆盖刚升级的环境。真实目录形式的内部工作区会随 state 归档；链接只保存链接本身，外部目标不自动备份。
+- 宿主 `state/workspace` 是独立的真实目录，默认绑定到 guest `/root/workspace`，模式 0700。工作文件随 state 快照归档，但不写入 rootfs.img。
+- 宿主 `state/dsh-home` 只绑定到 `/root/.dsh`，由 DSH 自己维护；工作区不再放在这个目录，也不创建兼容软链接。
+- `DSH_WORKSPACE_DIR` 只改变 guest 挂载点，不能设为整个 `/root`、`/root/.dsh` 或其子目录；宿主工作文件仍统一保存在 `state/workspace`。
+- 安装其它步骤全部完成后，才把旧的 `state/dsh-home/workspace` 真实目录原子迁到 `state/workspace`，前期失败不改变旧路径。新旧目录同时存在时拒绝合并；legacy 链接需要操作者显式迁移，不能静默跟随到任意宿主路径。
+- 恢复旧快照时同样迁移真实工作区目录。恢复快照会覆盖当前工作文件，必须先确认内容和备份。正常模块安装不替换用户 DSH runtime、插件或其它 dsh-home 数据。
 
 ## DSH 不启动时的恢复
 

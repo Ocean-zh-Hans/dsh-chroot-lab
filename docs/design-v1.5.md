@@ -108,8 +108,8 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 ├── rootfs.img                           # ext4 128GB sparse
 └── snapshots/                           # 镜像冷快照
 
-/data/adb/chroot/state/dsh-home/workspace/ # 真实目录 → /root/.dsh/workspace；链接目标 → /run/dsh/workspace
-/data/media/0/DSH/workspace/             # 没有内部工作区时 → /sdcard/DSH/workspace
+/data/adb/chroot/state/workspace/         # 独立真实目录（0700）→ /root/workspace
+/data/adb/chroot/state/dsh-home/          # 仅 DSH 配置/runtime → /root/.dsh
 ```
 
 - `rootfs.img` 是 Ubuntu 的虚拟磁盘，不是 DSH home，不是工作区。
@@ -245,7 +245,7 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 6. 宿主 `/proc` 的 `hidepid=invisible`（本机已是）；
 7. `/sdcard` 不放 `magisk`/`kernelsu`/`su` 之类明显标记。
 
-`ubuntu-rootfs`/`DSH` 名字、loop 设备、sdcard 工作区是可接受的低强度信号；不为名字过度设计。详见 `hiddenness.md`。
+`ubuntu-rootfs`/`DSH` 名字、loop 设备和宿主工作区路径是可接受的低强度信号；不为名字过度设计。详见 `hiddenness.md`。
 
 ---
 
@@ -273,7 +273,7 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 
 ### 7.3 宿主 watchdog
 
-独立于 DSH/s6，30s 检查 holder 身份、loop backing、真实 DSH HTTP 健康和全局 Enforcing；stopped/failed/stale 也检查 loop 和 rootfs 残留。每轮检查与控制器写操作使用同一原生 lifecycle claim，避免与 stop/start 等操作交错写状态。daemon 维护 PID/starttime 和原子 owner 锁；`--stop --disable` 持锁等待，缺失或不匹配的 starttime fail closed。sleep 失败必须退出循环，不得无节流自旋。输出独立写入 `watchdog.log`，重复行每 60 次至多报告一次，约 1 MiB 轮转并保留 3 代，当前及归档均为 0600。purge 以操作标记阻止新 claim，再持同一把生命周期锁完成 stop、cold/loop 复核和删除；失败清操作标记并恢复 watchdog，`dsh-watchdog --enable` 提供显式恢复，安装/更新也可启用。status/doctor 显示 disabled 或 purge-in-progress，不能把失败 purge 当作成功。
+独立于 DSH/s6，30s 检查 holder 身份、loop backing、真实 DSH HTTP 健康和全局 Enforcing；stopped/failed/stale 也检查 loop 和 rootfs 残留。每轮检查与控制器写操作使用同一原生 lifecycle claim，避免与 stop/start 等操作交错写状态。原生 `--claim-wait` 只对有界锁竞争等待，子命令失败立即返回，不得把生命周期操作当成锁冲突重放。控制命令默认最多等待 120 秒；watchdog 周期检查使用零等待，遇忙跳过本轮，避免 stop 持锁期间 daemon 卡在锁助手子进程而无法处理 TERM。daemon 维护 PID/starttime 和原子 owner 锁；`--stop --disable` 持锁等待，缺失或不匹配的 starttime fail closed。sleep 失败必须退出循环，不得无节流自旋。输出独立写入 `watchdog.log`，重复行每 60 次至多报告一次，约 1 MiB 轮转并保留 3 代，当前及归档均为 0600。purge 以操作标记阻止新 claim，再持同一把生命周期锁完成 stop、cold/loop 复核和删除；失败清操作标记并恢复 watchdog，`dsh-watchdog --enable` 提供显式恢复，安装/更新也可启用。status/doctor 显示 disabled 或 purge-in-progress，不能把失败 purge 当作成功。
 
 ### 7.4 开机
 
@@ -300,7 +300,7 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 - `control/dsh/hooks.patch.yml` 定义 `approval-free`（full sandbox + `approval: never`）和 `approval-guard`（full sandbox + `approval: ask`），显示名分别为 `自动执行（不弹批准）`、`谨慎执行（逐项批准）`，机器 ID 不变。仅在 profile 能解析 permission-presets 时请求；缺少该条目时链接当前 runtime 的同版本包，仍不可用则明确选择 `hooks-audit-only.patch.yml`，审计依赖缺失时禁用 patch。`/run/dsh/hooks.status` 记录请求模式和原因，不证明上游加载成功。启动时由 guard 文件选择默认预设；新会话需要重启，已有会话通过 `/permission` 切换。
 - `CLAUDE_PLUGIN_ROOT` 解析 hooks 路径，生产值为 `/opt/dsh-control`。固定版本的两种配置均已通过 `--dump-config` 并在 PC 隔离环境实际启动；手机端 guard/hook 路径已实测，真实模型会话和模型工具链调用仍未验证。
 - `SessionStart` 和高风险 `UserPromptSubmit` 通过 `additionalContext` 提示块设备、活动镜像和全局 SELinux/prop 风险；`PostToolUse` 审计记录工具元数据，不默认保存完整命令、提示内容或凭据。PreToolUse 硬拦截已移除，提示可能错过首个请求，不能当作安全边界。
-- 工作区优先保留已有 `state/dsh-home/workspace`：真实目录使用 `/root/.dsh/workspace`，链接目标绑定到 `/run/dsh/workspace`；没有它才使用 `/sdcard/DSH/workspace`。自定义工作区不每次 `chmod 2777`，不可用或创建默认工作区失败均阻止启动，不能静默回退 `/root`。保持 full 能力，不称为安全沙箱。
+- 工作区固定使用独立宿主 `state/workspace`，默认绑定 `/root/workspace`；`/root/.dsh` 完全交给 DSH。安装在其它步骤全部完成后才原子迁移真实 legacy 目录，前期失败不改变旧路径；旧快照恢复采用同一职责分离，冲突或链接拒绝自动处理。`DSH_WORKSPACE_DIR` 可更改 guest 挂载点但不能覆盖整个 `/root` 或落入 `.dsh`，宿主来源不变。工作区不可用、目标为链接或迁移失败均阻止启动，不回退 sdcard 或 `/root`。保持 full 能力，不称为安全沙箱。
 - guest `TMPDIR` 默认 `/var/tmp`（rootfs 磁盘），由 `DSH_GUEST_TMP` 配置；宿主 `DSH_TMP` 继续服务控制/恢复脚本。既有 `/tmp` 垃圾不自动删除，rescue 仍使用独立可写 tmpfs。配置和恢复入口见 `/opt/dsh-control/README.md`。
 - `ttyd` 默认关闭。启用时必须有随机 0600 `state/runtime/ttyd.pass`、`ttyd -c dsh:...` 和 `127.0.0.1:7681`；缺失凭据不得启动匿名 root shell。
 

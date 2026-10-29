@@ -554,7 +554,7 @@ public final class AgentServer {
         if (!selftest) return result;
         JSONArray checks = new JSONArray();
         checks.put(check("socket", server != null, server != null ? "" : "SOCKET_OFF"));
-        checks.put(check("token", !token(context).isEmpty(), "TOKEN_INVALID"));
+        checks.put(check("token", !token(context).isEmpty(), !token(context).isEmpty() ? "" : "TOKEN_INVALID"));
         checks.put(check("a11y", service != null, service == null ? "A11Y_OFF" : ""));
         if (service != null) {
             long started = System.nanoTime();

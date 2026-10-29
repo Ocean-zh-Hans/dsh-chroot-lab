@@ -149,7 +149,7 @@ su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl log 200'
 
 **DSH 没启动不等于必须先进 chroot。** 已授权 root 的 Console 独立于 holder/DSH，可直接查看状态、Stop 或执行“清理残留”；结束 Console 不会停止 chroot。也可通过 adb+su 在宿主执行本节的 `doctor/status/diag/log`、`recover --apply`，需要只读修复 shell 时先清理再 `rescue --apply`。不要安装直接裸跑 `dsh-nsinit` 的 `service.d` 脚本，它会绕过镜像校验、holder、锁和清理。没有默认开放匿名网络 root shell 或无人值守远程恢复。
 
-guest 的配置和恢复说明位于 `/opt/dsh-control/README.md`；`/run/dsh/module.json` 与 `module.sha256` 是启动时生成的只读元数据，不代表开放模块目录。已有 `state/dsh-home/workspace` 真实目录或链接会被保留并优先使用，不重建旧 sdcard 链接，也不对自定义工作区执行 `chmod 2777`。正常模块安装不替换用户已升级的 DSH runtime、插件或 dsh-home；恢复快照前仍需注意其中可能包含旧 dsh-home。
+guest 的配置和恢复说明位于 `/opt/dsh-control/README.md`；`/run/dsh/module.json` 与 `module.sha256` 是启动时生成的只读元数据，不代表开放模块目录。工作区使用独立 `state/workspace` 并绑定 `/root/workspace`，`state/dsh-home` 仅交给 DSH。安装和旧快照恢复会迁移真实 legacy 工作区，冲突或 legacy 链接拒绝自动处理。正常模块安装不替换用户已升级的 DSH runtime、插件或其它 dsh-home 数据；恢复快照前仍需注意其中可能包含旧 dsh-home 和会覆盖当前文件的工作区。
 
 ### 3.1 P2 必测
 
@@ -234,7 +234,7 @@ su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl status'
 
 ### 4.2 快照
 
-rootfs 镜像/state 快照不包含宿主 `/sdcard/DSH/workspace`，外置工作区需要另行备份。若 `state/dsh-home/workspace` 是真实目录，其内容会随 state 归档；若是链接，只保存链接本身，外部目标不自动备份。恢复可能覆盖当前工作文件，不能在未确认内容和备份的情况下回滚。rootfs 镜像本身不包含这些宿主工作区。
+独立宿主 `state/workspace` 的内容随 state 快照归档并绑定 `/root/workspace`，不写入 rootfs.img；`state/dsh-home` 仅保存 DSH 自己的数据。旧快照中的真实 `.dsh/workspace` 会在恢复暂存区迁移为独立目录，legacy 链接或新旧目录冲突会拒绝恢复。恢复可能覆盖当前工作文件，不能在未确认内容和备份的情况下回滚。
 
 ```sh
 su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl stop'

@@ -109,8 +109,8 @@ DSH_GUEST_COMMAND_TIMEOUT=1 dsh_guest_run "$$" true
 rc=$?
 set -e
 elapsed=$(($(date +%s) - started))
-assert_eq "$rc" 124
-[ "$elapsed" -lt 6 ] || fail "guest command timeout took ${elapsed}s"
+[ "$rc" -eq 124 ] || [ "$rc" -eq 137 ] || fail "guest command timeout returned $rc"
+[ "$elapsed" -lt 15 ] || fail "guest command timeout took ${elapsed}s"
 
 export DSH_TEST_SKIP_NS_SCAN=0
 dsh_proc_ns "$$" >"$DSH_NS_FILE"

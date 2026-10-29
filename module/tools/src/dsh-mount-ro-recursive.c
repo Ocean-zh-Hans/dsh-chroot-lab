@@ -88,15 +88,33 @@ static int make_rprivate(const char *path) {
   return -1;
 }
 
-static int claim_and_exec(const char *path, char **command) {
+static int claim_and_exec(const char *path, char **command,
+                          unsigned long wait_seconds) {
   struct stat st;
-  int fd = open(path, O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
-  if (fd < 0 || fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
-      fchmod(fd, 0600) != 0 || flock(fd, LOCK_EX | LOCK_NB) != 0) {
-    fprintf(stderr, "dsh-mount-ro-recursive: cannot claim %s: %s\n", path,
-            strerror(errno));
-    if (fd >= 0) close(fd);
-    return 1;
+  unsigned long waited = 0;
+  int fd;
+  for (;;) {
+    fd = open(path, O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
+    if (fd < 0 || fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
+        fchmod(fd, 0600) != 0) {
+      fprintf(stderr, "dsh-mount-ro-recursive: cannot claim %s: %s\n", path,
+              strerror(errno));
+      if (fd >= 0) close(fd);
+      return 1;
+    }
+    if (flock(fd, LOCK_EX | LOCK_NB) == 0) break;
+    if (errno != EWOULDBLOCK || waited >= wait_seconds) {
+      fprintf(stderr, "dsh-mount-ro-recursive: cannot claim %s: %s\n", path,
+              strerror(errno));
+      close(fd);
+      return 1;
+    }
+    close(fd);
+    if (sleep(1) != 0) {
+      fprintf(stderr, "dsh-mount-ro-recursive: claim wait interrupted\n");
+      return 1;
+    }
+    waited++;
   }
   char claim_fd[32];
   char claim_fds[256];
@@ -128,11 +146,22 @@ int main(int argc, char **argv) {
   int i;
 
   if (argc >= 4 && strcmp(argv[1], "--claim") == 0) {
-    return claim_and_exec(argv[2], argv + 3);
+    return claim_and_exec(argv[2], argv + 3, 0);
+  }
+  if (argc >= 5 && strcmp(argv[1], "--claim-wait") == 0) {
+    char *end;
+    unsigned long wait_seconds;
+    errno = 0;
+    wait_seconds = strtoul(argv[2], &end, 10);
+    if (errno == ERANGE || argv[2][0] == '\0' || *end != '\0') {
+      fprintf(stderr, "invalid claim wait: %s\n", argv[2]);
+      return 2;
+    }
+    return claim_and_exec(argv[3], argv + 4, wait_seconds);
   }
 
   if (argc < 2) {
-    fprintf(stderr, "usage: %s [--make-rprivate PATH | --rbind SRC DST | --bind SRC DST | --remount-ro PATH | --remount-ro-bind PATH | PATH...]\n", argv[0]);
+    fprintf(stderr, "usage: %s [--claim PATH COMMAND... | --claim-wait SECONDS PATH COMMAND... | --make-rprivate PATH | --rbind SRC DST | --bind SRC DST | --remount-ro PATH | --remount-ro-bind PATH | PATH...]\n", argv[0]);
     return 2;
   }
 

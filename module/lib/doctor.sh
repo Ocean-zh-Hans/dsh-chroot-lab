@@ -179,6 +179,17 @@ dsh_doc_check_state() {
     dsh_doc_required "control dir missing (customize.sh should create it): $DSH_CONTROL_DIR"
   fi
 
+  if [ -d "$DSH_WORKSPACE_HOST_DIR" ] && [ ! -L "$DSH_WORKSPACE_HOST_DIR" ]; then
+    dsh_doc_pass "independent workspace is a real directory: $DSH_WORKSPACE_HOST_DIR"
+  else
+    dsh_doc_required "independent workspace is missing or not a real directory: $DSH_WORKSPACE_HOST_DIR"
+  fi
+  if [ -e "$DSH_DSH_HOME_DIR/workspace" ] || [ -L "$DSH_DSH_HOME_DIR/workspace" ]; then
+    dsh_doc_fail "legacy workspace remains inside DSH home: $DSH_DSH_HOME_DIR/workspace"
+  else
+    dsh_doc_pass "DSH home does not contain a workspace"
+  fi
+
   if [ -f "$DSH_CONFIG" ]; then
     if dsh_mode_private "$DSH_CONFIG"; then
       dsh_doc_pass "config file is private: $DSH_CONFIG"

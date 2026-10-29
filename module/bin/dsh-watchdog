@@ -293,7 +293,8 @@ dsh_watchdog_daemon() {
   trap 'dsh_watchdog_release; exit 0' TERM INT
   trap 'dsh_watchdog_release' EXIT
   while :; do
-    dsh_lifecycle_exec "$0" _lifecycle-claimed --once || true
+    DSH_LIFECYCLE_CLAIM_TIMEOUT=${DSH_WATCHDOG_CLAIM_TIMEOUT:-0} \
+      dsh_lifecycle_exec "$0" _lifecycle-claimed --once || true
     sleep "${DSH_WATCHDOG_INTERVAL:-30}" || {
       dsh_warn "watchdog: sleep failed; stopping daemon"
       return 1
