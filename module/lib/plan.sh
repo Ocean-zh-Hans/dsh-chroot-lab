@@ -1,5 +1,5 @@
 # shellcheck shell=sh disable=SC3043
-# Dry-run plan only. This file must never execute a mount/loop/unshare/chroot.
+# Dry-run plan only. It never attaches, mounts, unshares, or chroots.
 
 dsh_plan_run() {
   _check=0
@@ -32,9 +32,9 @@ dsh_plan_run() {
   printf 'Mode: DRY RUN ONLY — no commands are executed\n\n'
 
   printf '== Decisions ==\n'
-  printf '1A full /data + best-effort internal masks\n'
-  printf '2B /sys rw + private selinuxfs tmpfs mask\n'
-  printf '3A full /dev rbind\n'
+  printf '1A full /data + best-effort internal masks; no block-device protection\n'
+  printf '2B /sys rw + selinuxfs %s in private ns; never host bind/remount\n' "$DSH_SELINUXFS_MODE"
+  printf '3A /dev with block access %s; masked paths only reduce careless writes\n' "$DSH_BLOCK_ACCESS"
   printf '4B host thin agent (optional)\n'
   printf '5A full chroot\n'
   printf '6B critical paths recursive ro\n'
@@ -42,7 +42,7 @@ dsh_plan_run() {
   printf '8A %sGB image\n' "$DSH_IMAGE_SIZE_GB"
   printf '9A image + state + /sdcard/DSH snapshots\n'
   printf '10A spare device/VM first\n'
-  printf '11A approval-free + hardguard\n'
+  printf 'approval-free + audit + visible risk context; no hard blocking\n'
   printf '12A boot + last-good rollback\n'
   printf '13A accept u:r:ksu permissive\n'
   printf '14B recursive ro /apex + /linkerconfig\n'
@@ -75,13 +75,13 @@ dsh_plan_run() {
 
   printf '== Start sequence (design only) ==\n'
   cat <<'EOF'
-1. mkdir atomic lock; doctor --for-apply; mkdir -p rootfs mountpoint
-2. e2fsck -p image; verify no second loop for the same backing file
-3. util-linux losetup --sector-size 4096 --direct-io=off
+1. mkdir atomic lock; doctor --for-apply with a real losetup -j query
+2. assert image free before fsck; e2fsck -p; assert free again before attach
+3. attach one owned loop; compare /dev/block/loopN and /dev/loopN by kernel identity
 4. setsid unshare -m -u dsh-nsinit; dsh-nsinit makes / rprivate first
 5. dsh-nsinit: host mounts -> chroot -> fork/exec s6-svscan child; holder waits
 6. record holder pid, PGID, starttime, /proc/PID/ns/mnt
-7. wait for URL/ready; on failure keep holder for reverse cleanup
+7. wait for loopback URL and real HTTP health; require a fresh heartbeat
 EOF
   printf '\n'
 
@@ -90,8 +90,9 @@ EOF
 /                     ext4 image at /tmp/dsh-rootfs
 /proc                 proc
 /sys                  sysfs rw
-/sys/fs/selinux       private tmpfs mask (do NOT bind/remount host selinuxfs)
+/sys/fs/selinux       DSH_SELINUXFS_MODE (fresh ro mount allowed; no host bind/remount)
 /dev                  rbind /dev
+/dev/block            private tmpfs mask when DSH_BLOCK_ACCESS=masked
 /dev/pts              devpts newinstance
 /dev/shm              tmpfs 1g
 /run                  tmpfs 1g
@@ -139,16 +140,16 @@ EOF
   printf '== Stop sequence (design only) ==\n'
   cat <<'EOF'
 1. lock; validate pid/starttime/ns inode
-2. open /proc/PID/ns/mnt fd; nsenter --mount=fd chroot /tmp/dsh-rootfs ...
-3. s6-svc -d dsh/ttyd; s6-svwait -d; TERM holder only; KILL only if needed
+2. validate nsenter capability; nsenter --mount=/proc/PID/ns/mnt -- chroot /tmp/dsh-rootfs ...
+3. s6-svc -d dsh/ttyd; s6-svwait -d; TERM holder only; never kill a cleaning holder
 4. holder cleanup: remount root ro; reverse umount; scan /proc/*/ns/mnt
-5. kill holder; losetup -d; wait for real detach; restore SELinux; remove lock
+5. after holder exits, detach only owned loop identities; restore SELinux; clear runtime state
 EOF
   printf '\n'
 
   printf '== Safety gate ==\n'
-  printf 'Apply is explicit (start --apply) and remains unverified until P2 spare-device/VM testing.\n'
-  printf 'Do not run the mount sequence on the primary device until P2 is signed off.\n'
+  printf 'Apply is explicit (start --apply); use only an identified device and private namespace.\n'
+  printf 'Do not reboot, enable autostart, or alter global SELinux/prop for validation.\n'
   return 0
 }
 

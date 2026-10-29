@@ -1,57 +1,60 @@
 #!/bin/sh
-# Build a minimal unsigned/debug-signed agent APK with the local Android SDK.
-# This app is optional; it is not installed by the KSU module.
-set -eu
-
-ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-SDK=${ANDROID_HOME:-$HOME/android-sdk}
-BT=${BUILD_TOOLS:-$SDK/build-tools/35.0.0}
-JAR=${ANDROID_JAR:-$SDK/platforms/android-35/android.jar}
-OUT=$ROOT/build
-APK=$ROOT/dist/dsh-agent-0.1.0.apk
-rm -rf "$OUT"
-mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex" "$ROOT/dist"
-
-AAPT2=$(command -v aapt2 2>/dev/null || printf '%s' "$BT/aapt2")
-D8=$(command -v d8 2>/dev/null || printf '%s' "$BT/d8")
-APKSIGNER=$(command -v apksigner 2>/dev/null || printf '%s' "$BT/apksigner")
-ZIPALIGN=$(command -v zipalign 2>/dev/null || true)
-[ -f "$JAR" ] || {
-  echo "missing $JAR" >&2
-  exit 1
-}
-
-"$AAPT2" compile --dir "$ROOT/res" -o "$OUT/res.zip"
-"$AAPT2" link -o "$OUT/base.apk" -I "$JAR" \
-  --manifest "$ROOT/AndroidManifest.xml" \
-  --java "$OUT/gen" \
-  --min-sdk-version 29 --target-sdk-version 35 \
-  "$OUT/res.zip"
-
-find "$ROOT/src" "$OUT/gen" -name '*.java' -print >"$OUT/sources.txt"
-javac -source 8 -target 8 -Xlint:-options -cp "$JAR" -d "$OUT/classes" @"$OUT/sources.txt"
-
-find "$OUT/classes" -name '*.class' -print >"$OUT/classes.txt"
-"$D8" --lib "$JAR" --min-api 29 --output "$OUT/dex" @"$OUT/classes.txt"
-
-cp "$OUT/base.apk" "$OUT/unsigned.apk"
-(cd "$OUT/dex" && zip -q "$OUT/unsigned.apk" classes.dex)
-
-KS=$ROOT/debug.keystore
-if [ ! -f "$KS" ]; then
-  keytool -genkeypair -v -keystore "$KS" -alias androiddebugkey \
+if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
+set -euo pipefail
+ROOT=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$ROOT"
+if [ ! -f "$ROOT/agent-app/debug.keystore" ]; then
+  keytool -genkeypair -v -keystore "$ROOT/agent-app/debug.keystore" -alias androiddebugkey \
     -keyalg RSA -keysize 2048 -validity 10000 \
     -storepass android -keypass android \
-    -dname "CN=DSH Agent Debug,O=DSH,C=CN" >/dev/null 2>&1
+    -dname "CN=DSH Debug,O=DSH,C=CN" >/dev/null 2>&1
 fi
-
-if [ -n "$ZIPALIGN" ]; then
-  "$ZIPALIGN" -f 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
+SDK=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
+if [ -z "$SDK" ]; then
+  for candidate in "$HOME/AppData/Local/Android/Sdk" "$HOME/android-sdk"; do
+    if [ -d "$candidate/platforms" ]; then
+      SDK=$candidate
+      break
+    fi
+  done
+fi
+[ -n "$SDK" ] || {
+  printf 'Android SDK not found; set ANDROID_HOME\n' >&2
+  exit 2
+}
+export ANDROID_HOME="$SDK" ANDROID_SDK_ROOT="$SDK"
+_host_path=
+_old_ifs=$IFS
+IFS=:
+for _dir in $PATH; do
+  case $_dir in
+  */build/.tools/bin | */build/.tools/msys/usr/bin) ;;
+  *) _host_path="$_host_path${_host_path:+:}$_dir" ;;
+  esac
+done
+IFS=$_old_ifs
+PATH=$_host_path
+if [ -n "${JAVA_HOME:-}" ] && [ -d "$JAVA_HOME" ]; then
+  JAVA_HOME=$(CDPATH='' cd -- "$JAVA_HOME" && pwd)
+  export JAVA_HOME
+fi
+./gradlew :agent-root-helper:dexJar :agent-app:assembleDebug --no-daemon --console=plain
+./gradlew :agent-app:dependencies --write-locks --no-daemon --console=plain
+./gradlew :agent-app:assembleDebug --write-verification-metadata sha256 --no-daemon --console=plain
+APK=$ROOT/agent-app/dist/dsh-agent-0.2.0.apk
+mkdir -p "$ROOT/agent-app/dist"
+cp "$ROOT/agent-app/build/outputs/apk/debug/agent-app-debug.apk" "$APK"
+BT=$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+[ -f "$BT/lib/apksigner.jar" ] || {
+  printf 'apksigner.jar not found under %s\n' "$SDK" >&2
+  exit 2
+}
+java -jar "$BT/lib/apksigner.jar" verify "$APK"
+if [ -x "$BT/zipalign" ]; then
+  "$BT/zipalign" -c 4 "$APK"
+elif [ -f "$BT/zipalign.exe" ]; then
+  "$BT/zipalign.exe" -c 4 "$APK"
 else
-  cp "$OUT/unsigned.apk" "$OUT/aligned.apk"
-  echo "zipalign unavailable; APK is not zipaligned (install may warn)"
+  "$BT/zipalign.bat" -c 4 "$APK"
 fi
-"$APKSIGNER" sign --ks "$KS" --ks-pass pass:android --key-pass pass:android \
-  --out "$APK" "$OUT/aligned.apk"
-"$APKSIGNER" verify "$APK"
-echo "built: $APK"
+printf 'built: %s\n' "$APK"

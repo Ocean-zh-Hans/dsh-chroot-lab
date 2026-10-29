@@ -8,7 +8,9 @@ fixture_module "$case_dir/module"
 fixture_env "$case_dir"
 
 out=$("$DSH_CTL" version)
-assert_contains "$out" "dsh-ctl 0.2.0"
+assert_contains "$out" "dsh-ctl 0.2.2"
+out=$("$DSH_WATCHDOG" --version)
+assert_contains "$out" "dsh-watchdog 0.2.2"
 
 out=$("$DSH_CTL" help)
 assert_contains "$out" "doctor [--for-apply]"

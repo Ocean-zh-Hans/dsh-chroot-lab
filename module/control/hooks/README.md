@@ -1,14 +1,10 @@
 # Hooks
 
-`hooks.json` wires the PreToolUse hardguard/guard and PostToolUse audit hooks.
-`dsh-run` passes `/opt/dsh-control/dsh/hooks.patch.yml` with `--patch`, which
-mounts `dsh-hooks-claude-code` and points it at
-`/opt/dsh-control/hooks/hooks.json`. The patch is validated with
-`dsh --profile web --dump-config --patch ...`; real hook execution still needs
-a device test.
+`hooks.json` adds visible risk context and PostToolUse audit without PreToolUse blocking.
+When the profile-local permission preset is available, `dsh-run` requests `/opt/dsh-control/dsh/hooks.patch.yml`, which also defines `approval-free` and an opt-in `approval-guard` preset. If only that preset is missing, it links the same-version package from the current runtime into the profile without replacing an existing entry. If it cannot provide the preset, it explicitly requests `hooks-audit-only.patch.yml` and warns; if the audit dependency is missing too, it disables the patch. `/run/dsh/hooks.status` records the selected mode and reason, not proof of successful upstream loading. `CLAUDE_PLUGIN_ROOT` resolves to `/opt/dsh-control` in production.
 
-- hardguard: always on; blocks obvious global SELinux/prop/mount changes.
-- deny/ask lists: active only when `/run/dsh/guard` contains `1`
-  (`dsh-ctl guard on`).
-- This is a command-path guardrail, not a security boundary. ttyd, compiled
-  binaries, direct syscalls, and `/proc/1/root` can bypass it.
+- `riskcontext.sh` uses `SessionStart` and high-risk `UserPromptSubmit` `additionalContext` to warn about block devices, the active image and global SELinux/prop. It never returns a deny/ask decision and does not log the prompt.
+- `PostToolUse` records tool metadata, not full command text, prompt content or credentials.
+- guard defaults to off (`approval-free`); explicitly enabling it selects `approval-guard` for new sessions after a DSH/chroot restart. Existing sessions use `/permission`. It does not enable regex deny/ask filtering.
+- Display labels are `自动执行（不弹批准）` for `approval-free` and `谨慎执行（逐项批准）` for `approval-guard`; the preset keys and protocol IDs stay unchanged.
+- These are reminders for well-intentioned but potentially careless operators, not a security boundary. SessionStart context can miss the first request, and direct block-device writes remain possible.

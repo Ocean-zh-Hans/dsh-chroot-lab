@@ -6,7 +6,7 @@
 
 set -u
 
-DSH_VERSION=${DSH_VERSION:-0.2.0}
+DSH_VERSION=${DSH_VERSION:-0.2.2}
 DSH_PROG=dsh-ctl
 
 _self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || {
@@ -16,7 +16,7 @@ _self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || {
 DSH_MODULE_DIR=${DSH_MODULE_DIR:-$(CDPATH='' cd -- "$_self_dir/.." && pwd)}
 LIB_DIR=$DSH_MODULE_DIR/lib
 
-for _lib in common.sh config.sh log.sh proc.sh state.sh lock.sh loop.sh mount.sh doctor.sh plan.sh status.sh lifecycle.sh snapshot.sh systemrw.sh guard.sh image.sh; do
+for _lib in common.sh config.sh log.sh proc.sh state.sh lock.sh loop.sh mount.sh doctor.sh plan.sh status.sh lifecycle.sh snapshot.sh systemrw.sh guard.sh ttyd.sh image.sh; do
   if [ ! -r "$LIB_DIR/$_lib" ]; then
     printf 'dsh-ctl: missing library: %s\n' "$LIB_DIR/$_lib" >&2
     exit 2
@@ -43,13 +43,15 @@ Lifecycle (apply is explicit):
 
 Data:
   image create --source DIR [--size 128G] --apply
-  snapshot [create [name] | list | restore <name>]
-  restore <name> | purge --yes [--keep-image]
+  image install --source FILE [--sha256 FILE] [--replace] --apply
+  snapshot [create [name] [--last-good] | list | restore <name> --apply | promote <name>]
+  restore <name> --apply | purge --yes [--keep-image]
 
 Optional:
   autostart status|on|off
   system-rw status|on|off [partition] [--apply]
   guard status|on|off
+  ttyd status|on|off
   rescue --apply
   recover --apply
 
@@ -61,12 +63,40 @@ Exit codes:
 EOF
 }
 
+if [ "${1:-}" = _lifecycle-claimed ]; then
+  [ "${DSH_LIFECYCLE_CLAIM_ACTIVE:-0}" = 1 ] || exit 2
+  shift
+fi
+if [ "${DSH_LIFECYCLE_CLAIM_ACTIVE:-0}" != 1 ]; then
+  case ${1:-} in
+  start | stop | restart | boot | recover | rescue | purge | autostart | system-rw | guard | ttyd | snapshot | restore | image | fixperm | _image-claimed)
+    dsh_lifecycle_exec "$0" _lifecycle-claimed "$@"
+    exit $?
+    ;;
+  esac
+fi
+
 _cmd=${1:-help}
 if [ "$#" -gt 0 ]; then
   shift
 fi
 
 case $_cmd in
+_image-claimed)
+  [ "${DSH_IMAGE_CLAIM_ACTIVE:-0}" = 1 ] || exit 2
+  _claimed_op=${1:-}
+  [ "$#" -gt 0 ] && shift
+  case $_claimed_op in
+  start) dsh_start "$@" ;;
+  rescue) dsh_rescue_claimed "$@" ;;
+  snapshot-create) dsh_snapshot_create_claimed "$@" ;;
+  snapshot-restore) dsh_snapshot_restore_claimed "$@" ;;
+  image-create) dsh_image_create_claimed "$@" ;;
+  image-install) dsh_image_install_claimed "$@" ;;
+  purge) dsh_purge "$@" ;;
+  *) exit 2 ;;
+  esac
+  ;;
 help | -h | --help)
   dsh_usage
   ;;
@@ -115,7 +145,8 @@ image)
   if [ "$#" -gt 0 ]; then shift; fi
   case $_sub in
   create) dsh_image_create "$@" ;;
-  -h | --help) printf 'Usage: dsh-ctl image create --source DIR [--size 128G] --apply\n' ;;
+  install) dsh_image_install "$@" ;;
+  -h | --help) printf 'Usage: dsh-ctl image create --source DIR [--size 128G] --apply\n       dsh-ctl image install --source FILE [--sha256 FILE] [--replace] --apply\n' ;;
   *)
     dsh_err "unknown image operation: $_sub"
     exit 2
@@ -129,7 +160,8 @@ snapshot)
   create) dsh_snapshot_create "$@" ;;
   list) dsh_snapshot_list ;;
   restore) dsh_snapshot_restore "$@" ;;
-  -h | --help) printf 'Usage: dsh-ctl snapshot [create [name]|list|restore <name>]\n' ;;
+  promote) dsh_snapshot_promote "$@" ;;
+  -h | --help) printf 'Usage: dsh-ctl snapshot [create [name] [--last-good]|list|restore <name> --apply|promote <name>]\n' ;;
   *) dsh_snapshot_create "$_sub" "$@" ;;
   esac
   ;;
@@ -147,6 +179,9 @@ system-rw)
   ;;
 guard)
   dsh_guard "$@"
+  ;;
+ttyd)
+  dsh_ttyd "$@"
   ;;
 rescue)
   dsh_rescue "$@"

@@ -2,11 +2,17 @@
 # s6 service: DSH web on loopback. Foreground only; s6 supervises.
 
 export HOME=/root
-export PATH=/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export TMPDIR=/tmp
+export TMPDIR="${DSH_GUEST_TMP:-/var/tmp}"
 export LANG=C.UTF-8
 export TERM=xterm-256color
+. /opt/dsh-control/bin/dsh-android-env || {
+  echo 'dsh service: Android environment setup failed' >&2
+  exit 1
+}
 
-cd /sdcard/DSH/workspace 2>/dev/null || cd /root || exit 1
+cd "${DSH_WORKSPACE_DIR:-/sdcard/DSH/workspace}" || {
+  echo 'dsh service: required workspace is unavailable' >&2
+  exit 1
+}
 
 exec /opt/dsh-control/bin/dsh-run

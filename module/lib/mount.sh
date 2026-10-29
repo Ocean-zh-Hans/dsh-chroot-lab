@@ -3,6 +3,8 @@
 # doctor/plan/status and must only run inside the private mount namespace.
 
 DSH_MOUNT_STACK=${DSH_MOUNT_STACK:-}
+# shellcheck disable=SC1090
+. "$DSH_MODULE_DIR/lib/unmount.sh" || return 1
 
 dsh_mount_log() {
   dsh_log "mount: $*"
@@ -41,7 +43,11 @@ dsh_mount_one() {
     dsh_err "mount failed: $_type $_src -> $_dst"
     return 1
   }
-  dsh_mount_push "$_dst"
+  if ! dsh_mount_push "$_dst"; then
+    dsh_err "mount bookkeeping failed; unmounting immediately: $_dst"
+    umount "$_dst" 2>/dev/null || dsh_warn "emergency umount failed: $_dst"
+    return 1
+  fi
 }
 
 dsh_mount_tmpfs() {
@@ -56,7 +62,7 @@ dsh_mount_bind() {
   _opts=${3:-}
   dsh_mount_prepare_point "$_dst" || return 1
   dsh_mount_log "bind $_src -> $_dst $_opts"
-  if [ -x "${DSH_RECURSIVE_RO:-}" ]; then
+  if [ -x "${DSH_RECURSIVE_RO:-}" ] && [ -z "$_opts" ]; then
     "$DSH_RECURSIVE_RO" --bind "$_src" "$_dst"
   elif [ -n "$_opts" ]; then
     mount -o "bind,$_opts" "$_src" "$_dst"
@@ -66,7 +72,44 @@ dsh_mount_bind() {
     dsh_err "bind failed: $_src -> $_dst"
     return 1
   }
-  dsh_mount_push "$_dst"
+  if ! dsh_mount_push "$_dst"; then
+    dsh_err "mount bookkeeping failed; unmounting immediately: $_dst"
+    umount "$_dst" 2>/dev/null || dsh_warn "emergency umount failed: $_dst"
+    return 1
+  fi
+}
+
+dsh_mount_bind_ro_file() {
+  _src=$1
+  _dst=$2
+  dsh_is_abs "$_src" && dsh_is_abs "$_dst" || return 1
+  [ -f "$_src" ] && [ ! -L "$_src" ] || {
+    dsh_err "read-only bind source must be a regular file: $_src"
+    return 1
+  }
+  if [ -L "$_dst" ] || { [ -e "$_dst" ] && [ ! -f "$_dst" ]; }; then
+    dsh_err "read-only bind target must be a regular file: $_dst"
+    return 1
+  fi
+  _parent=${_dst%/*}
+  [ -d "$_parent" ] || mkdir -p "$_parent" || return 1
+  if [ ! -e "$_dst" ]; then
+    : >"$_dst" || return 1
+  fi
+  dsh_mount_log "bind-ro-file $_src -> $_dst"
+  if [ -x "${DSH_RECURSIVE_RO:-}" ]; then
+    "$DSH_RECURSIVE_RO" --bind "$_src" "$_dst"
+  else
+    mount --bind "$_src" "$_dst" 2>/dev/null || mount -o bind "$_src" "$_dst"
+  fi || {
+    dsh_err "file bind failed: $_src -> $_dst"
+    return 1
+  }
+  if ! dsh_mount_push "$_dst"; then
+    umount "$_dst" 2>/dev/null || dsh_warn "emergency file unmount failed: $_dst"
+    return 1
+  fi
+  dsh_mount_remount_ro "$_dst"
 }
 
 dsh_mount_rbind() {
@@ -82,8 +125,15 @@ dsh_mount_rbind() {
     dsh_err "rbind failed: $_src -> $_dst"
     return 1
   }
-  mount --make-rprivate "$_dst" 2>/dev/null || true
-  dsh_mount_push "$_dst"
+  if ! dsh_mount_push "$_dst"; then
+    dsh_err "mount bookkeeping failed; unmounting immediately: $_dst"
+    dsh_unmount_tree "$_dst" "$DSH_MOUNT_STACK.tree.$$" "$DSH_ROOTFS_DIR" || dsh_warn "emergency umount failed: $_dst"
+    return 1
+  fi
+  dsh_mount_make_rprivate "$_dst" || {
+    dsh_err "cannot make mount tree private: $_dst"
+    return 1
+  }
 }
 
 dsh_mount_remount_ro() {
@@ -142,23 +192,34 @@ dsh_mount_mask_tmpfs() {
 }
 
 dsh_mount_reverse_stack() {
-  [ -s "$DSH_MOUNT_STACK" ] || return 0
   _rc=0
-  # Read the stack into memory, then unmount newest-first.
-  _targets=$(awk '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) print a[i] }' "$DSH_MOUNT_STACK")
-  printf '%s\n' "$_targets" | while IFS= read -r _target; do
-    [ -n "$_target" ] || continue
-    if umount "$_target" 2>/dev/null; then
-      dsh_log "umount: $_target"
-    elif umount -l "$_target" 2>/dev/null; then
-      dsh_warn "lazy umount: $_target"
-    else
-      dsh_warn "umount failed: $_target"
+  if [ -s "$DSH_MOUNT_STACK" ]; then
+    while IFS= read -r _target; do
+      [ -n "$_target" ] || continue
+      case $_target in
+      "$DSH_ROOTFS_DIR" | "$DSH_ROOTFS_DIR"/*) ;;
+      *)
+        dsh_warn "refusing unexpected mount target: $_target"
+        _rc=1
+        ;;
+      esac
+    done <"$DSH_MOUNT_STACK"
+  fi
+  dsh_unmount_tree "$DSH_ROOTFS_DIR" "$DSH_MOUNT_STACK.tree.$$" "$DSH_ROOTFS_DIR" || dsh_warn "first mount cleanup pass incomplete; rescanning"
+  if dsh_mountinfo_has_tree "$DSH_ROOTFS_DIR"; then
+    dsh_unmount_tree "$DSH_ROOTFS_DIR" "$DSH_MOUNT_STACK.tree.retry.$$" "$DSH_ROOTFS_DIR" || _rc=1
+  fi
+  if dsh_mountinfo_has_tree "$DSH_ROOTFS_DIR"; then
+    dsh_warn "rootfs or a child mount remains after stack cleanup: $DSH_ROOTFS_DIR"
+    _rc=1
+  else
+    _mount_rc=$?
+    [ "$_mount_rc" -eq 1 ] || {
+      dsh_warn "cannot verify the rootfs mount after cleanup"
       _rc=1
-    fi
-  done
-  # The while loop is a subshell in POSIX sh; return status is advisory.
-  return 0
+    }
+  fi
+  return "$_rc"
 }
 
 dsh_mount_reset_stack() {

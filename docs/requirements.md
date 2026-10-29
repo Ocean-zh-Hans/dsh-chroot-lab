@@ -26,7 +26,7 @@
 |---|---|---|
 | G1 | 真 chroot | 非 proot；`uname -r` 与宿主一致；Go 产物直接执行 |
 | G2 | 完整 Ubuntu | Ubuntu 24.04 glibc、apt、Node 24、DSH、s6、常用工具链 |
-| G3 | 生命周期 | 开机非阻塞自启；s6 监督；start/stop/status/diag；坏了自己回滚 |
+| G3 | 生命周期 | 开机非阻塞自启；s6 监督；start/stop/status/diag；镜像损坏时可用已验证的 last-good 恢复，其他失败进入人工恢复而非盲目覆盖 |
 | G4 | 完整 Android 视图 | full `/data`、`/mnt`、`/data_mirror`、`/storage`、`/sdcard`、`/dev`、`/sys`、Android 分区；`/sys/fs/selinux` 用 private tmpfs 遮罩；完整控制命令 |
 | G5 | 应用层隐藏性 | 不改全局 prop、不默认改全局 SELinux、不把 chroot mount 暴露到 App 的 mountinfo；KSU 隐藏特性保持 |
 | G6 | 可逆性 | 镜像/state 冷快照；last-good；boot counter；`purge` 删除镜像/快照/loop 校验 |
@@ -46,12 +46,12 @@
 1. **全局 SELinux 保持 Enforcing**；不默认 `setenforce 0`；`--permissive` 只允许显式 break-glass，且必须记录并恢复。
 2. **不改全局 prop**：不用 `resetprop` 改 `ro.debuggable`、`ro.secure`、`init.svc.*`、`persist.*`。
 3. **chroot 的所有 mount 只在 private mount namespace**；不做全局 bind/overlay；每个 rbind 后 `make-rprivate`。
-4. **不对 `/sys/fs/selinux` 做 bind/remount**；需要遮蔽时只允许 private namespace 内 tmpfs 遮罩。
+4. **不对 `/sys/fs/selinux` 做 bind/remount**；默认使用 private namespace 内 tmpfs 遮罩，选择 `DSH_SELINUXFS_MODE=ro` 时只允许在该 namespace 新建只读 selinuxfs。
 5. **保持 SukiSU 隐藏特性**：`selinux_hide`、`mount_hide`、`avc_spoof`、`kernel_umount` 不关闭。
 6. **DSH/ttyd 只监听 127.0.0.1**；不监听 `0.0.0.0`。
 7. **`/sdcard` 不放 `magisk`/`kernelsu`/`su` 等明显 root 标记**；`ubuntu-rootfs`/`DSH` 名字可以接受。
 8. **不把 `u:r:ksu:s0` permissive 当作隐藏手段**；它是能力/安全边界事实，不是 App 隐藏保证。
-9. **认可能力与隐藏性的边界**：full `/sys` rw、full `/dev` rbind、full `/data`、`/proc/1/root` 都能绕过任何命令级 guard；`hardguard` 只是护栏，不是边界。
+9. **认可能力与隐藏性的边界**：`/dev/block` 默认遮罩只减少粗心路径误写，`/proc/1/root`、`mknod` 和直接 syscall 仍可绕过；风险提醒和审计不是安全边界，生命周期保护必须保留。
 10. **P1 不执行任何宿主级 mount/loop/overlay/SELinux 操作**；P2 起只在备用机/VM 或显式 private namespace + trap 中验证。
 
 ## 5. “完美”的工程定义
@@ -64,4 +64,4 @@
 - 出错可回滚；
 - 不把“没测过”写成“已支持”。
 
-当前状态：**功能设计/开发完成；真实挂载验证由备用机/PC AI 执行；手机控制写操作未验证。**
+当前状态：**备用机正式模块、128GB chroot/DSH、20 次启停、快照/回滚、真实开机和固定 App 接口已实测通过；这不等于“完美”目标已达成。主力机 `0.2.1` 已完成安装、真实手动启停和健康检查，但随后运行中直接重启暴露了旧 holder PID 记录导致的 `identity mismatch` / `recovery-required`，所以运行中重启自启尚未通过；`0.2.2` 修复候选正在验证。chroot 历史数据和恢复备份保留，未改全局 SELinux/prop 或其他授权。真实模型会话、真实验证码、断电恢复、真实 purge/uninstall、银行/游戏/Play Integrity 和主力机完整兼容性仍未验证。**

@@ -1,9 +1,9 @@
 #!/system/bin/sh
-# shellcheck shell=sh disable=SC3043,SC2329
+# shellcheck shell=sh disable=SC3043,SC2329,SC2153
 # dsh-nsinit — private-namespace mount holder.
 #
 # Invocation (from dsh-ctl start):
-#   setsid unshare --mount --propagation private --uts -m dsh-nsinit
+#   setsid unshare -m -u dsh-nsinit
 #
 # This process stays alive as the holder. It forks/execs the chrooted
 # s6-svscan child, waits for it, and unmounts its private mount tree on exit.
@@ -11,7 +11,7 @@
 
 set -u
 
-DSH_VERSION=${DSH_VERSION:-0.2.0}
+DSH_VERSION=${DSH_VERSION:-0.2.2}
 _self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 2
 DSH_MODULE_DIR=${DSH_MODULE_DIR:-$(CDPATH='' cd -- "$_self_dir/.." && pwd)}
 LIB_DIR=$DSH_MODULE_DIR/lib
@@ -27,6 +27,25 @@ done
 
 dsh_config_init
 dsh_config_check_paths || exit 2
+
+if [ "${1:-}" = _scan-rootfs ]; then
+  [ "$#" -eq 2 ] || exit 2
+  dsh_proc_scan_rootfs_ns "$2"
+  exit $?
+fi
+
+if [ -n "${DSH_CLAIM_FDS:-${DSH_CLAIM_FD:-}}" ]; then
+  _claim_fds=${DSH_CLAIM_FDS:-$DSH_CLAIM_FD}
+  _claim_ifs=$IFS
+  IFS=,
+  for _claim_fd_item in $_claim_fds; do
+    dsh_is_uint "$_claim_fd_item" || exit 5
+    [ "$_claim_fd_item" -ge 3 ] || exit 5
+    eval "exec ${_claim_fd_item}>&-" || exit 5
+  done
+  IFS=$_claim_ifs
+  unset DSH_CLAIM_FD DSH_CLAIM_FDS _claim_fds _claim_ifs _claim_fd_item
+fi
 
 if [ "${DSH_APPLY:-0}" != 1 ]; then
   dsh_err "apply is disabled; DSH_APPLY=1 is required"
@@ -49,32 +68,99 @@ if [ ! -e "$DSH_LOOP" ]; then
   exit 2
 fi
 
+if [ "${DSH_RESCUE:-0}" = 1 ]; then
+  exec 9<&0 || {
+    dsh_err "cannot preserve rescue stdin"
+    exit 5
+  }
+fi
+
 ROOT=$DSH_ROOTFS_DIR
-DSH_MOUNT_STACK=$DSH_GUEST_DIR/mounts
+DSH_MOUNT_STACK=$DSH_MOUNTS_FILE
 export DSH_MOUNT_STACK
 CHILD_PID=
 CLEANED=0
 
+dsh_nsinit_wait_rootfs_processes() {
+  local _wait_timeout _i _ns _nsenter _scan_file _members _scan_rc _pid _remaining
+  _wait_timeout=${DSH_CLEANUP_PROCESS_TIMEOUT:-45}
+  case $_wait_timeout in
+  '' | *[!0-9]*) return 1 ;;
+  esac
+  _ns=$(dsh_proc_ns "$$" 2>/dev/null) || {
+    dsh_warn "cannot determine holder mount namespace"
+    return 1
+  }
+  [ -n "$_ns" ] || return 1
+  _nsenter=$(dsh_tool_path nsenter || true)
+  [ -n "$_nsenter" ] || {
+    dsh_warn "nsenter is required for holder namespace process checks"
+    return 1
+  }
+  _i=0
+  while [ "$_i" -lt "$_wait_timeout" ]; do
+    _scan_file=$(mktemp "$DSH_GUEST_DIR/rootfs-scan.XXXXXX") || return 1
+    if "$_nsenter" -t 1 -m -- "$DSH_NSINIT" _scan-rootfs "$_ns" >"$_scan_file" 2>/dev/null; then
+      _members=$(cat "$_scan_file")
+      _scan_rc=0
+    else
+      _scan_rc=$?
+    fi
+    rm -f "$_scan_file" || return 1
+    [ "$_scan_rc" -eq 0 ] || {
+      dsh_warn "cannot verify that rootfs processes exited"
+      return 1
+    }
+    _remaining=
+    for _pid in $_members; do
+      [ "$_pid" = "$$" ] || _remaining="$_remaining $_pid"
+    done
+    [ -n "$_remaining" ] || return 0
+    sleep 1
+    _i=$((_i + 1))
+  done
+  dsh_warn "rootfs processes did not exit within ${_wait_timeout}s"
+  return 1
+}
+
 dsh_nsinit_cleanup() {
   [ "$CLEANED" -eq 1 ] && return 0
   CLEANED=1
-  trap - INT TERM EXIT
+  trap '' INT TERM
+  trap - EXIT
+  _cleanup_rc=0
+  dsh_state_write_atomic "$DSH_CLEANUP_FILE" state=cleaning || _cleanup_rc=1
   if dsh_is_uint "${CHILD_PID:-}" && dsh_proc_alive "$CHILD_PID"; then
     kill -TERM "$CHILD_PID" 2>/dev/null || true
   fi
   if [ -n "${CHILD_PID:-}" ]; then
     wait "$CHILD_PID" 2>/dev/null || true
   fi
-  dsh_log "cleanup: restore generated network files, remount root ro, reverse mount stack"
+  dsh_nsinit_wait_rootfs_processes || _cleanup_rc=1
+  dsh_log "cleanup: restore generated network files, remount root ro, unmount mountinfo tree"
   for _f in resolv.conf hosts; do
     if [ -f "$ROOT/etc/$_f.dsh-orig" ]; then
-      mv -f "$ROOT/etc/$_f.dsh-orig" "$ROOT/etc/$_f" 2>/dev/null || true
+      mv -f "$ROOT/etc/$_f.dsh-orig" "$ROOT/etc/$_f" 2>/dev/null || _cleanup_rc=1
     fi
   done
-  dsh_mount_remount_ro_plain "$ROOT" || dsh_warn "remount root ro failed"
-  dsh_mount_reverse_stack || true
-  rm -f "$DSH_PID_FILE" 2>/dev/null || true
-  dsh_log "cleanup: done"
+  if mountpoint -q "$ROOT" 2>/dev/null; then
+    dsh_mount_remount_ro_plain "$ROOT" || _cleanup_rc=1
+  else
+    _mountpoint_rc=$?
+    [ "$_mountpoint_rc" -eq 1 ] || _cleanup_rc=1
+  fi
+  dsh_mount_reverse_stack || _cleanup_rc=1
+  if [ "$_cleanup_rc" -eq 0 ]; then
+    dsh_state_write_atomic "$DSH_CLEANUP_FILE" result=ok || _cleanup_rc=1
+  else
+    dsh_state_write_atomic "$DSH_CLEANUP_FILE" result=failed || true
+  fi
+  if [ "$_cleanup_rc" -eq 0 ]; then
+    rm -f "$DSH_PID_FILE" 2>/dev/null || true
+    dsh_log "cleanup: complete"
+  else
+    dsh_warn "cleanup incomplete; recovery information preserved"
+  fi
 }
 
 dsh_nsinit_signal() {
@@ -89,29 +175,46 @@ trap 'dsh_nsinit_signal TERM' TERM
 trap 'dsh_nsinit_signal INT' INT
 
 dsh_state_ensure || exit 2
+rm -f "$DSH_CLEANUP_FILE"
 : >"$DSH_MOUNT_STACK" || exit 2
 # Write our own PID before mounting. dsh-ctl must never guess it from setsid.
 printf '%s\n' "$$" >"$DSH_PID_FILE" || exit 2
+dsh_write_pid_identity "$$" || exit 2
+dsh_write_boot_identity || exit 2
 
 dsh_log "nsinit start: holder=$$ root=$ROOT loop=$DSH_LOOP"
 dsh_mount_make_rprivate / || exit 5
 
 # Rescue is a minimal, read-only repair shell; it never starts s6 and never
-# exposes Android /data or /storage. The namespace disappears when bash exits.
+# exposes Android /data or /storage. The holder waits and cleans up after bash.
 if [ "${DSH_RESCUE:-0}" = 1 ]; then
   dsh_mount_one ext4 "$DSH_LOOP" "$ROOT" "ro,noatime" || exit 5
   dsh_mount_one proc proc "$ROOT/proc" "nosuid,noexec,nodev" || exit 5
   dsh_mount_one sysfs sysfs "$ROOT/sys" "ro" || exit 5
-  dsh_mount_rbind /dev "$ROOT/dev" || exit 5
+  dsh_mount_rbind "${DSH_HOST_ROOT:-}/dev" "$ROOT/dev" || exit 5
   dsh_mount_one devpts devpts "$ROOT/dev/pts" "newinstance,ptmxmode=0666,mode=620" || exit 5
   dsh_mount_tmpfs "$ROOT/dev/shm" "size=256m,mode=1777" || exit 5
   dsh_mount_tmpfs "$ROOT/run" "size=256m,mode=0755" || exit 5
   dsh_mount_tmpfs "$ROOT/tmp" "size=512m,mode=1777" || exit 5
   printf 'rescue: rootfs is read-only; /data and /storage are not mounted\n' >&2
-  exec chroot "$ROOT" /usr/bin/env -i \
-    HOME=/root \
-    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    TMPDIR=/tmp LANG=C.UTF-8 TERM=xterm-256color /bin/bash
+  (
+    trap - INT TERM
+    exec chroot "$ROOT" /usr/bin/env -i \
+      HOME=/root \
+      PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+      TMPDIR=/tmp LANG=C.UTF-8 TERM=xterm-256color /bin/bash <&9 9<&-
+  ) &
+  CHILD_PID=$!
+  exec 9<&-
+  wait "$CHILD_PID"
+  RC=$?
+  if dsh_proc_alive "$CHILD_PID"; then
+    kill -TERM "$CHILD_PID" 2>/dev/null || true
+    wait "$CHILD_PID" 2>/dev/null || true
+    RC=143
+  fi
+  CHILD_PID=
+  exit "$RC"
 fi
 
 # Root filesystem.
@@ -120,56 +223,71 @@ dsh_mount_one ext4 "$DSH_LOOP" "$ROOT" "rw,noatime" || exit 5
 # Base pseudo filesystems.
 dsh_mount_one proc proc "$ROOT/proc" "nosuid,noexec,nodev" || exit 5
 dsh_mount_one sysfs sysfs "$ROOT/sys" "rw" || exit 5
-if dsh_bool "$DSH_SELINUXFS_MASK"; then
-  dsh_mount_tmpfs "$ROOT/sys/fs/selinux" "size=1m,mode=0555" || dsh_warn "selinuxfs mask failed"
-fi
-dsh_mount_rbind /dev "$ROOT/dev" || exit 5
+case $DSH_SELINUXFS_MODE in
+mask) dsh_mount_tmpfs "$ROOT/sys/fs/selinux" "size=1m,mode=0555" || exit 5 ;;
+ro) dsh_mount_one selinuxfs selinuxfs "$ROOT/sys/fs/selinux" "ro" || exit 5 ;;
+rw) ;;
+esac
+dsh_mount_rbind "${DSH_HOST_ROOT:-}/dev" "$ROOT/dev" || exit 5
+case $DSH_BLOCK_ACCESS in
+masked)
+  [ ! -L "$ROOT/dev/block" ] || {
+    dsh_err "refusing to mask a /dev/block symlink"
+    exit 5
+  }
+  if [ -d "$ROOT/dev/block" ]; then
+    dsh_mount_mask_tmpfs "$ROOT/dev/block" || exit 5
+  fi
+  ;;
+full) ;;
+esac
 dsh_mount_one devpts devpts "$ROOT/dev/pts" "newinstance,ptmxmode=0666,mode=620" || exit 5
 dsh_mount_tmpfs "$ROOT/dev/shm" "size=1g,mode=1777" || exit 5
 dsh_mount_tmpfs "$ROOT/run" "size=1g,mode=0755" || exit 5
 dsh_mount_tmpfs "$ROOT/tmp" "size=4g,mode=1777" || exit 5
+mkdir -p "$ROOT$DSH_GUEST_TMP" || exit 5
+chmod 1777 "$ROOT$DSH_GUEST_TMP" || exit 5
 
 # Android views (full, decision 1A/3A/5A/15A).
 for _src in /data /mnt /data_mirror /storage /metadata /system /system_ext /product /vendor /odm; do
-  [ -e "$_src" ] || continue
+  [ -e "${DSH_HOST_ROOT:-}$_src" ] || continue
   _dst=$ROOT$_src
-  dsh_mount_rbind "$_src" "$_dst" || exit 5
+  dsh_mount_rbind "${DSH_HOST_ROOT:-}$_src" "$_dst" || exit 5
 done
-if [ -d /data/media/0 ]; then
-  dsh_mount_bind /data/media/0 "$ROOT/sdcard" || exit 5
-  mkdir -p "$ROOT/sdcard/DSH/workspace" 2>/dev/null || true
-  chmod 2777 "$ROOT/sdcard/DSH/workspace" 2>/dev/null || true
+if [ -d "${DSH_HOST_ROOT:-}/data/media/0" ]; then
+  dsh_mount_bind "${DSH_HOST_ROOT:-}/data/media/0" "$ROOT/sdcard" || exit 5
 fi
 
 # Apex/linker must be recursively read-only (14B).
-if [ -e /apex ]; then
-  dsh_mount_rbind /apex "$ROOT/apex" || exit 5
+if [ -e "${DSH_HOST_ROOT:-}/apex" ]; then
+  dsh_mount_rbind "${DSH_HOST_ROOT:-}/apex" "$ROOT/apex" || exit 5
   dsh_mount_ro_recursive "$ROOT/apex" || exit 5
 fi
-if [ -e /linkerconfig ]; then
-  dsh_mount_rbind /linkerconfig "$ROOT/linkerconfig" || exit 5
+if [ -e "${DSH_HOST_ROOT:-}/linkerconfig" ]; then
+  dsh_mount_rbind "${DSH_HOST_ROOT:-}/linkerconfig" "$ROOT/linkerconfig" || exit 5
   dsh_mount_ro_recursive "$ROOT/linkerconfig" || exit 5
 fi
 
 # Critical paths default recursive ro (6B).
 if dsh_bool "$DSH_PROTECT_CRITICAL"; then
   for _src in /metadata /mnt/vendor/persist /mnt/vendor/qmcs; do
-    [ -e "$_src" ] || continue
+    [ -e "${DSH_HOST_ROOT:-}$_src" ] || continue
     _dst=$ROOT$_src
     if mountpoint -q "$_dst" 2>/dev/null; then
       dsh_mount_ro_recursive "$_dst" || exit 5
     else
-      dsh_warn "critical path is not a mountpoint; skipped: $_dst"
+      dsh_err "critical path is not a mountpoint; refusing writable access: $_dst"
+      exit 5
     fi
   done
 fi
 
-# Debug/tracing: explicit mounts because Android may not pre-mount debugfs.
+# Debug/tracing must be explicit; a silent fallback would hide an unsafe /sys.
 if [ -d "$ROOT/sys/kernel/debug" ]; then
-  mount -t debugfs debugfs "$ROOT/sys/kernel/debug" 2>/dev/null || dsh_warn "debugfs mount failed"
+  dsh_mount_one debugfs debugfs "$ROOT/sys/kernel/debug" rw || exit 5
 fi
 if [ -d "$ROOT/sys/kernel/tracing" ]; then
-  mount -t tracefs tracefs "$ROOT/sys/kernel/tracing" 2>/dev/null || dsh_warn "tracefs mount failed"
+  dsh_mount_one tracefs tracefs "$ROOT/sys/kernel/tracing" rw || exit 5
 fi
 
 # Control plane: bind before masking the source (1A).
@@ -184,32 +302,110 @@ fi
 [ -d "$DSH_DSH_HOME_DIR" ] || mkdir -p "$DSH_DSH_HOME_DIR"
 [ -d "$DSH_GUEST_DIR" ] || mkdir -p "$DSH_GUEST_DIR"
 [ -d "$DSH_LOG_DIR" ] || mkdir -p "$DSH_LOG_DIR"
-if [ -d "$DSH_RUNTIME_DIR/current" ] || [ -d "$DSH_RUNTIME_DIR/versions" ]; then
-  dsh_mount_bind "$DSH_RUNTIME_DIR" "$ROOT/opt/dsh" || exit 5
-  dsh_mount_remount_ro "$ROOT/opt/dsh" || exit 5
+_module_version=$(sed -n 's/^version=//p' "$DSH_MODULE_DIR/module.prop" 2>/dev/null | tail -n 1)
+_module_code=$(sed -n 's/^versionCode=//p' "$DSH_MODULE_DIR/module.prop" 2>/dev/null | tail -n 1)
+case $_module_version in
+'' | *[!A-Za-z0-9._+-]*)
+  dsh_err "invalid module version metadata"
+  exit 5
+  ;;
+esac
+case $_module_code in
+'' | *[!0-9]*)
+  dsh_err "invalid module versionCode metadata"
+  exit 5
+  ;;
+esac
+_module_auto=$(cat "$DSH_CTL_DIR/autostart" 2>/dev/null || true)
+if [ "$_module_auto" = 1 ]; then
+  _module_auto=true
 else
-  dsh_warn "host DSH runtime empty; using rootfs /opt/dsh (baked)"
+  _module_auto=false
 fi
+_module_started=$(date +%s) || exit 5
+_module_json_tmp=$DSH_GUEST_DIR/module.json.tmp.$$
+_module_sha_tmp=$DSH_GUEST_DIR/module.sha256.tmp.$$
+{
+  printf '{\n'
+  printf '  "version": "%s",\n' "$_module_version"
+  printf '  "versionCode": %s,\n' "$_module_code"
+  printf '  "startedAt": %s,\n' "$_module_started"
+  printf '  "autostart": %s,\n' "$_module_auto"
+  printf '  "selinuxfsMode": "%s",\n' "$DSH_SELINUXFS_MODE"
+  printf '  "blockAccess": "%s",\n' "$DSH_BLOCK_ACCESS"
+  printf '  "scripts": "module.sha256"\n}\n'
+} >"$_module_json_tmp" || {
+  rm -f "$_module_json_tmp"
+  exit 5
+}
+if ! chmod 0444 "$_module_json_tmp" || ! mv -f "$_module_json_tmp" "$DSH_GUEST_DIR/module.json"; then
+  rm -f "$_module_json_tmp"
+  exit 5
+fi
+(cd "$DSH_MODULE_DIR" && sha256sum module.prop service.sh boot-completed.sh uninstall.sh \
+  bin/dsh-ctl bin/dsh-nsinit bin/dsh-watchdog bin/dsh-log-limit bin/dsh-lock) >"$_module_sha_tmp" || {
+  rm -f "$_module_sha_tmp"
+  exit 5
+}
+if ! chmod 0444 "$_module_sha_tmp" || ! mv -f "$_module_sha_tmp" "$DSH_GUEST_DIR/module.sha256"; then
+  rm -f "$_module_sha_tmp"
+  exit 5
+fi
+if [ -x "$DSH_RUNTIME_DIR/current/bin/dsh" ]; then
+  dsh_mount_bind "$DSH_RUNTIME_DIR" "$ROOT/opt/dsh" || exit 5
+elif [ -x "$ROOT/opt/dsh/current/bin/dsh" ]; then
+  dsh_warn "host DSH runtime empty; using rootfs /opt/dsh (baked, self-bind ro)"
+  dsh_mount_bind "$ROOT/opt/dsh" "$ROOT/opt/dsh" || exit 5
+else
+  dsh_err "DSH executable is missing from host and baked runtimes"
+  exit 5
+fi
+dsh_mount_remount_ro "$ROOT/opt/dsh" || exit 5
 dsh_mount_bind "$DSH_CONTROL_DIR" "$ROOT/opt/dsh-control" || exit 5
 dsh_mount_remount_ro "$ROOT/opt/dsh-control" || exit 5
 dsh_mount_bind "$DSH_DSH_HOME_DIR" "$ROOT/root/.dsh" || exit 5
-dsh_mount_bind "$DSH_GUEST_DIR" "$ROOT/run/dsh" || exit 5
+dsh_mount_bind "$DSH_GUEST_RUNTIME_DIR" "$ROOT/run/dsh" || exit 5
+if [ -n "$DSH_WORKSPACE_SOURCE" ]; then
+  [ -d "$DSH_WORKSPACE_SOURCE" ] || {
+    dsh_err "linked DSH workspace is unavailable: $DSH_DSH_HOME_DIR/workspace"
+    exit 5
+  }
+  dsh_mount_bind "$DSH_WORKSPACE_SOURCE" "$ROOT$DSH_WORKSPACE_DIR" || exit 5
+elif [ "$DSH_WORKSPACE_DIR" = /sdcard/DSH/workspace ]; then
+  mkdir -p "$ROOT$DSH_WORKSPACE_DIR" || {
+    dsh_err "cannot create DSH workspace; refusing silent /root fallback"
+    exit 5
+  }
+  chmod 2777 "$ROOT$DSH_WORKSPACE_DIR" || exit 5
+elif [ ! -d "$ROOT$DSH_WORKSPACE_DIR" ]; then
+  dsh_err "configured DSH workspace is unavailable: $DSH_WORKSPACE_DIR"
+  exit 5
+fi
+dsh_mount_bind_ro_file "$DSH_GUEST_DIR/module.json" "$ROOT/run/dsh/module.json" || exit 5
+dsh_mount_bind_ro_file "$DSH_GUEST_DIR/module.sha256" "$ROOT/run/dsh/module.sha256" || exit 5
 dsh_mount_bind "$DSH_LOG_DIR" "$ROOT/var/log/dsh" || exit 5
 
-# Mask internal control/image paths and known aliases after control binds.
-for _p in \
-  "$ROOT/data/adb/chroot" \
-  "$ROOT/data/adb/modules" \
-  "$ROOT/data/adb/ksu" \
-  "$ROOT/data/media/0/ubuntu-rootfs" \
-  "$ROOT/sdcard/ubuntu-rootfs" \
-  "$ROOT/storage/emulated/0/ubuntu-rootfs" \
-  "$ROOT/mnt/user/0/emulated/0/ubuntu-rootfs" \
-  "$ROOT/mnt/installer/0/emulated/0/ubuntu-rootfs" \
-  "$ROOT/mnt/androidwritable/0/emulated/0/ubuntu-rootfs" \
-  "$ROOT/mnt/pass_through/0/emulated/0/ubuntu-rootfs"; do
-  dsh_mount_mask_tmpfs "$_p" || dsh_warn "mask failed: $_p"
-done
+# Mask the configured paths, not only their defaults. These masks reduce
+# accidental writes; guest root can still bypass them through raw devices.
+_nsinit_root_real=$(readlink -f "${DSH_HOST_ROOT:-}$DSH_ROOT" 2>/dev/null || true)
+_nsinit_image_real=$(readlink -f "${DSH_HOST_ROOT:-}$DSH_IMAGE_DIR" 2>/dev/null || true)
+_nsinit_module_real=$(readlink -f "$DSH_MODULE_DIR" 2>/dev/null || true)
+_nsinit_image_relative=${DSH_IMAGE_DIR#"$DSH_MEDIA"/}
+{
+  printf '%s\n' "$DSH_ROOT" "$DSH_IMAGE_DIR" "$DSH_MODULE_DIR" /data/adb/modules /data/adb/ksu
+  [ -z "$_nsinit_root_real" ] || printf '%s\n' "$_nsinit_root_real"
+  [ -z "$_nsinit_image_real" ] || printf '%s\n' "$_nsinit_image_real"
+  [ -z "$_nsinit_module_real" ] || printf '%s\n' "$_nsinit_module_real"
+  if [ "$_nsinit_image_relative" != "$DSH_IMAGE_DIR" ]; then
+    for _alias in /sdcard /storage/emulated/0 /mnt/user/0/emulated/0 \
+      /mnt/installer/0/emulated/0 /mnt/androidwritable/0/emulated/0 /mnt/pass_through/0/emulated/0; do
+      printf '%s\n' "$_alias/$_nsinit_image_relative"
+    done
+  fi
+} | while IFS= read -r _p; do
+  [ -n "$_p" ] || continue
+  dsh_mount_mask_tmpfs "$ROOT$_p" || exit 1
+done || exit 5
 
 # Network config inside the rootfs.
 mkdir -p "$ROOT/etc" || exit 5
@@ -237,10 +433,12 @@ dsh_log "holder ready; launching s6 child"
   exec chroot "$ROOT" /usr/bin/env -i \
     HOME=/root \
     PATH=/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    TMPDIR=/tmp \
+    DSH_GUEST_TMP="$DSH_GUEST_TMP" \
+    DSH_WORKSPACE_DIR="$DSH_WORKSPACE_DIR" \
+    TMPDIR="$DSH_GUEST_TMP" \
     LANG=C.UTF-8 \
     TERM=xterm-256color \
-    /bin/sh -c 'exec /usr/bin/s6-svscan /run/s6'
+    /bin/sh -c '. /opt/dsh-control/bin/dsh-android-env || { echo "Android environment setup failed" >&2; exit 1; }; exec /usr/bin/s6-svscan /run/s6'
 ) &
 CHILD_PID=$!
 dsh_log "s6 child pid=$CHILD_PID"
@@ -249,7 +447,7 @@ wait "$CHILD_PID"
 RC=$?
 # A signal can interrupt wait() before the child exits. Do not clear the PID
 # until the s6 child is actually reaped, otherwise the EXIT trap would unmount
-# while s6 is still running and fall back to lazy unmounts.
+# while s6 is still running; failed cleanup must remain available for recovery.
 if dsh_proc_alive "$CHILD_PID"; then
   kill -TERM "$CHILD_PID" 2>/dev/null || true
   wait "$CHILD_PID" 2>/dev/null || true

@@ -1,0 +1,52 @@
+#!/system/bin/sh
+# shellcheck shell=sh disable=SC3043
+set -u
+
+_log=${1:?log path required}
+_max=${2:-1048576}
+_keep=${3:-3}
+case $_max in
+'' | *[!0-9]*) exit 2 ;;
+esac
+case $_keep in
+'' | *[!0-9]*) exit 2 ;;
+esac
+[ "$_max" -gt 0 ] && [ "$_keep" -ge 1 ] || exit 2
+_dir=${_log%/*}
+[ "$_dir" != "$_log" ] || _dir=.
+mkdir -p "$_dir" || exit 1
+for _existing in "$_log" "$_log".[0-9]*; do
+  [ ! -f "$_existing" ] || chmod 0600 "$_existing" || exit 1
+done
+: >>"$_log" || exit 1
+chmod 0600 "$_log" || exit 1
+
+_last=
+_repeat=0
+while IFS= read -r _line || [ -n "$_line" ]; do
+  if [ "$_line" = "$_last" ]; then
+    _repeat=$((_repeat + 1))
+    [ "$_repeat" -lt 60 ] && continue
+    _line="log-limit: suppressed $_repeat repeats of: $_last"
+    _repeat=0
+  fi
+  _last=$_line
+  _size=$(wc -c <"$_log" 2>/dev/null | tr -d '[:space:]') || _size=0
+  case $_size in
+  '' | *[!0-9]*) _size=0 ;;
+  esac
+  if [ "$_size" -gt "$_max" ]; then
+    _i=$_keep
+    while [ "$_i" -gt 1 ]; do
+      _previous=$((_i - 1))
+      if [ -f "$_log.$_previous" ]; then
+        mv -f "$_log.$_previous" "$_log.$_i" || exit 1
+      fi
+      _i=$((_i - 1))
+    done
+    mv -f "$_log" "$_log.1" || exit 1
+    : >"$_log" || exit 1
+    chmod 0600 "$_log" || exit 1
+  fi
+  printf '%s\n' "$_line" >>"$_log" || exit 1
+done

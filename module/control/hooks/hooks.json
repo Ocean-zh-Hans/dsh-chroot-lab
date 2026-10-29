@@ -1,12 +1,24 @@
 {
   "hooks": {
-    "PreToolUse": [
+    "SessionStart": [
       {
         "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/dsh-control/hooks/pretool.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/riskcontext.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/riskcontext.sh",
             "timeout": 5
           }
         ]
@@ -18,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/dsh-control/hooks/posttool.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/posttool.sh",
             "timeout": 5
           }
         ]

@@ -1,4 +1,5 @@
 #!/bin/sh
-# s6 finish: small backoff to avoid a hot restart loop.
+# s6 finish: remove stale readiness and avoid a hot restart loop.
+rm -f /run/dsh/url /run/dsh/health /run/dsh/url.tmp.* /run/dsh/health.tmp.*
 sleep 1
 exit 0

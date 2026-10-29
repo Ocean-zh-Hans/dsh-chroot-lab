@@ -1,0 +1,7 @@
+# Audit-only fallback when the profile-local permission preset is unavailable.
+- insert:
+    - id: dsh-audit-hooks
+      name: '@deepseek-ai/dsh-hooks-claude-code'
+      config:
+        configPath: !!js "(process.env.DSH_CONTROL_DIR || '/opt/dsh-control') + '/hooks/hooks.json'"
+        pluginRoot: !!js "(process.env.DSH_CONTROL_DIR || '/opt/dsh-control')"

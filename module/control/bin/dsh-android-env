@@ -1,0 +1,69 @@
+# Shared Android environment for s6, DSH, login shells, and control commands.
+export ANDROID_ROOT=/system
+export ANDROID_DATA=/data
+export ANDROID_ART_ROOT=/apex/com.android.art
+export ANDROID_TZDATA_ROOT=/apex/com.android.tzdata
+export ANDROID_I18N_ROOT=/apex/com.android.i18n
+export ANDROID_STORAGE=/storage
+export PATH=/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/product/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin:/system_ext/bin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/vendor/xbin
+
+dsh_android_classpath_valid() {
+  _android_list=$1
+  _android_root=$2
+  _android_ifs=$IFS
+  case $_android_list in
+  '' | :* | *: | *::* | *[!A-Za-z0-9_./:+-]*) return 1 ;;
+  esac
+  IFS=:
+  for _android_jar in $_android_list; do
+    IFS=$_android_ifs
+    case $_android_jar in
+    /system/*.jar | /system_ext/*.jar | /apex/*.jar | /product/*.jar | /vendor/*.jar | /odm/*.jar) ;;
+    *)
+      IFS=$_android_ifs
+      return 1
+      ;;
+    esac
+    case $_android_jar in
+    *..*)
+      IFS=$_android_ifs
+      return 1
+      ;;
+    esac
+    [ -f "$_android_root$_android_jar" ] || {
+      IFS=$_android_ifs
+      return 1
+    }
+  done
+  IFS=$_android_ifs
+}
+
+dsh_android_runtime_env() {
+  _android_proc=$1
+  _android_pidof=$2
+  _android_root=${3:-}
+  if [ -z "${BOOTCLASSPATH:-}" ] || [ -z "${DEX2OATBOOTCLASSPATH:-}" ]; then
+    [ -x "$_android_pidof" ] || return 0
+    _android_pids=$("$_android_pidof" system_server 2>/dev/null || true)
+    for _android_pid in $_android_pids; do
+      case $_android_pid in
+      '' | *[!0-9]*) continue ;;
+      esac
+      _android_environ=$_android_proc/$_android_pid/environ
+      [ -r "$_android_environ" ] || continue
+      _android_boot=$(tr '\000' '\n' <"$_android_environ" | sed -n 's/^BOOTCLASSPATH=//p')
+      _android_oat=$(tr '\000' '\n' <"$_android_environ" | sed -n 's/^DEX2OATBOOTCLASSPATH=//p')
+      if [ -n "$_android_boot" ] && [ -n "$_android_oat" ]; then
+        BOOTCLASSPATH=$_android_boot
+        DEX2OATBOOTCLASSPATH=$_android_oat
+        break
+      fi
+    done
+  fi
+  [ -n "${BOOTCLASSPATH:-}" ] && [ -n "${DEX2OATBOOTCLASSPATH:-}" ] || return 0
+  dsh_android_classpath_valid "$BOOTCLASSPATH" "$_android_root" || return 1
+  dsh_android_classpath_valid "$DEX2OATBOOTCLASSPATH" "$_android_root" || return 1
+  export BOOTCLASSPATH DEX2OATBOOTCLASSPATH
+}
+
+dsh_android_runtime_env "${DSH_ANDROID_PROC:-/proc}" "${DSH_ANDROID_PIDOF:-/system/bin/pidof}" "${DSH_ANDROID_FS_ROOT:-}"

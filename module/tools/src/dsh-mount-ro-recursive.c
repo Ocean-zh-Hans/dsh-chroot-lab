@@ -25,6 +25,9 @@
 #include <fcntl.h>
 #include <linux/mount.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <sys/file.h>
+#include <sys/stat.h>
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/syscall.h>
@@ -85,9 +88,48 @@ static int make_rprivate(const char *path) {
   return -1;
 }
 
+static int claim_and_exec(const char *path, char **command) {
+  struct stat st;
+  int fd = open(path, O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
+  if (fd < 0 || fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
+      fchmod(fd, 0600) != 0 || flock(fd, LOCK_EX | LOCK_NB) != 0) {
+    fprintf(stderr, "dsh-mount-ro-recursive: cannot claim %s: %s\n", path,
+            strerror(errno));
+    if (fd >= 0) close(fd);
+    return 1;
+  }
+  char claim_fd[32];
+  char claim_fds[256];
+  const char *previous = getenv("DSH_CLAIM_FDS");
+  int len;
+  snprintf(claim_fd, sizeof(claim_fd), "%d", fd);
+  if (previous != NULL && *previous != '\0') {
+    len = snprintf(claim_fds, sizeof(claim_fds), "%s,%d", previous, fd);
+  } else {
+    len = snprintf(claim_fds, sizeof(claim_fds), "%d", fd);
+  }
+  if (len < 0 || (size_t)len >= sizeof(claim_fds) ||
+      setenv("DSH_CLAIM_FD", claim_fd, 1) != 0 ||
+      setenv("DSH_CLAIM_FDS", claim_fds, 1) != 0) {
+    fprintf(stderr, "dsh-mount-ro-recursive: cannot publish claim fds: %s\n",
+            strerror(errno));
+    close(fd);
+    return 1;
+  }
+  execvp(command[0], command);
+  fprintf(stderr, "dsh-mount-ro-recursive: exec %s: %s\n", command[0],
+          strerror(errno));
+  close(fd);
+  return 1;
+}
+
 int main(int argc, char **argv) {
   int rc = 0;
   int i;
+
+  if (argc >= 4 && strcmp(argv[1], "--claim") == 0) {
+    return claim_and_exec(argv[2], argv + 3);
+  }
 
   if (argc < 2) {
     fprintf(stderr, "usage: %s [--make-rprivate PATH | --rbind SRC DST | --bind SRC DST | --remount-ro PATH | --remount-ro-bind PATH | PATH...]\n", argv[0]);

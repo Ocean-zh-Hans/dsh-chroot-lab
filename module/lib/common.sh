@@ -28,6 +28,14 @@ dsh_is_uint() {
   esac
 }
 
+dsh_is_positive_uint() {
+  case ${1:-} in
+  '' | *[!0-9]*) return 1 ;;
+  *[1-9]*) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
 dsh_is_abs() {
   case ${1:-} in
   /*) return 0 ;;
@@ -48,16 +56,33 @@ dsh_tool_path() {
   command -v "$1" 2>/dev/null
 }
 
+dsh_bounded() {
+  _bounded_seconds=$1
+  shift
+  dsh_is_uint "$_bounded_seconds" || return 2
+  _bounded_timeout=$(dsh_tool_path timeout || true)
+  [ -n "$_bounded_timeout" ] || {
+    dsh_err "timeout is required for a bounded command"
+    return 124
+  }
+  "$_bounded_timeout" -k 2 "$_bounded_seconds" "$@"
+}
+
 dsh_json_escape() {
   printf '%s' "${1:-}" | awk '
     BEGIN { ORS = "" }
     {
-      gsub(/\\/, "\\\\")
-      gsub(/"/, "\\\"")
-      gsub(/\t/, "\\t")
-      gsub(/\r/, "\\r")
       if (NR > 1) printf "\\n"
-      printf "%s", $0
+      for (i = 1; i <= length($0); i++) {
+        c = substr($0, i, 1)
+        if (c == "\\") printf "%s%s", "\\", "\\"
+        else if (c == "\"") printf "\\\""
+        else if (c == "\t") printf "\\t"
+        else if (c == "\r") printf "\\r"
+        else if (c == "\b") printf "\\b"
+        else if (c == "\f") printf "\\f"
+        else printf "%s", c
+      }
     }
   '
 }
@@ -111,4 +136,18 @@ dsh_bool() {
   1 | yes | true | on) return 0 ;;
   *) return 1 ;;
   esac
+}
+
+dsh_url_is_loopback() {
+  case $1 in
+  http://127.0.0.1:* | http://localhost:*) ;;
+  *) return 1 ;;
+  esac
+  _rest=${1#http://}
+  _port_path=${_rest#*:}
+  _port=${_port_path%%[/?]*}
+  case $_port in
+  '' | *[!0-9]*) return 1 ;;
+  esac
+  [ "$_port" -ge 1 ] && [ "$_port" -le 65535 ]
 }

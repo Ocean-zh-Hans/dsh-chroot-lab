@@ -1,0 +1,61 @@
+#!/system/bin/sh
+# Runs in the recorded mount namespace, with the host root and /tmp visible.
+set -u
+
+STACK=${1:-}
+ROOT=${2:-}
+STATUS=${3:-}
+EXPECTED_NS=${4:-}
+
+if [ -z "$STACK" ] || [ -z "$STATUS" ] || [ -z "$ROOT" ] || [ "$ROOT" = / ]; then
+  printf 'dsh-recover-mounts: invalid arguments\n' >&2
+  exit 2
+fi
+if [ -n "$EXPECTED_NS" ] && [ "$(readlink /proc/self/ns/mnt 2>/dev/null)" != "$EXPECTED_NS" ]; then
+  printf 'dsh-recover-mounts: namespace identity changed\n' >&2
+  exit 4
+fi
+
+_self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 2
+# shellcheck disable=SC1090
+. "$_self_dir/unmount.sh" || exit 2
+
+_rc=0
+if dsh_mountinfo_has_mount "$ROOT"; then
+  mount -o remount,ro "$ROOT" 2>/dev/null || _rc=1
+else
+  _present_rc=$?
+  [ "$_present_rc" -eq 1 ] || _rc=1
+fi
+
+if [ -s "$STACK" ]; then
+  while IFS= read -r _target; do
+    [ -n "$_target" ] || continue
+    case $_target in
+    "$ROOT" | "$ROOT"/*) ;;
+    *)
+      printf 'dsh-recover-mounts: unsafe target: %s\n' "$_target" >&2
+      _rc=1
+      ;;
+    esac
+  done <"$STACK"
+fi
+dsh_unmount_tree "$ROOT" "$STACK.tree.$$" "$ROOT" || printf 'dsh-recover-mounts: first cleanup pass incomplete; rescanning\n' >&2
+if dsh_mountinfo_has_tree "$ROOT"; then
+  dsh_unmount_tree "$ROOT" "$STACK.tree.retry.$$" "$ROOT" || _rc=1
+fi
+if dsh_mountinfo_has_tree "$ROOT"; then
+  printf 'dsh-recover-mounts: rootfs or a child mount remains: %s\n' "$ROOT" >&2
+  _rc=1
+else
+  _present_rc=$?
+  [ "$_present_rc" -eq 1 ] || _rc=1
+fi
+
+_tmp=$STATUS.tmp.$$
+if [ "$_rc" -eq 0 ]; then _result=ok; else _result=failed; fi
+if ! printf 'result=%s\n' "$_result" >"$_tmp" || ! mv -f "$_tmp" "$STATUS"; then
+  rm -f "$_tmp"
+  exit 1
+fi
+exit "$_rc"

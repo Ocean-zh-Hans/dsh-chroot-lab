@@ -1,0 +1,13 @@
+#!/system/bin/sh
+# shellcheck shell=sh disable=SC3043
+set -u
+
+_self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 2
+DSH_MODULE_DIR=${DSH_MODULE_DIR:-$(CDPATH='' cd -- "$_self_dir/.." && pwd)}
+for _lib in common.sh config.sh log.sh proc.sh state.sh lock.sh; do
+  [ -r "$DSH_MODULE_DIR/lib/$_lib" ] || exit 2
+  # shellcheck disable=SC1090
+  . "$DSH_MODULE_DIR/lib/$_lib"
+done
+dsh_config_init
+dsh_lock_acquire

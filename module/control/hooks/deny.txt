@@ -1,8 +1,0 @@
-# Active only when `dsh-ctl guard on`.
-# Extended regex; matched against the raw PreToolUse event JSON.
-setenforce[[:space:]]+0
-resetprop
-/sys/fs/selinux
-dd[[:space:]]+.*of=/dev/block
-mkfs\.
-fastboot[[:space:]]+flash

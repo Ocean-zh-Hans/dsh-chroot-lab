@@ -1,9 +1,12 @@
 # shellcheck shell=sh disable=SC3043
-# Guard state is read by /opt/dsh-control/hooks/pretool.sh on every call.
+# Guard selects a permission preset for new sessions; audit/risk context is independent.
 
 dsh_guard_status() {
-  _v=$(dsh_read_line "$DSH_GUEST_DIR/guard" 2>/dev/null || true)
-  case $_v in 1) printf 'guard: on (deny/ask active; hardguard always on)\n' ;; *) printf 'guard: off (hardguard only)\n' ;; esac
+  _v=$(dsh_read_line "$DSH_GUARD_FILE" 2>/dev/null || true)
+  case $_v in
+  1) printf 'guard: on for new sessions (approval-guard; audit/risk context)\n' ;;
+  *) printf 'guard: off for new sessions (approval-free; audit/risk context)\n' ;;
+  esac
 }
 
 dsh_guard() {
@@ -12,13 +15,14 @@ dsh_guard() {
   status) dsh_guard_status ;;
   on)
     dsh_state_ensure || return 1
-    printf '1\n' >"$DSH_GUEST_DIR/guard" || return 1
-    printf 'guard: on (deny/ask active; hardguard always on)\n'
+    dsh_state_write_atomic "$DSH_GUARD_FILE" 1 || return 1
+    printf 'guard: on for new sessions; restart DSH/chroot to apply\n'
+    printf 'existing sessions: select /permission approval-guard\n'
     ;;
   off)
     dsh_state_ensure || return 1
-    printf '0\n' >"$DSH_GUEST_DIR/guard" || return 1
-    printf 'guard: off (hardguard only)\n'
+    dsh_state_write_atomic "$DSH_GUARD_FILE" 0 || return 1
+    printf 'guard: off for new sessions; restart DSH/chroot to apply\n'
     ;;
   -h | --help)
     printf 'Usage: dsh-ctl guard status|on|off\n'

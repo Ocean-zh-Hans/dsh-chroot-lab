@@ -1,7 +1,7 @@
 id=dsh_chroot
 name=DSH Ubuntu Chroot
-version=0.2.0
-versionCode=2
+version=0.2.2
+versionCode=4
 author=dsh-chroot-lab
 description=Real Ubuntu 24.04 chroot for DSH (P2/P3 code; apply requires explicit --apply)
 updateJson=

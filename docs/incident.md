@@ -70,3 +70,23 @@ getenforce: 不稳定（一次 Disabled，一次 Enforcing）
 ## 7. 责任
 
 这是操作者造成的系统级故障，不是用户配置问题。后续不再在主力机上执行任何会改宿主挂载/SELinux/loop/overlay 的测试；只做只读排查。
+
+## 8. TelephonyProvider 读取异常与恢复（2026-10-28）
+
+- 用户在主力机看到反复“程序停止运行”，随后 SIM 无法识别。约 00:06 的 crash/events/system 日志显示 `com.android.phone` 持续崩溃并被系统重启，`am_process_crashed_too_much` 反复出现。异常是 `SubscriptionDatabaseManager.loadDatabaseInternal` 查询时，`ActivityThread.acquireProvider` 的 provider 引用为空并触发 `NullPointerException`。
+- 更直接的读取证据是：`Zip: failed to read at offset 1808775`、`Failed to open APK '/system_ext/priv-app/TelephonyProvider/TelephonyProvider.apk': I/O error`，provider Context 创建失败。`adb pull` 同样返回 `remote read failed: I/O error`，不是单纯的 ZIP 格式不兼容。
+- `/system_ext` 为 EROFS，但该 TelephonyProvider 目录另有 Oplus `opex` overlay，首选 lower 位于 `/mnt/opex/ovl_update_3456@3/...` 的 tmpfs。直接拉取该源文件也返回 I/O error。包管理仍显示已安装、未隐藏、未停用，`enabled=0` 是默认状态，不是禁用。
+- 这些事实**不能单独证明**是 chroot、LSPosed、SIM 硬件、系统分区永久损坏或某个 root 模块导致。重启前没有取得内核 `dmesg`，因此不把存储硬件或 tmpfs 损坏写成已证实根因。没有清数据、重刷分区、禁用系统组件或修改其他 root 授权。
+- 用户重启并报告恢复后，约 00:18 复核：`system_server` 和 `com.android.phone` 均存活，crash 缓冲区没有新的同类 FATAL/provider Context 错误；APK 可完整拉取，`unzip -t` 全部通过。恢复后的 APK SHA256 为 `a09da737e28851f6ff405a3f54b7671bad55e03db670a67346dfb1777c387760`。这证明当时读取已恢复，但不证明故障永久消失或根因已确定。
+- 若复发，先保留新 crash/system 日志并尽早读取内核 I/O、tmpfs/swap 和设备映射错误，再决定恢复动作。不要先清电话数据、刷机或把 SIM 硬件判死。新的 chroot 验证曾在排查期间暂停，用户确认恢复后才继续。
+
+## 9. 测试机 init SIGABRT 的未决样本（2026-10-28）
+
+- 当前识别设备为 PJE110 测试机。只读 crash 缓冲区仍有一条 2026-10-27 17:08:36 的记录：PID 7319（init）收到 SIGABRT，随后 `crash_dump helper failed to exec, or was killed`。
+- 当前缓冲区没有对应的 Abort message，未取得当时的 dmesg，不能用这两条记录确定触发方，也不能归因于 DSH 模块。此前其他日志中的 init/permissioncontroller 记录没有被本次样本完整复核。
+- 当前 `system_server` 与 `com.android.phone` 存活，SELinux=1；模块旧验收通过不等于设备完全健康。需要设备负责人核对当时重启/安装时间线并保留新的内核日志，不能把该样本写成已解决。
+
+## 10. 主力机 PJZ110 安装前后 crash 样本（2026-10-28）
+
+- `main-final-crash.txt` 的 fingerprint 为 OnePlus/PJZ110，包含 00:16:33 的 init SIGABRT，以及 00:23:40 的 permissioncontroller SIGABRT。`main-install-crash.txt` 另有 00:45:53 的 init SIGABRT。它们与第 9 节的 PJE110 / 2026-10-27 17:08 样本不是同一设备或同一时间点，不能合并为一条已解释的 PJE110 事件。
+- 这些记录只证明相应进程发生过崩溃，不能单独证明由模块、安装或重启引起，也不能证明设备完全健康。需要设备负责人核对安装/重启时间线，并在复发时保留 dmesg、crash 和恢复记录；原始诊断文件继续保留在被 `.gitignore` 忽略的 `build/.tools`，不进入源码交付。

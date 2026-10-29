@@ -1,17 +1,39 @@
 #!/bin/sh
 # Optional ttyd service. Disabled by default via the `down` file.
-# Keep loopback-only; do not expose 0.0.0.0.
+# Keep loopback-only and require credentials before opening a root shell.
 
 exec >/var/log/dsh/ttyd.log 2>&1
 
 export HOME=/root
-export PATH=/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin:/system/xbin:/vendor/bin:/product/bin:/system_ext/bin:/odm/bin
 export TMPDIR=/tmp
 export LANG=C.UTF-8
+. /opt/dsh-control/bin/dsh-android-env
 
 if ! command -v ttyd >/dev/null 2>&1; then
   echo "ttyd-run: ttyd not installed"
   exit 1
 fi
+if [ ! -s /run/dsh/ttyd.pass ] || [ "$(stat -c %a /run/dsh/ttyd.pass 2>/dev/null)" != 600 ]; then
+  echo "ttyd-run: missing or insecure credential file"
+  exit 1
+fi
+_pass=$(cat /run/dsh/ttyd.pass)
+case $_pass in
+*[!A-Za-z0-9]*)
+  echo "ttyd-run: invalid credential file"
+  exit 1
+  ;;
+esac
+if [ "${#_pass}" -lt 32 ] || [ "${#_pass}" -gt 128 ]; then
+  echo "ttyd-run: invalid credential length"
+  exit 1
+fi
+DSH_TTYD_PORT=${DSH_TTYD_PORT:-7681}
+case $DSH_TTYD_PORT in
+'' | *[!0-9]*) exit 2 ;;
+esac
+if [ "$DSH_TTYD_PORT" -lt 1 ] || [ "$DSH_TTYD_PORT" -gt 65535 ]; then
+  exit 2
+fi
 
-exec ttyd -i 127.0.0.1 -p 7681 /bin/bash
+exec ttyd -i 127.0.0.1 -p "$DSH_TTYD_PORT" -c "dsh:$_pass" /bin/bash -l

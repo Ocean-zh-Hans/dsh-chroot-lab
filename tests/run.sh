@@ -7,15 +7,31 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
 tests=(
   "$ROOT/tests/test_cli.sh"
+  "$ROOT/tests/test_install.sh"
   "$ROOT/tests/test_plan.sh"
   "$ROOT/tests/test_doctor.sh"
   "$ROOT/tests/test_status.sh"
+  "$ROOT/tests/test_proc.sh"
   "$ROOT/tests/test_safety.sh"
+  "$ROOT/tests/test_loop.sh"
+  "$ROOT/tests/test_loop_no_pipefail.sh"
+  "$ROOT/tests/test_lock.sh"
+  "$ROOT/tests/test_watchdog.sh"
+  "$ROOT/tests/test_log_limit.sh"
+  "$ROOT/tests/test_service.sh"
   "$ROOT/tests/test_lifecycle.sh"
+  "$ROOT/tests/test_cleanup_race.sh"
+  "$ROOT/tests/test_rescue.sh"
+  "$ROOT/tests/test_mount_cleanup.sh"
+  "$ROOT/tests/test_recovery_safety.sh"
+  "$ROOT/tests/test_systemrw.sh"
   "$ROOT/tests/test_snapshot.sh"
+  "$ROOT/tests/test_sparse.sh"
   "$ROOT/tests/test_guard.sh"
+  "$ROOT/tests/test_ttyd.sh"
   "$ROOT/tests/test_image.sh"
   "$ROOT/tests/test_dsh_run.sh"
+  "$ROOT/tests/test_android_env.sh"
 )
 
 for t in "${tests[@]}"; do

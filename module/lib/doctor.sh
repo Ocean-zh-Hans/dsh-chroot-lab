@@ -1,6 +1,6 @@
 # shellcheck shell=sh disable=SC3043
-# Read-only environment checks. This file must never mount, unshare, or write
-# to system paths. State/log creation is owned by other commands.
+# Environment checks never mount, unshare, or modify Android system state.
+# The only write is a create/execute/delete probe in a private directory under DSH_TMP.
 
 DSH_DOC_PASS=0
 DSH_DOC_WARN=0
@@ -58,7 +58,7 @@ dsh_doc_check_selinux() {
   if [ -r "$_ctx_f" ]; then
     _ctx=$(dsh_read_line "$_ctx_f" 2>/dev/null || true)
     case $_ctx in
-    *u:r:ksu:s0*) dsh_doc_pass "domain is u:r:ksu:s0 (permissive allow-all; not a security boundary)" ;;
+    u:r:ksu:s0 | u:r:magisk:s0) dsh_doc_pass "domain is $_ctx (root-manager domain; not a security boundary)" ;;
     '') dsh_doc_warn "domain context is empty" ;;
     *) dsh_doc_warn "domain is $_ctx (expected u:r:ksu:s0 on this device)" ;;
     esac
@@ -70,6 +70,14 @@ dsh_doc_check_selinux() {
 dsh_doc_check_tmp() {
   if [ -d "$DSH_TMP" ] && [ -w "$DSH_TMP" ]; then
     dsh_doc_pass "host tmp exists and is writable: $DSH_TMP"
+    _probe=$(mktemp -d "$DSH_TMP/dsh-doctor.XXXXXX" 2>/dev/null || true)
+    if [ -n "$_probe" ] && [ -x "${DSH_HOST_TRUE:-/system/bin/true}" ] &&
+      cp "${DSH_HOST_TRUE:-/system/bin/true}" "$_probe/true" && chmod 0700 "$_probe/true" && "$_probe/true"; then
+      dsh_doc_pass "host tmp permits executable files"
+    else
+      dsh_doc_fail "host tmp does not permit executable files: $DSH_TMP"
+    fi
+    [ -z "$_probe" ] || rm -rf "$_probe"
   else
     dsh_doc_fail "host tmp missing/not writable: $DSH_TMP"
   fi
@@ -114,24 +122,24 @@ dsh_doc_check_media() {
 }
 
 dsh_doc_check_image() {
-  if [ ! -e "$DSH_IMAGE" ]; then
-    dsh_doc_required "rootfs image missing: $DSH_IMAGE"
+  if [ ! -e "$DSH_DOC_IMAGE" ]; then
+    dsh_doc_required "rootfs image missing: $DSH_DOC_IMAGE"
     return
   fi
-  if [ ! -f "$DSH_IMAGE" ]; then
-    dsh_doc_fail "rootfs image is not a regular file: $DSH_IMAGE"
+  if [ ! -f "$DSH_DOC_IMAGE" ]; then
+    dsh_doc_fail "rootfs image is not a regular file: $DSH_DOC_IMAGE"
     return
   fi
-  if ! dsh_mode_private "$DSH_IMAGE"; then
-    dsh_doc_fail "rootfs image is not 0600-like: $DSH_IMAGE (mode $(dsh_file_mode "$DSH_IMAGE" || true))"
+  if ! dsh_mode_private "$DSH_DOC_IMAGE"; then
+    dsh_doc_fail "rootfs image is not 0600-like: $DSH_DOC_IMAGE (mode $(dsh_file_mode "$DSH_DOC_IMAGE" || true))"
   else
-    dsh_doc_pass "rootfs image is private: $DSH_IMAGE"
+    dsh_doc_pass "rootfs image is private: $DSH_DOC_IMAGE"
   fi
-  _size=$(dsh_file_size "$DSH_IMAGE" || true)
-  if dsh_is_uint "$_size" && [ "$_size" -gt 0 ]; then
+  _size=$(dsh_file_size "$DSH_DOC_IMAGE" || true)
+  if dsh_is_positive_uint "$_size"; then
     dsh_doc_pass "rootfs image size: $_size bytes (apparent; sparse ext4)"
   else
-    dsh_doc_fail "rootfs image size is zero/unreadable: $DSH_IMAGE"
+    dsh_doc_fail "rootfs image size is zero/unreadable: $DSH_DOC_IMAGE"
   fi
 }
 
@@ -181,14 +189,21 @@ dsh_doc_check_state() {
 }
 
 dsh_doc_check_tools() {
-  _required="chroot mount umount nsenter setsid unshare sha256sum sync mke2fs e2fsck resize2fs mountpoint cp tar truncate"
+  _required="chroot mount umount nsenter setsid unshare sha256sum sync mke2fs e2fsck debugfs mountpoint cp tar truncate timeout mktemp"
   for _c in $_required; do
-    if dsh_cmd_exists "$_c"; then
+    if dsh_tool_path "$_c" >/dev/null 2>&1; then
       dsh_doc_pass "command present: $_c"
     else
       dsh_doc_required "command missing: $_c"
     fi
   done
+
+  _cp=$(dsh_tool_path cp || true)
+  if [ -n "$_cp" ] && "$_cp" --help 2>&1 | grep -q -- '--sparse=always'; then
+    dsh_doc_pass "sparse copy: cp --sparse=always"
+  else
+    dsh_doc_required "cp --sparse=always is required"
+  fi
 
   _losetup=''
   if [ -x "$DSH_MODULE_DIR/tools/bin/losetup" ]; then
@@ -206,13 +221,37 @@ dsh_doc_check_tools() {
     dsh_doc_required "losetup missing"
   fi
 
+  if [ -n "$_losetup" ] && "$_losetup" --help 2>&1 | grep -q -- '--sector-size'; then
+    if "$_losetup" --help 2>&1 | grep -q -- '--direct-io'; then
+      dsh_doc_pass "losetup supports --direct-io"
+    else
+      dsh_doc_fail "losetup --sector-size path requires --direct-io=off"
+    fi
+  fi
+  _timeout=$(dsh_tool_path timeout || true)
+  if [ -n "$_timeout" ] && "$_timeout" --help 2>&1 | grep -q -- '-k'; then
+    dsh_doc_pass "timeout supports bounded guest commands"
+  else
+    dsh_doc_required "timeout with -k support is required"
+  fi
+  for _file in "$DSH_MODULE_DIR/bin/dsh-recover-mounts" "$DSH_CONTROL_DIR/bin/dsh-android-env" "$DSH_CONTROL_DIR/bin/dsh-healthcheck.py" "$DSH_CONTROL_DIR/bin/dsh-run"; do
+    if [ -r "$_file" ]; then
+      dsh_doc_pass "runtime dependency present: $_file"
+    else
+      dsh_doc_required "runtime dependency missing: $_file"
+    fi
+  done
+  if [ -x "$DSH_CONTROL_DIR/bin/dsh-run" ]; then
+    dsh_doc_pass "dsh-run is executable"
+  else
+    dsh_doc_required "dsh-run is missing or not executable"
+  fi
+  [ ! -e "$DSH_WATCHDOG_DISABLED" ] || dsh_doc_warn "watchdog is disabled; use dsh-watchdog --enable to allow claims"
+  [ ! -e "$DSH_PURGE_MARKER" ] || dsh_doc_warn "watchdog purge is in progress; claims are disabled"
+
   _nsenter=$(dsh_tool_path nsenter || true)
   if [ -n "$_nsenter" ]; then
-    if "$_nsenter" --help 2>&1 | grep -q -- '--mount'; then
-      dsh_doc_pass "nsenter supports --mount: $_nsenter"
-    else
-      dsh_doc_warn "nsenter lacks --mount; using validated -t PID fallback: $_nsenter"
-    fi
+    dsh_doc_pass "nsenter present: $_nsenter; --mount=FILE/-t fallback is validated on use"
   fi
   _unshare=$(dsh_tool_path unshare || true)
   if [ -n "$_unshare" ]; then
@@ -236,22 +275,118 @@ dsh_doc_check_tools() {
   fi
 }
 
-dsh_doc_check_mounts() {
-  if [ -r "$DSH_PROC/self/mountinfo" ] && grep -q 'dsh-rootfs' "$DSH_PROC/self/mountinfo" 2>/dev/null; then
-    dsh_doc_required "host mountinfo already contains dsh-rootfs; possible leftover"
-  else
-    dsh_doc_pass "no dsh-rootfs mount in current namespace"
+dsh_doc_check_guest() {
+  if mountpoint -q "$DSH_ROOTFS_DIR" 2>/dev/null || [ -n "$(dsh_loop_attached_images "$DSH_DOC_IMAGE" 2>/dev/null)" ]; then
+    dsh_doc_warn "guest image inspection skipped while the image is active"
+    return 0
   fi
-
-  if [ -r "$DSH_PROC/self/mountinfo" ] && grep -q 'hidepid=' "$DSH_PROC/self/mountinfo" 2>/dev/null; then
-    dsh_doc_pass "host /proc mountinfo exposes hidepid setting"
+  _debugfs=$(dsh_tool_path debugfs || true)
+  [ -n "$_debugfs" ] || {
+    dsh_doc_required "debugfs is needed to inspect the unmounted guest image"
+    return 0
+  }
+  _guest_stat=$("$_debugfs" -R 'stat /usr/bin/python3' "$DSH_DOC_IMAGE" 2>&1) || {
+    dsh_doc_required "cannot inspect /usr/bin/python3 in the guest image"
+    return 0
+  }
+  _python_link=$(printf '%s\n' "$_guest_stat" | sed -n 's/.*Fast link dest: "\([^"]*\)".*/\1/p' | head -n 1)
+  case $_python_link in
+  '') ;;
+  python3.[0-9]*)
+    _guest_stat=$("$_debugfs" -R "stat /usr/bin/$_python_link" "$DSH_DOC_IMAGE" 2>&1) || _guest_stat=
+    ;;
+  *) _guest_stat= ;;
+  esac
+  if printf '%s\n' "$_guest_stat" | grep -q 'Type: regular' &&
+    printf '%s\n' "$_guest_stat" | grep -Eq 'Mode: +0[0-7]*[1357][0-7][0-7]'; then
+    dsh_doc_pass "guest Python exists and is executable"
   else
-    dsh_doc_warn "cannot confirm hidepid=invisible from mountinfo"
+    dsh_doc_required "guest /usr/bin/python3 is missing or not executable"
+  fi
+  if "$_debugfs" -R 'stat /tmp' "$DSH_DOC_IMAGE" 2>&1 | grep -q 'Type: directory'; then
+    dsh_doc_pass "guest /tmp exists (mounted with exec-enabled tmpfs at start)"
+  else
+    dsh_doc_required "guest /tmp is missing from the image"
+  fi
+  if [ -x "$DSH_RUNTIME_DIR/current/bin/dsh" ]; then
+    dsh_doc_pass "host DSH executable is present"
+  else
+    _runtime_stat=$("$_debugfs" -R 'stat /opt/dsh/current/bin/dsh' "$DSH_DOC_IMAGE" 2>&1) || {
+      dsh_doc_required "host and baked DSH executables are unavailable"
+      return 0
+    }
+    if printf '%s\n' "$_runtime_stat" | grep -q 'Type: regular' &&
+      printf '%s\n' "$_runtime_stat" | grep -Eq 'Mode: +0[0-7]*[1357][0-7][0-7]'; then
+      dsh_doc_pass "baked DSH executable is present"
+    else
+      dsh_doc_required "host and baked DSH executables are unavailable"
+    fi
   fi
 }
 
+dsh_doc_check_mounts() {
+  if dsh_mountinfo_has_tree "$DSH_ROOTFS_DIR"; then
+    dsh_doc_required "host mountinfo already contains the rootfs mountpoint or a child: $DSH_ROOTFS_DIR"
+  else
+    _mount_check_rc=$?
+    if [ "$_mount_check_rc" -eq 1 ]; then
+      dsh_doc_pass "no rootfs mount in current namespace"
+    else
+      dsh_doc_required "cannot verify rootfs mounts in mountinfo"
+    fi
+  fi
+
+  _private_mount_rc=0
+  _private_mounts=$(dsh_proc_any_rootfs "$DSH_ROOTFS_DIR") || _private_mount_rc=$?
+  case ${_private_mount_rc:-0} in
+  0) dsh_doc_required "rootfs remains in process namespaces: $_private_mounts" ;;
+  1) dsh_doc_pass "no rootfs mount in readable process namespaces" ;;
+  *) dsh_doc_required "cannot verify rootfs mounts in process namespaces" ;;
+  esac
+
+  if [ -r "$DSH_MOUNTINFO" ] && grep -Eq 'hidepid=(invisible|2)([ ,]|$)' "$DSH_MOUNTINFO" 2>/dev/null; then
+    dsh_doc_pass "host /proc uses hidepid=invisible or hidepid=2"
+  else
+    dsh_doc_required "cannot confirm hidepid=invisible or hidepid=2 from mountinfo"
+  fi
+}
+
+dsh_doc_check_loop() {
+  _doc_main_seen=0
+  for _image in "$DSH_IMAGE" "$DSH_IMAGE_DIR"/rootfs*.img "$DSH_IMAGE_SNAPSHOT_DIR"/rootfs-*.img; do
+    [ -f "$_image" ] || continue
+    if [ "$_image" = "$DSH_IMAGE" ]; then
+      [ "$_doc_main_seen" -eq 0 ] || continue
+      _doc_main_seen=1
+    fi
+    if ! _attached=$(dsh_loop_attached_images "$_image"); then
+      dsh_doc_required "cannot query loop attachments: $_image"
+    elif [ -n "$_attached" ]; then
+      dsh_doc_required "image is already attached: $_image -> $_attached"
+    else
+      dsh_doc_pass "image has no attached loop: $_image"
+    fi
+  done
+}
+
+dsh_doc_ksu_feature_enabled() {
+  printf '%s\n' "$2" | awk -v name="$1" '
+    {
+      for (i = 1; i <= NF; i++) {
+        field = $i
+        sub(/:$/, "", field)
+        if (field != name) continue
+        if (tolower($0) ~ /disabled/) disabled = 1
+        if ($0 ~ /(^|[[:space:]\[])ENABLED([[:space:]]|$)/ ||
+            $0 ~ /(^|[[:space:]\[])enabled([[:space:]]|$)/) enabled = 1
+      }
+    }
+    END { exit !(enabled && !disabled) }'
+}
+
 dsh_doc_check_ksu() {
-  if [ ! -x /data/adb/ksud ]; then
+  _ksud=${DSH_KSUD:-/data/adb/ksud}
+  if [ ! -x "$_ksud" ]; then
     dsh_doc_warn "ksud not found; cannot verify KSU hide features"
     return
   fi
@@ -259,13 +394,13 @@ dsh_doc_check_ksu() {
     dsh_doc_warn "not root; skipped ksud feature check"
     return
   fi
-  _out=$(/data/adb/ksud feature list 2>/dev/null || true)
+  _out=$("$_ksud" feature list 2>/dev/null || true)
   if [ -z "$_out" ]; then
     dsh_doc_warn "ksud feature list returned no output"
     return
   fi
   for _f in su_compat kernel_umount selinux_hide mount_hide avc_spoof; do
-    if printf '%s\n' "$_out" | grep -q "${_f}[[:space:]].*ENABLED"; then
+    if dsh_doc_ksu_feature_enabled "$_f" "$_out"; then
       dsh_doc_pass "KSU feature enabled: $_f"
     else
       dsh_doc_fail "KSU feature not enabled: $_f"
@@ -278,9 +413,11 @@ dsh_doctor_run() {
   DSH_DOC_WARN=0
   DSH_DOC_FAIL=0
   DSH_DOC_STRICT=0
+  DSH_DOC_IMAGE=$DSH_IMAGE
   for _arg in "$@"; do
     case $_arg in
     --for-apply) DSH_DOC_STRICT=1 ;;
+    --image-source=*) DSH_DOC_IMAGE=${_arg#--image-source=} ;;
     -h | --help)
       dsh_doctor_help
       return 0
@@ -300,6 +437,7 @@ dsh_doctor_run() {
   fi
   printf 'Device root: %s\n\n' "$DSH_ROOT"
 
+  dsh_config_check_paths || dsh_doc_fail "configuration paths are invalid"
   dsh_doc_check_root
   dsh_doc_check_selinux
   dsh_doc_check_tmp
@@ -309,6 +447,8 @@ dsh_doctor_run() {
   dsh_doc_check_state
   dsh_doc_check_tools
   dsh_doc_check_mounts
+  dsh_doc_check_loop
+  dsh_doc_check_guest
   dsh_doc_check_ksu
 
   printf '\nSummary: %d pass, %d warn, %d fail\n' "$DSH_DOC_PASS" "$DSH_DOC_WARN" "$DSH_DOC_FAIL"
@@ -320,10 +460,12 @@ dsh_doctor_run() {
 
 dsh_doctor_help() {
   cat <<'EOF'
-Usage: dsh-ctl doctor [--for-apply]
+Usage: dsh-ctl doctor [--for-apply] [--image-source=PATH]
 
-Read-only checks. Never mounts, unshares, or writes system state.
+Checks never mount, unshare, or change Android state. A temporary executable
+probe is created and removed under DSH_TMP.
 
-  --for-apply   treat missing apply dependencies as FAIL
+  --for-apply       treat missing apply dependencies as FAIL
+  --image-source    inspect this image for installation, not an existing target
 EOF
 }

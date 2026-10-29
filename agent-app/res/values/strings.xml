@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DSH Agent</string>
-    <string name="service_desc">Optional DSH host bridge: UI tree, notifications, clipboard and fixed package/activity actions. Enable only if you want these capabilities.</string>
+    <string name="service_desc">可选的 DSH 本机控制面，用于读取界面、执行无障碍操作和访问已授权的本机能力。仅在需要时启用。</string>
 </resources>

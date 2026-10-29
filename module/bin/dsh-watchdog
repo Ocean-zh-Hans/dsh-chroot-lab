@@ -1,16 +1,16 @@
 #!/system/bin/sh
 # shellcheck shell=sh disable=SC3043,SC2329
-# Host watchdog: read-only identity checks + SELinux restoration.
-# It never mounts/unmounts; dsh_stop owns mount cleanup through the holder.
+# Host watchdog: identity/loop/DSH-health/SELinux checks and delegated cleanup.
+# It never directly mounts/unmounts; dsh-ctl owns resource operations.
 
 set -u
 
-DSH_VERSION=${DSH_VERSION:-0.2.0}
+DSH_VERSION=${DSH_VERSION:-0.2.2}
 _self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 2
 DSH_MODULE_DIR=${DSH_MODULE_DIR:-$(CDPATH='' cd -- "$_self_dir/.." && pwd)}
 LIB_DIR=$DSH_MODULE_DIR/lib
 
-for _lib in common.sh config.sh log.sh proc.sh state.sh lifecycle.sh; do
+for _lib in common.sh config.sh log.sh proc.sh state.sh lock.sh loop.sh status.sh lifecycle.sh; do
   [ -r "$LIB_DIR/$_lib" ] || {
     printf 'dsh-watchdog: missing library: %s\n' "$LIB_DIR/$_lib" >&2
     exit 2
@@ -20,68 +20,324 @@ for _lib in common.sh config.sh log.sh proc.sh state.sh lifecycle.sh; do
 done
 
 dsh_config_init
-DSH_CTL=$DSH_MODULE_DIR/bin/dsh-ctl
+DSH_CTL=${DSH_CTL:-$DSH_MODULE_DIR/bin/dsh-ctl}
+DSH_WATCHDOG_OWNER=$DSH_CTL_DIR/watchdog.owner
+DSH_WATCHDOG_PID=$DSH_CTL_DIR/watchdog.pid
+DSH_WATCHDOG_STARTTIME=$DSH_WATCHDOG_OWNER/starttime
+DSH_WATCHDOG_BOOT_ID=$DSH_WATCHDOG_OWNER/boot_id
+DSH_WATCHDOG_DISABLED=$DSH_CTL_DIR/watchdog.disabled
+
+if [ "${1:-}" = _lifecycle-claimed ]; then
+  [ "${DSH_LIFECYCLE_CLAIM_ACTIVE:-0}" = 1 ] || exit 2
+  shift
+fi
+
+dsh_watchdog_residual_check() {
+  local _attached _loop _mounted=0 _rc=0
+  _loop=$(dsh_read_line "$DSH_LOOP_FILE" 2>/dev/null || true)
+  [ -z "$_loop" ] || {
+    dsh_warn "watchdog: recorded loop remains while inactive: $_loop"
+    _rc=1
+  }
+  _attached=$(dsh_loop_attached_images "$DSH_IMAGE") || {
+    dsh_warn "watchdog: cannot query image loop attachments"
+    return 1
+  }
+  [ -z "$_attached" ] || {
+    dsh_warn "watchdog: image remains attached while inactive: $_attached"
+    _rc=1
+  }
+  mountpoint -q "$DSH_ROOTFS_DIR" 2>/dev/null && _mounted=1
+  [ "$_mounted" -eq 0 ] || {
+    dsh_warn "watchdog: rootfs remains mounted while inactive"
+    _rc=1
+  }
+  _private_rc=0
+  _private_mounts=$(dsh_proc_any_rootfs "$DSH_ROOTFS_DIR") || _private_rc=$?
+  case ${_private_rc:-0} in
+  0)
+    dsh_warn "watchdog: rootfs remains in process namespaces: $_private_mounts"
+    _rc=1
+    ;;
+  2)
+    dsh_warn "watchdog: cannot verify process mount namespaces"
+    _rc=1
+    ;;
+  esac
+  return "$_rc"
+}
 
 dsh_watchdog_once() {
+  dsh_selinux_restore || return 1
   _state=$(dsh_state_get state 2>/dev/null || true)
   case $_state in
-  running | stopping | degraded) ;;
+  starting | running | stopping | degraded) ;;
   *)
-    return 0
+    dsh_watchdog_residual_check || return 1
+    [ "$(dsh_selinux_read || true)" = 1 ]
+    return $?
     ;;
   esac
 
   _pid=$(dsh_read_line "$DSH_PID_FILE" 2>/dev/null || true)
   _st=$(dsh_read_line "$DSH_STARTTIME_FILE" 2>/dev/null || true)
   _ns=$(dsh_read_line "$DSH_NS_FILE" 2>/dev/null || true)
+  _loop=$(dsh_read_line "$DSH_LOOP_FILE" 2>/dev/null || true)
 
   if ! dsh_is_uint "$_pid" || ! dsh_proc_alive "$_pid"; then
     dsh_warn "watchdog: holder is not alive (state=$_state pid=${_pid:-none})"
-    dsh_selinux_restore || true
-    DSH_APPLY=0 "$DSH_CTL" stop >/dev/null 2>&1 || true
+    DSH_APPLY=0 "$DSH_CTL" stop >/dev/null 2>&1 || dsh_warn "watchdog: cleanup incomplete"
     return 1
   fi
   if ! dsh_proc_validate_identity "$_pid" "$_st" "$_ns"; then
     dsh_err "watchdog: holder identity mismatch (pid $_pid); refusing to kill"
-    dsh_state_set state=stale note=watchdog-identity-mismatch
+    dsh_state_update state=stale note=watchdog-identity-mismatch
     return 1
   fi
+  if [ -z "$_loop" ] || ! dsh_loop_matches_image "$_loop" "$DSH_IMAGE"; then
+    dsh_err "watchdog: loop backing does not match the recorded device"
+    DSH_APPLY=0 "$DSH_CTL" stop >/dev/null 2>&1 || dsh_warn "watchdog: cleanup incomplete"
+    return 1
+  fi
+  _unexpected_loops=$(dsh_loop_unexpected_images "$_loop" "$DSH_IMAGE") || {
+    dsh_state_update state=degraded note=loop-query-failed
+    return 1
+  }
+  [ -z "$_unexpected_loops" ] || {
+    dsh_warn "watchdog: unexpected loop attachments: $_unexpected_loops"
+    dsh_state_update state=degraded note=unexpected-loop-attachment
+    return 1
+  }
+
+  case $_state in
+  running | degraded)
+    if [ ! -s "$DSH_URL_FILE" ]; then
+      dsh_err "watchdog: holder is alive but DSH is not ready"
+      dsh_state_update state=degraded note=dsh-url-missing
+      return 1
+    fi
+    if ! dsh_guest_run "$_pid" /usr/bin/python3 /opt/dsh-control/bin/dsh-healthcheck.py >/dev/null 2>&1; then
+      dsh_warn "watchdog: DSH health check failed"
+      dsh_state_update state=degraded note=dsh-healthcheck-failed
+      return 1
+    fi
+    if [ "$_state" = degraded ]; then
+      dsh_state_update state=running note=
+      dsh_log "watchdog: DSH health recovered"
+    fi
+    ;;
+  esac
 
   _enforce=$(dsh_read_line "$DSH_SYS/fs/selinux/enforce" 2>/dev/null || true)
   if [ "$_enforce" != 1 ]; then
     dsh_err "watchdog: global SELinux enforce=${_enforce:-unreadable}"
-    dsh_selinux_restore || true
+    dsh_state_update state=recovery-required note=selinux-not-enforcing
     return 1
   fi
   return 0
 }
 
+dsh_watchdog_owner_matches() {
+  _owner_pid=$1
+  _owner_st=$2
+  dsh_is_uint "$_owner_pid" && dsh_proc_alive "$_owner_pid" || return 1
+  [ -n "$_owner_st" ] || return 1
+  [ "$(dsh_proc_starttime "$_owner_pid" 2>/dev/null || true)" = "$_owner_st" ] || return 1
+  _owner_cmd=$(dsh_proc_cmdline "$_owner_pid" 2>/dev/null || true)
+  case $_owner_cmd in
+  *"$DSH_MODULE_DIR/bin/dsh-watchdog"*) ;;
+  *) return 1 ;;
+  esac
+  if [ -f "$DSH_WATCHDOG_BOOT_ID" ]; then
+    _owner_boot=$(dsh_read_line "$DSH_WATCHDOG_BOOT_ID" 2>/dev/null || true)
+    [ -n "$_owner_boot" ] && [ "$_owner_boot" = "$(dsh_boot_id)" ] || return 1
+  fi
+  return 0
+}
+
+dsh_watchdog_release() {
+  if [ "$(dsh_read_line "$DSH_WATCHDOG_OWNER/pid" 2>/dev/null || true)" = "$$" ]; then
+    rm -f "$DSH_WATCHDOG_OWNER/pid" "$DSH_WATCHDOG_STARTTIME" "$DSH_WATCHDOG_BOOT_ID" "$DSH_WATCHDOG_PID"
+    rmdir "$DSH_WATCHDOG_OWNER" 2>/dev/null || true
+  fi
+}
+
+dsh_watchdog_stop() {
+  local _disable=0 _new_disable=0 _arg _pid _st _i _timeout _rc=0
+  _timeout=${DSH_WATCHDOG_STOP_TIMEOUT:-45}
+  case $_timeout in
+  '' | *[!0-9]*) return 1 ;;
+  esac
+  for _arg in "$@"; do
+    case $_arg in
+    --disable) _disable=1 ;;
+    *)
+      dsh_err "unknown watchdog stop option: $_arg"
+      return 2
+      ;;
+    esac
+  done
+  dsh_lock_acquire || return 1
+  if [ "$_disable" -eq 1 ] && [ ! -e "$DSH_WATCHDOG_DISABLED" ]; then
+    if printf '1\n' >"$DSH_WATCHDOG_DISABLED"; then
+      _new_disable=1
+    else
+      dsh_lock_release
+      return 1
+    fi
+  fi
+  _pid=$(dsh_read_line "$DSH_WATCHDOG_OWNER/pid" 2>/dev/null || true)
+  _st=$(dsh_read_line "$DSH_WATCHDOG_STARTTIME" 2>/dev/null || true)
+  if dsh_is_uint "$_pid" && dsh_proc_alive "$_pid"; then
+    if ! dsh_watchdog_owner_matches "$_pid" "$_st"; then
+      dsh_err "watchdog owner identity mismatch; refusing to signal pid $_pid"
+      _rc=1
+    fi
+    if [ "$_rc" -eq 0 ]; then
+      kill -TERM "$_pid" 2>/dev/null || _rc=1
+      _i=0
+      while [ "$_i" -lt "$((_timeout * 10))" ] && dsh_proc_alive "$_pid"; do
+        sleep 0.1 2>/dev/null || sleep 1 2>/dev/null || {
+          dsh_err "watchdog: stop wait failed"
+          _rc=1
+          break
+        }
+        _i=$((_i + 1))
+      done
+      if dsh_proc_alive "$_pid"; then
+        dsh_err "watchdog did not stop; refusing to continue"
+        _rc=1
+      fi
+    fi
+  fi
+  if [ "$_rc" -eq 0 ]; then
+    rm -f "$DSH_WATCHDOG_OWNER/pid" "$DSH_WATCHDOG_STARTTIME" "$DSH_WATCHDOG_BOOT_ID" "$DSH_WATCHDOG_PID" 2>/dev/null || true
+    rmdir "$DSH_WATCHDOG_OWNER" 2>/dev/null || true
+  elif [ "$_new_disable" -eq 1 ]; then
+    rm -f "$DSH_WATCHDOG_DISABLED"
+  fi
+  dsh_lock_release || _rc=1
+  return "$_rc"
+}
+
+dsh_watchdog_enable() {
+  dsh_lock_acquire || return 1
+  rm -f "$DSH_WATCHDOG_DISABLED" "$DSH_PURGE_MARKER" || {
+    dsh_lock_release
+    return 1
+  }
+  dsh_lock_release || return 1
+  printf 'watchdog: enabled; daemon will claim on the next service start\n'
+}
+
+dsh_watchdog_enabled() {
+  [ -d "$DSH_CONTROL_DIR" ] && [ ! -e "$DSH_WATCHDOG_DISABLED" ] && [ ! -e "$DSH_PURGE_MARKER" ]
+}
+
+dsh_watchdog_claim() {
+  local _i=0 _claimed=0 _created=0 _rc=0 _existing _st _timeout
+  _timeout=${DSH_WATCHDOG_LOCK_TIMEOUT:-120}
+  case $_timeout in
+  '' | *[!0-9]*) return 1 ;;
+  esac
+  dsh_watchdog_enabled || return 1
+  while [ "$_i" -lt "$_timeout" ]; do
+    if dsh_lock_acquire; then
+      _claimed=1
+      break
+    fi
+    dsh_watchdog_enabled || return 1
+    sleep 1 || {
+      dsh_warn "watchdog: claim wait failed"
+      return 1
+    }
+    _i=$((_i + 1))
+  done
+  [ "$_claimed" -eq 1 ] || return 1
+  if ! dsh_watchdog_enabled; then
+    _rc=1
+  elif ! mkdir "$DSH_WATCHDOG_OWNER" 2>/dev/null; then
+    _existing=$(dsh_read_line "$DSH_WATCHDOG_OWNER/pid" 2>/dev/null || true)
+    _st=$(dsh_read_line "$DSH_WATCHDOG_STARTTIME" 2>/dev/null || true)
+    if dsh_watchdog_owner_matches "$_existing" "$_st"; then
+      dsh_warn "watchdog: owner pid $_existing is still alive; refusing to steal ownership"
+      _rc=1
+    elif [ -n "$_existing" ]; then
+      dsh_warn "watchdog: clearing stale owner metadata for pid $_existing"
+    fi
+    if [ "$_rc" -eq 0 ]; then
+      rm -f "$DSH_WATCHDOG_OWNER/pid" "$DSH_WATCHDOG_STARTTIME" "$DSH_WATCHDOG_BOOT_ID" "$DSH_WATCHDOG_PID"
+      rmdir "$DSH_WATCHDOG_OWNER" 2>/dev/null || _rc=1
+    fi
+    if [ "$_rc" -eq 0 ]; then
+      mkdir "$DSH_WATCHDOG_OWNER" || _rc=1
+      _created=1
+    fi
+  fi
+  if [ "$_rc" -eq 0 ]; then
+    printf '%s\n' "$$" >"$DSH_WATCHDOG_OWNER/pid" || _rc=1
+    dsh_proc_starttime "$$" >"$DSH_WATCHDOG_STARTTIME" 2>/dev/null || _rc=1
+    dsh_boot_id >"$DSH_WATCHDOG_BOOT_ID" 2>/dev/null || _rc=1
+    printf '%s\n' "$$" >"$DSH_WATCHDOG_PID" || _rc=1
+  fi
+  if [ "$_rc" -ne 0 ] && [ "$_created" -eq 1 ]; then
+    rm -f "$DSH_WATCHDOG_OWNER/pid" "$DSH_WATCHDOG_STARTTIME" "$DSH_WATCHDOG_BOOT_ID" "$DSH_WATCHDOG_PID"
+    rmdir "$DSH_WATCHDOG_OWNER" 2>/dev/null || true
+  fi
+  dsh_lock_release || _rc=1
+  return "$_rc"
+}
+
 dsh_watchdog_daemon() {
-  trap 'exit 0' TERM INT
+  dsh_watchdog_claim || return 0
+  trap 'dsh_watchdog_release; exit 0' TERM INT
+  trap 'dsh_watchdog_release' EXIT
   while :; do
-    dsh_watchdog_once || true
-    sleep "${DSH_WATCHDOG_INTERVAL:-30}"
+    dsh_lifecycle_exec "$0" _lifecycle-claimed --once || true
+    sleep "${DSH_WATCHDOG_INTERVAL:-30}" || {
+      dsh_warn "watchdog: sleep failed; stopping daemon"
+      return 1
+    }
   done
 }
 
+if [ "${DSH_LIFECYCLE_CLAIM_ACTIVE:-0}" != 1 ]; then
+  case ${1:-} in
+  --once | --stop | --enable)
+    dsh_lifecycle_exec "$0" _lifecycle-claimed "$@"
+    exit $?
+    ;;
+  esac
+fi
+
 case ${1:-} in
+version | -V | --version)
+  printf 'dsh-watchdog %s\n' "$DSH_VERSION"
+  ;;
 --once)
   dsh_watchdog_once
   ;;
 --daemon)
-  dsh_state_ensure || exit 1
-  printf '%s\n' "$$" >"$DSH_CTL_DIR/watchdog.pid" 2>/dev/null || true
   dsh_watchdog_daemon
+  ;;
+--stop)
+  shift
+  dsh_watchdog_stop "$@"
+  ;;
+--enable)
+  dsh_watchdog_enable
   ;;
 --status)
   exec "$DSH_CTL" status
   ;;
 -h | --help)
   cat <<'EOF'
-Usage: dsh-watchdog --once | --daemon | --status
+Usage: dsh-watchdog [--version] --once | --daemon | --stop [--disable] | --enable | --status
 
---once      check holder identity and SELinux enforce; safe cleanup if stale
+--once      check holder identity, loop backing, and SELinux; clean up if needed
 --daemon    run the check every DSH_WATCHDOG_INTERVAL seconds (default 30)
+--stop      stop the owned daemon; --disable also prevents new claims
+--enable    allow new claims after a failed purge or explicit disable
 --status    delegate to dsh-ctl status
 EOF
   ;;

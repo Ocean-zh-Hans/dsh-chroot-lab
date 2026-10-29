@@ -1,4 +1,0 @@
-# Active only when `dsh-ctl guard on`.
-rm[[:space:]]+-rf[[:space:]]+/(data|system|vendor|product|odm|storage|sdcard|mnt)
-pm[[:space:]]+clear
-settings[[:space:]]+put

@@ -1,8 +1,24 @@
-# Extra DSH profile overlay: mount the hardguard/guard and audit hooks.
+# DSH permission presets, visible risk context and audit; no PreToolUse blocking.
 # dsh-run passes this file with --patch, so it applies after the web profile
 # layer without editing the user's own cordis.patch.yml.
+- id: permission
+  name: '@deepseek-ai/dsh-permission-presets'
+  config:
+    defaultPreset: !!js "(process.env.DSH_PERMISSION_PRESET === 'approval-guard' ? 'approval-guard' : 'approval-free')"
+    presets:
+      approval-free:
+        name: 自动执行（不弹批准）
+        description: 保留完整设备能力，不逐条弹批准；仅用于明确授权的自动操作。
+        sandbox: danger-full-access
+        approval: never
+      approval-guard:
+        name: 谨慎执行（逐项批准）
+        description: 保留完整设备能力，但敏感操作逐项请求批准。
+        sandbox: danger-full-access
+        approval: ask
 - insert:
-    - id: dsh-hardguard-hooks
+    - id: dsh-audit-hooks
       name: '@deepseek-ai/dsh-hooks-claude-code'
       config:
-        configPath: /opt/dsh-control/hooks/hooks.json
+        configPath: !!js "(process.env.DSH_CONTROL_DIR || '/opt/dsh-control') + '/hooks/hooks.json'"
+        pluginRoot: !!js "(process.env.DSH_CONTROL_DIR || '/opt/dsh-control')"

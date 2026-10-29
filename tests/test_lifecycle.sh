@@ -7,14 +7,21 @@ case_dir=$(new_case)
 fixture_module "$case_dir/module"
 fixture_env "$case_dir"
 
-# Use the real setsid so the holder gets its own process group; replace the
-# other external commands with recording no-ops.
 rm -f "$CASE/bin/setsid"
+if ! command -v setsid >/dev/null 2>&1; then
+  cat >"$CASE/bin/setsid" <<'EOF'
+#!/bin/sh
+exec "$@"
+EOF
+  chmod 0755 "$CASE/bin/setsid"
+fi
 export DSH_TEST_ROOT="$CASE"
 export DSH_PROC=/proc
+export DSH_MOUNTINFO="$CASE/proc/self/mountinfo"
 export DSH_TEST_LOOP="$CASE/loop99"
 : >"$DSH_TEST_LOOP"
-export DSH_START_TIMEOUT=5
+export DSH_START_TIMEOUT=120
+export DSH_STOP_TIMEOUT=120
 export DSH_TEST_ALLOW_NON_DEV_LOOP=1
 export DSH_TEST_SKIP_NS_SCAN=1
 export DSH_TEST_ALLOW_SAME_NS=1
@@ -33,37 +40,67 @@ EOF
 
 cat >"$CASE/bin/losetup" <<'EOF'
 #!/bin/sh
+_state=$DSH_TEST_ROOT/losetup.state
 case "${1:-}" in
-  -j) exit 0 ;;
-  -f) printf '%s\n' "$DSH_TEST_LOOP"; exit 0 ;;
-  -d) exit 0 ;;
-  "$DSH_TEST_LOOP") exit 1 ;;
-  --help) printf '%s\n' '--sector-size --direct-io'; exit 0 ;;
+  -j)
+    [ ! -f "$_state" ] || printf '%s: 0:0 (%s)\n' "$DSH_TEST_LOOP" "$DSH_IMAGE"
+    ;;
+  -f)
+    printf '%s\n' "$DSH_TEST_LOOP" >"$_state"
+    printf '%s\n' "$DSH_TEST_LOOP"
+    ;;
+  -d)
+    [ "${DSH_TEST_DETACH_FAIL:-0}" != 1 ] || exit 1
+    rm -f "$_state"
+    ;;
+  "$DSH_TEST_LOOP")
+    if [ -f "$_state" ]; then exit 0; else exit 1; fi
+    ;;
+  --help) printf '%s\n' '--sector-size --direct-io' ;;
   *) exit 0 ;;
 esac
+exit 0
 EOF
 
 cat >"$CASE/bin/mount" <<'EOF'
 #!/bin/sh
+if [ "${DSH_TEST_BAKED_DSH:-1}" = 1 ]; then
+  mkdir -p "$DSH_ROOTFS_DIR/opt/dsh/current/bin"
+  printf '#!/bin/sh\n' >"$DSH_ROOTFS_DIR/opt/dsh/current/bin/dsh"
+  chmod 0755 "$DSH_ROOTFS_DIR/opt/dsh/current/bin/dsh"
+fi
+mkdir -p "$DSH_ROOTFS_DIR$DSH_MODULE_DIR"
 printf 'mount %s\n' "$*" >>"$DSH_TEST_ROOT/mounts.log"
+for target do :; done
+encoded=$(printf '%s' "$target" | awk '{ gsub(/ /, "\\\\040"); print }')
+printf '1 0 0:1 / %s rw - tmpfs tmpfs rw\n' "$encoded" >>"$DSH_MOUNTINFO"
 exit 0
 EOF
 
 cat >"$CASE/bin/umount" <<'EOF'
 #!/bin/sh
 printf 'umount %s\n' "$*" >>"$DSH_TEST_ROOT/umounts.log"
+encoded=$(printf '%s' "$1" | awk '{ gsub(/ /, "\\\\040"); print }')
+awk -v target="$encoded" '$5 != target' "$DSH_MOUNTINFO" >"$DSH_MOUNTINFO.tmp"
+mv "$DSH_MOUNTINFO.tmp" "$DSH_MOUNTINFO"
+if [ -n "${DSH_ROOTFS_DIR:-}" ] && [ "${1:-}" = "$DSH_ROOTFS_DIR" ]; then
+  find "$DSH_ROOTFS_DIR" -mindepth 1 -delete
+fi
 exit 0
 EOF
 
 cat >"$CASE/bin/mountpoint" <<'EOF'
 #!/bin/sh
-exit 0
+for target do :; done
+encoded=$(printf '%s' "$target" | awk '{ gsub(/ /, "\\\\040"); print }')
+awk -v root="$encoded" '$5 == root { found = 1 } END { exit(found ? 0 : 1) }' "$DSH_MOUNTINFO"
 EOF
 
 cat >"$CASE/bin/chroot" <<'EOF'
 #!/bin/sh
 printf 'chroot %s\n' "$*" >>"$DSH_TEST_ROOT/chroot.log"
-printf 'http://127.0.0.1:1234/?token=test\n' >"$DSH_ROOT/state/guest/url"
+printf 'http://127.0.0.1:1234/?token=test\n' >"$DSH_ROOT/state/runtime/url"
+printf 'ok:%s\n' "$(date +%s)" >"$DSH_ROOT/state/runtime/health"
 trap 'exit 0' TERM INT
 while :; do sleep 0.2; done
 EOF
@@ -72,6 +109,12 @@ cat >"$CASE/bin/nsenter" <<'EOF'
 #!/bin/sh
 case "${1:-}" in
   --help) printf '%s\n' '--mount'; exit 0 ;;
+  -t)
+    if [ "${6:-}" = _scan-rootfs ]; then
+      printf 'nsenter %s\n' "$*" >>"$DSH_TEST_ROOT/nsenter.log"
+      exit 0
+    fi
+    ;;
 esac
 printf 'nsenter %s\n' "$*" >>"$DSH_TEST_ROOT/nsenter.log"
 exit 0
@@ -80,20 +123,24 @@ EOF
 chmod 0755 "$CASE/bin/id" "$CASE/bin/busybox" "$CASE/bin/losetup" "$CASE/bin/mount" \
   "$CASE/bin/umount" "$CASE/bin/mountpoint" "$CASE/bin/chroot" "$CASE/bin/nsenter"
 
-set +e
-out=$("$DSH_CTL" start --apply 2>&1)
-rc=$?
-set -e
-if [ "$rc" -ne 0 ]; then
-  printf '%s\n' "$out"
-  for f in "$DSH_ROOT/logs/nsinit.log" "$DSH_ROOT/logs/dsh-ctl.log"; do
-    [ -r "$f" ] && {
-      printf '\n-- %s --\n' "$f"
-      cat "$f"
-    }
-  done
-  exit 1
-fi
+start_ok() {
+  set +e
+  out=$("$DSH_CTL" start --apply "$@" 2>&1)
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ]; then
+    printf 'start rc=%s\n%s\n' "$rc" "$out"
+    for f in "$DSH_ROOT/logs/nsinit.log" "$DSH_ROOT/logs/dsh-ctl.log"; do
+      [ -r "$f" ] && {
+        printf '\n-- %s --\n' "$f"
+        cat "$f"
+      }
+    done
+    return "$rc"
+  fi
+}
+
+start_ok
 assert_contains "$out" "started:"
 assert_contains "$out" "url: http://127.0.0.1:1234/?token=test"
 
@@ -102,7 +149,9 @@ assert_contains "$out" "state        : running"
 assert_contains "$out" "pid valid    : yes"
 [ -s "$CASE/mounts.log" ] || fail "mount was not called"
 grep -q 'ext4' "$CASE/mounts.log" || fail "rootfs ext4 mount missing"
-grep -q -- '--rbind /data' "$CASE/helper.log" || fail "data rbind missing"
+grep -q -- '--rbind .*/host/data ' "$CASE/helper.log" || fail "data rbind missing"
+grep -q -- '--make-rprivate ' "$CASE/helper.log" || fail "private propagation missing"
+_expected_cleanup_ns=$(cat "$DSH_ROOT/state/guest/launcher.ns")
 
 set +e
 "$DSH_CTL" stop >"$TMPBASE/stop.out" 2>"$TMPBASE/stop.err"
@@ -121,7 +170,204 @@ if [ "$_stop_rc" -ne 0 ]; then
 fi
 out=$("$DSH_CTL" status)
 assert_contains "$out" "state        : stopped"
+grep -F -- "_scan-rootfs $_expected_cleanup_ns" "$CASE/nsenter.log" >/dev/null || fail "cleanup did not use the holder namespace scan"
 [ ! -e "$DSH_ROOT/state/guest/launcher.pid" ] || fail "pid file not cleared"
 [ ! -e "$DSH_ROOT/state/guest/launcher.ns" ] || fail "ns file not cleared"
+[ ! -e "$CASE/losetup.state" ] || fail "loop is still attached"
+[ ! -e "$DSH_TMP/dsh-recovery" ] || fail "recovery state was not cleared"
+grep -Eq -- '--mount=[^ ]+ -- chroot ' "$CASE/nsenter.log" || fail "nsenter command separator missing"
+
+start_ok
+assert_contains "$out" "started:"
+cat >"$CASE/bin/nsenter" <<'EOF'
+#!/bin/sh
+case "${1:-}" in
+  --mount=*) exit 1 ;;
+esac
+printf 'nsenter %s\n' "$*" >>"$DSH_TEST_ROOT/nsenter.log"
+exit 0
+EOF
+chmod 0755 "$CASE/bin/nsenter"
+export DSH_TEST_DETACH_FAIL=1
+set +e
+out=$("$DSH_CTL" stop 2>&1)
+rc=$?
+set -e
+[ "$rc" -ne 0 ] || fail "detach failure returned success"
+assert_contains "$out" "cleanup incomplete"
+assert_contains "$("$DSH_CTL" status)" "state        : recovery-required"
+grep -Eq -- '-t [0-9]+ -m -- chroot ' "$CASE/nsenter.log" || fail "nsenter fallback or separator missing"
+[ -e "$DSH_ROOT/state/guest/loopdev" ] || fail "detach failure discarded the loop record"
+[ -e "$CASE/losetup.state" ] || fail "detach failure fake lost its state"
+unset DSH_TEST_DETACH_FAIL
+out=$("$DSH_CTL" recover --apply)
+assert_contains "$out" "recover: ok"
+assert_contains "$("$DSH_CTL" status)" "state        : stopped"
+[ ! -e "$DSH_ROOT/state/guest/loopdev" ] || fail "recovery retained a detached loop record"
+
+cat >"$CASE/bin/setenforce" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$1" >"$DSH_SYS/fs/selinux/enforce"
+EOF
+cat >"$CASE/bin/e2fsck" <<'EOF'
+#!/bin/sh
+exit 2
+EOF
+chmod 0755 "$CASE/bin/setenforce" "$CASE/bin/e2fsck"
+set +e
+out=$("$DSH_CTL" start --apply --permissive 2>&1)
+rc=$?
+set -e
+[ "$rc" -ne 0 ] || fail "failed start returned success"
+assert_eq "$(cat "$DSH_SYS/fs/selinux/enforce")" "1"
+[ ! -e "$DSH_ROOT/state/ctl/selinux.orig" ] || fail "SELinux restore marker was retained"
+
+cat >"$CASE/bin/getprop" <<'EOF'
+#!/bin/sh
+case ${1:-} in
+  sys.boot_completed) printf '1\n' ;;
+  sys.user.0.ce_available) printf 'true\n' ;;
+esac
+exit 0
+EOF
+cat >"$CASE/bin/e2fsck" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod 0755 "$CASE/bin/getprop" "$CASE/bin/e2fsck"
+printf '1\n' >"$DSH_ROOT/state/ctl/autostart"
+cat >"$CASE/bin/chroot" <<'EOF'
+#!/bin/sh
+printf 'chroot %s\n' "$*" >>"$DSH_TEST_ROOT/chroot.log"
+printf 'http://127.0.0.1:1234/?token=test\n' >"$DSH_ROOT/state/runtime/url"
+printf 'ok:%s\n' "$(date +%s)" >"$DSH_ROOT/state/runtime/health"
+trap 'sleep 12; exit 0' TERM INT
+while :; do sleep 0.2; done
+EOF
+chmod 0755 "$CASE/bin/chroot"
+cat >"$CASE/bin/chmod" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$DSH_TEST_ROOT/chmod.log"
+exec /usr/bin/chmod "$@"
+EOF
+chmod 0755 "$CASE/bin/chmod"
+out=$("$DSH_CTL" boot 2>&1) || {
+  printf '%s\n' "$out"
+  exit 1
+}
+assert_contains "$out" "started:"
+assert_eq "$(cat "$DSH_ROOT/state/ctl/boot-fails")" "0"
+"$DSH_CTL" stop >/dev/null
+
+printf '%s\n' "$$" >"$DSH_ROOT/state/guest/launcher.pid"
+printf '1\n' >"$DSH_ROOT/state/guest/launcher.starttime"
+readlink "/proc/$$/ns/mnt" >"$DSH_ROOT/state/guest/launcher.ns"
+printf 'previous-boot\n' >"$DSH_ROOT/state/guest/launcher.bootid"
+printf '%s\n' "$DSH_TEST_LOOP" >"$DSH_ROOT/state/guest/loopdev"
+printf 'state=recovery-required\nnote=identity-mismatch\n' >"$DSH_ROOT/state/ctl/status"
+out=$("$DSH_CTL" boot 2>&1) || {
+  printf '%s\n' "$out"
+  exit 1
+}
+assert_contains "$out" "started:"
+[ "$(cat "$DSH_ROOT/state/guest/launcher.pid")" != "$$" ] || fail "boot reused a stale pid"
+assert_eq "$(cat "$DSH_ROOT/state/guest/launcher.bootid")" "$(cat "$DSH_BOOT_ID_SOURCE")"
+"$DSH_CTL" stop >/dev/null
+
+rm -f "$DSH_MODULE_DIR/customize.sh"
+export DSH_SELINUXFS_MODE=ro
+start_ok
+assert_contains "$out" "started:"
+grep -q 'state/runtime .*run/dsh' "$CASE/helper.log" || fail "guest runtime directory was not bound"
+if grep -q "state/guest $DSH_ROOTFS_DIR/run/dsh\$" "$CASE/helper.log"; then
+  fail "holder identity directory was exposed to the guest"
+fi
+python3 - "$DSH_ROOT/state/guest/module.json" <<'PY'
+import json, sys
+metadata = json.load(open(sys.argv[1]))
+assert metadata['version'] == '0.2.2'
+assert metadata['versionCode'] == 4
+assert metadata['autostart'] is True
+assert metadata['selinuxfsMode'] == 'ro'
+assert metadata['blockAccess'] == 'masked'
+assert metadata['startedAt'] > 0
+PY
+[ -f "$DSH_ROOTFS_DIR/run/dsh/module.json" ] || fail 'read-only module metadata was not published'
+[ -f "$DSH_ROOTFS_DIR/run/dsh/module.sha256" ] || fail 'module script hashes were not published'
+grep -q -- '--remount-ro-bind .*run/dsh/module.json' "$CASE/helper.log" || fail 'module metadata was not read-only'
+grep -F "$DSH_MODULE_DIR" "$CASE/mounts.log" >/dev/null || fail 'custom module path was not masked'
+[ -d "$DSH_ROOTFS_DIR/var/tmp" ] || fail 'disk-backed guest TMPDIR was not created'
+grep -F "1777 $DSH_ROOTFS_DIR/var/tmp" "$CASE/chmod.log" >/dev/null || fail 'disk-backed guest TMPDIR was not made 1777'
+grep -q 'TMPDIR=/var/tmp' "$CASE/chroot.log" || fail 's6 did not receive the disk-backed TMPDIR'
+grep -q 'mount -t selinuxfs -o ro selinuxfs ' "$CASE/mounts.log" || {
+  cat "$CASE/mounts.log"
+  fail "read-only selinuxfs mount missing"
+}
+"$DSH_CTL" stop >/dev/null
+mkdir -p "$DSH_ROOT/state/dsh-home/workspace"
+chmod 0700 "$DSH_ROOT/state/dsh-home/workspace"
+before_mode=$(/usr/bin/stat -c %a "$DSH_ROOT/state/dsh-home/workspace")
+start_ok
+assert_contains "$out" "started:"
+grep -q 'DSH_WORKSPACE_DIR=/root/.dsh/workspace' "$CASE/chroot.log" || fail 'real dsh-home workspace was not selected'
+assert_eq "$(/usr/bin/stat -c %a "$DSH_ROOT/state/dsh-home/workspace")" "$before_mode"
+if grep -F "2777 $DSH_ROOT/state/dsh-home/workspace" "$CASE/chmod.log" >/dev/null; then
+  fail 'real workspace permissions were broadened'
+fi
+"$DSH_CTL" stop >/dev/null
+rm -rf "$DSH_ROOT/state/dsh-home/workspace"
+mkdir -p "$CASE/custom workspace"
+MSYS=winsymlinks:nativestrict ln -s "$CASE/custom workspace" "$DSH_ROOT/state/dsh-home/workspace"
+[ -L "$DSH_ROOT/state/dsh-home/workspace" ] || fail 'test did not create a workspace symlink'
+start_ok
+assert_contains "$out" "started:"
+grep -q 'DSH_WORKSPACE_DIR=/run/dsh/workspace' "$CASE/chroot.log" || fail 'linked dsh-home workspace was not selected'
+grep -F -- "--bind $CASE/custom workspace $DSH_ROOTFS_DIR/run/dsh/workspace" "$CASE/helper.log" >/dev/null || fail 'linked workspace target was not bound'
+"$DSH_CTL" stop >/dev/null
+rm -f "$DSH_ROOT/state/dsh-home/workspace"
+unset DSH_SELINUXFS_MODE
+export DSH_SELINUXFS_MODE=invalid
+set +e
+"$DSH_CTL" plan >/dev/null 2>&1
+rc=$?
+set -e
+unset DSH_SELINUXFS_MODE
+[ "$rc" -ne 0 ] || fail "invalid SELinuxFS mode was accepted"
+
+grep -q 'tmpfs .*dev/block' "$CASE/mounts.log" || fail "default /dev/block mask missing"
+export DSH_BLOCK_ACCESS=full
+before=$(grep -c 'dev/block' "$CASE/mounts.log" || true)
+start_ok
+assert_contains "$out" "started:"
+after=$(grep -c 'dev/block' "$CASE/mounts.log" || true)
+[ "$after" = "$before" ] || fail "full block access added a mask"
+"$DSH_CTL" stop >/dev/null
+unset DSH_BLOCK_ACCESS
+export DSH_TEST_BLOCK_LINK=1
+set +e
+out=$("$DSH_CTL" start --apply 2>&1)
+rc=$?
+set -e
+unset DSH_TEST_BLOCK_LINK
+[ "$rc" -ne 0 ] || fail "symlink /dev/block was accepted"
+grep -q 'refusing to mask a /dev/block symlink' "$DSH_ROOT/logs/nsinit.log" || fail "symlink guard did not fail safely"
+"$DSH_CTL" stop >/dev/null
+export DSH_BLOCK_ACCESS=invalid
+set +e
+"$DSH_CTL" plan >/dev/null 2>&1
+rc=$?
+set -e
+unset DSH_BLOCK_ACCESS
+[ "$rc" -ne 0 ] || fail "invalid block access mode was accepted"
+export DSH_TEST_BAKED_DSH=0
+rm -f "$DSH_ROOTFS_DIR/opt/dsh/current/bin/dsh" "$DSH_ROOTFS_DIR/opt/dsh/current/bin/dsh.off"
+set +e
+out=$("$DSH_CTL" start --apply 2>&1)
+rc=$?
+set -e
+unset DSH_TEST_BAKED_DSH
+[ "$rc" -ne 0 ] || fail "start accepted a missing DSH executable"
+grep -q 'DSH executable is missing from host and baked runtimes' "$DSH_ROOT/logs/nsinit.log" || fail "missing runtime was not reported"
+"$DSH_CTL" stop >/dev/null
 
 printf 'test_lifecycle: ok\n'

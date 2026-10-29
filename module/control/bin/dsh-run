@@ -1,7 +1,6 @@
 #!/bin/sh
 # shellcheck shell=sh disable=SC2329
-# DSH web runner with URL discovery. Foreground process; s6 supervises it.
-# DSH prints: "dsh web: http://127.0.0.1:PORT/?token=..." with --no-open.
+# DSH web runner with authenticated loopback health checks. s6 supervises it.
 
 set -u
 
@@ -9,51 +8,274 @@ DSH_BIN=${DSH_BIN:-/opt/dsh/current/bin/dsh}
 DSH_WEB_PORT=${DSH_WEB_PORT:-0}
 LOG=${DSH_WEB_LOG:-/var/log/dsh/dsh.log}
 URL=${DSH_WEB_URL_FILE:-/run/dsh/url}
+HEALTH_FILE=${DSH_WEB_HEALTH_FILE:-${URL%/*}/health}
 URL_TMP=$URL.tmp.$$
+HEALTH_TMP=$HEALTH_FILE.tmp.$$
+DSH_CONTROL_DIR=${DSH_CONTROL_DIR:-/opt/dsh-control}
+HEALTHCHECK=${DSH_HEALTHCHECK:-$DSH_CONTROL_DIR/bin/dsh-healthcheck.py}
+PYTHON=${DSH_PYTHON:-/usr/bin/python3}
+READY_TIMEOUT=${DSH_WEB_READY_TIMEOUT:-240}
+HEALTH_INTERVAL=${DSH_HEALTH_INTERVAL:-10}
+HEALTH_FAILURES=${DSH_HEALTH_FAILURES:-3}
+for _value in "$READY_TIMEOUT" "$HEALTH_INTERVAL" "$HEALTH_FAILURES"; do
+  case $_value in
+  '' | 0 | *[!0-9]*) exit 2 ;;
+  esac
+done
 
-mkdir -p "$(dirname "$LOG")" "$(dirname "$URL")" 2>/dev/null || true
-: >"$LOG" 2>/dev/null || true
-: >"$URL" 2>/dev/null || true
+mkdir -p "$(dirname "$LOG")" "$(dirname "$URL")" "$(dirname "$HEALTH_FILE")" || exit 1
+[ -x "$PYTHON" ] && [ -r "$HEALTHCHECK" ] || {
+  echo "dsh-run: guest Python or healthcheck missing: $PYTHON $HEALTHCHECK" >&2
+  exit 1
+}
+for _generation in 4 3 2 1; do
+  if [ -f "$LOG.$_generation" ]; then
+    mv -f "$LOG.$_generation" "$LOG.$((_generation + 1))" || exit 1
+  fi
+done
+if [ -f "$LOG" ]; then
+  mv -f "$LOG" "$LOG.1" || exit 1
+fi
+: >"$LOG" || exit 1
+: >"$URL" || exit 1
+chmod 0600 "$LOG" "$URL" || exit 1
 
 if [ ! -x "$DSH_BIN" ]; then
   echo "dsh-run: missing executable: $DSH_BIN" >&2
   exit 1
 fi
 
-"$DSH_BIN" web --patch /opt/dsh-control/dsh/hooks.patch.yml \
-  --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open >>"$LOG" 2>&1 &
+dsh_run_alive() {
+  kill -0 "$1" 2>/dev/null || return 1
+  [ -r "/proc/$1/stat" ] || return 0
+  _alive_stat=$(cat "/proc/$1/stat" 2>/dev/null || true)
+  _alive_rest=${_alive_stat##*) }
+  _alive_state=${_alive_rest%% *}
+  case $_alive_state in
+  '' | Z | X | x) return 1 ;;
+  esac
+  return 0
+}
+
+dsh_run_write_health() {
+  printf '%s:%s\n' "$1" "$(date +%s)" >"$HEALTH_TMP" &&
+    chmod 0600 "$HEALTH_TMP" && mv -f "$HEALTH_TMP" "$HEALTH_FILE"
+}
+
+dsh_run_health() {
+  if [ "$#" -gt 0 ]; then
+    printf '%s\n' "$1" >"$URL_TMP" || return 1
+    DSH_HEALTH_URL_FILE="$URL_TMP" "$PYTHON" "$HEALTHCHECK" >/dev/null 2>&1
+  else
+    DSH_HEALTH_URL_FILE="$URL" "$PYTHON" "$HEALTHCHECK" >/dev/null 2>&1
+  fi
+}
+
+dsh_web_url_valid() {
+  case $1 in
+  http://127.0.0.1:* | http://localhost:*) ;;
+  *) return 1 ;;
+  esac
+  _rest=${1#http://}
+  _port_path=${_rest#*:}
+  _port=${_port_path%%[/?]*}
+  case $_port in
+  '' | *[!0-9]*) return 1 ;;
+  esac
+  [ "$_port" -ge 1 ] && [ "$_port" -le 65535 ]
+}
+
+dsh_run_stop_child() {
+  _stop_timeout=${DSH_WEB_STOP_TIMEOUT:-10}
+  case $_stop_timeout in
+  '' | *[!0-9]*) return 1 ;;
+  esac
+  kill -TERM "$CHILD" 2>/dev/null || true
+  _stop_i=0
+  while [ "$_stop_i" -lt "$_stop_timeout" ] && dsh_run_alive "$CHILD"; do
+    sleep 1
+    _stop_i=$((_stop_i + 1))
+  done
+  if dsh_run_alive "$CHILD"; then
+    kill -KILL "$CHILD" 2>/dev/null || true
+  fi
+}
+
+dsh_run_write_health starting || exit 1
+DSH_PERMISSION_PRESET=approval-free
+if [ "$(cat "${DSH_GUARD_FILE:-/run/dsh/guard}" 2>/dev/null)" = 1 ]; then
+  DSH_PERMISSION_PRESET=approval-guard
+fi
+export DSH_PERMISSION_PRESET
+DSH_PATCH=${DSH_PATCH:-$DSH_CONTROL_DIR/dsh/hooks.patch.yml}
+DSH_AUDIT_PATCH=${DSH_AUDIT_PATCH:-$DSH_CONTROL_DIR/dsh/hooks-audit-only.patch.yml}
+DSH_PROFILE_DIR=${DSH_PROFILE_DIR:-${HOME:-/root}/.dsh/profiles/web}
+if [ -z "${DSH_RUNTIME_DIR:-}" ]; then
+  DSH_RUNTIME_DIR=$(CDPATH='' cd -- "$DSH_BIN/.." 2>/dev/null && pwd) || DSH_RUNTIME_DIR=
+fi
+HOOKS_STATUS_FILE=${DSH_HOOKS_STATUS_FILE:-${URL%/*}/hooks.status}
+HOOKS_STATUS_TMP=$HOOKS_STATUS_FILE.tmp.$$
+export DSH_CONTROL_DIR
+
+dsh_run_hooks_prepare() {
+  _hooks_mode=disabled
+  _hooks_reason=audit-hooks-unavailable
+  _hooks_selected=
+  _permission_lib=$DSH_PROFILE_DIR/node_modules/@deepseek-ai/dsh-permission-presets/lib/index.js
+  _audit_lib=$DSH_PROFILE_DIR/node_modules/@deepseek-ai/dsh-hooks-claude-code/lib/index.js
+  if [ -f "$_audit_lib" ] && [ -f "$DSH_AUDIT_PATCH" ]; then
+    _hooks_mode=audit-only
+    _hooks_reason=permission-presets-unavailable
+    if [ ! -f "$_permission_lib" ] && [ -n "$DSH_RUNTIME_DIR" ]; then
+      _permission_target=$DSH_RUNTIME_DIR/node_modules/@deepseek-ai/dsh-permission-presets
+      if [ -f "$_permission_target/lib/index.js" ]; then
+        _permission_parent=$DSH_PROFILE_DIR/node_modules/@deepseek-ai
+        _permission_link=$_permission_parent/dsh-permission-presets
+        mkdir -p "$_permission_parent" 2>/dev/null || true
+        if [ ! -e "$_permission_link" ] && [ ! -L "$_permission_link" ]; then
+          ln -s "$_permission_target" "$_permission_link" 2>/dev/null || true
+        fi
+      fi
+    fi
+    if [ -f "$_permission_lib" ] && [ -f "$DSH_PATCH" ]; then
+      _hooks_mode=full
+      _hooks_reason=requested
+      _hooks_selected=$DSH_PATCH
+    else
+      if [ ! -f "$DSH_PATCH" ]; then
+        _hooks_reason=full-patch-missing
+      fi
+      _hooks_selected=$DSH_AUDIT_PATCH
+    fi
+  fi
+  printf '{"mode":"%s","reason":"%s","audit":%s,"permissionPresets":%s}\n' \
+    "$_hooks_mode" "$_hooks_reason" \
+    "$([ "$_hooks_mode" = disabled ] && printf false || printf true)" \
+    "$([ "$_hooks_mode" = full ] && printf true || printf false)" >"$HOOKS_STATUS_TMP" || return 1
+  chmod 0600 "$HOOKS_STATUS_TMP" || return 1
+  mv -f "$HOOKS_STATUS_TMP" "$HOOKS_STATUS_FILE" || return 1
+  printf 'dsh-run: hooks mode=%s reason=%s patch=%s\n' \
+    "$_hooks_mode" "$_hooks_reason" "${_hooks_selected:-none}" >>"$LOG"
+}
+
+dsh_run_hooks_prepare || {
+  printf '%s\n' 'dsh-run: hooks status could not be written; disabling patch' >>"$LOG"
+  _hooks_selected=
+}
+if [ -n "$_hooks_selected" ]; then
+  "$DSH_BIN" web --patch "$_hooks_selected" \
+    --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open >>"$LOG" 2>&1 &
+else
+  "$DSH_BIN" web \
+    --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open >>"$LOG" 2>&1 &
+fi
 CHILD=$!
 
 (
   _i=0
-  while [ "$_i" -lt 240 ]; do
-    if grep -q '^dsh web: ' "$LOG" 2>/dev/null; then
-      _url=$(sed -n 's/^dsh web: \(http[^ ]*\).*/\1/p' "$LOG" | tail -n 1)
-      if [ -n "$_url" ]; then
-        printf '%s\n' "$_url" >"$URL_TMP" && mv -f "$URL_TMP" "$URL"
-        exit 0
+  _ready=0
+  while [ "$_i" -lt "$READY_TIMEOUT" ]; do
+    _url=$(sed -n 's#.*\(http://127\.0\.0\.1:[^ ]*\).*#\1#p; s#.*\(http://localhost:[^ ]*\).*#\1#p' "$LOG" | tail -n 1)
+    if [ -n "$_url" ]; then
+      if ! dsh_web_url_valid "$_url"; then
+        echo "dsh-run: refusing non-loopback or malformed URL" >&2
+        dsh_run_stop_child
+        exit 1
+      fi
+      if dsh_run_health "$_url"; then
+        chmod 0600 "$URL_TMP" || {
+          dsh_run_stop_child
+          exit 1
+        }
+        dsh_run_write_health ok || {
+          dsh_run_stop_child
+          exit 1
+        }
+        mv -f "$URL_TMP" "$URL" || {
+          dsh_run_stop_child
+          exit 1
+        }
+        _ready=1
+        break
       fi
     fi
-    kill -0 "$CHILD" 2>/dev/null || exit 1
+    dsh_run_alive "$CHILD" || exit 1
     sleep 1
     _i=$((_i + 1))
   done
-  exit 1
+  if [ "$_ready" -ne 1 ]; then
+    echo "dsh-run: DSH startup/health timeout" >&2
+    dsh_run_stop_child
+    exit 1
+  fi
+  _failures=0
+  while dsh_run_alive "$CHILD"; do
+    sleep "$HEALTH_INTERVAL"
+    dsh_run_alive "$CHILD" || break
+    if dsh_run_health; then
+      _failures=0
+      dsh_run_write_health ok || {
+        dsh_run_stop_child
+        exit 1
+      }
+    else
+      _failures=$((_failures + 1))
+      dsh_run_write_health failed 2>/dev/null || true
+      if [ "$_failures" -ge "$HEALTH_FAILURES" ]; then
+        echo "dsh-run: DSH health check failed; requesting service restart" >&2
+        dsh_run_stop_child
+        exit 1
+      fi
+    fi
+  done
+  exit 0
 ) &
 WATCHER=$!
 
 dsh_run_term() {
   trap - TERM INT
-  kill -TERM "$CHILD" 2>/dev/null || true
+  dsh_run_stop_child
   kill "$WATCHER" 2>/dev/null || true
   wait "$CHILD" 2>/dev/null || true
-  rm -f "$URL" "$URL_TMP"
+  wait "$WATCHER" 2>/dev/null || true
+  rm -f "$URL" "$URL_TMP" "$HEALTH_FILE" "$HEALTH_TMP" "$HOOKS_STATUS_TMP"
   exit 143
 }
 trap dsh_run_term TERM INT
 
+WATCH_RC=0
+while :; do
+  if ! dsh_run_alive "$WATCHER"; then
+    wait "$WATCHER"
+    WATCH_RC=$?
+    if dsh_run_alive "$CHILD"; then
+      [ "$WATCH_RC" -ne 0 ] || WATCH_RC=1
+      dsh_run_stop_child
+    fi
+    break
+  fi
+  if ! dsh_run_alive "$CHILD"; then
+    _watch_cancel=0
+    _watch_i=0
+    while [ "$_watch_i" -lt 2 ] && dsh_run_alive "$WATCHER"; do
+      sleep 1
+      _watch_i=$((_watch_i + 1))
+    done
+    if dsh_run_alive "$WATCHER"; then
+      kill "$WATCHER" 2>/dev/null || true
+      _watch_cancel=1
+    fi
+    wait "$WATCHER"
+    WATCH_RC=$?
+    [ "$_watch_cancel" -eq 1 ] && WATCH_RC=0
+    break
+  fi
+  sleep 1
+done
 wait "$CHILD"
 RC=$?
-kill "$WATCHER" 2>/dev/null || true
-rm -f "$URL" "$URL_TMP"
+if [ "$RC" -eq 0 ] && [ "$WATCH_RC" -ne 0 ]; then
+  RC=$WATCH_RC
+fi
+rm -f "$URL" "$URL_TMP" "$HEALTH_FILE" "$HEALTH_TMP" "$HOOKS_STATUS_TMP"
 exit "$RC"

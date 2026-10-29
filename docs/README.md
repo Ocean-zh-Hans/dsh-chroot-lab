@@ -1,8 +1,8 @@
 # DSH Ubuntu Chroot — 文档入口
 
-- 状态：**开发完成（P1–P5 代码/脚本）**（2026-10-26）；真实挂载验证由 PC AI 在备用机执行
+- 状态：**PC 构建检查通过；备用机正式模块、128GB chroot/DSH、20 次启停、快照/回滚、真实开机自启、Agent/Console 核心流程已实测通过；应用检测、真实模型会话等仍有明确边界**
 - 目标设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
-- 当前代码：模块骨架 + `dsh-ctl doctor/plan/status/start/stop/snapshot/...`；**apply 需显式 `--apply`，尚未在主力机执行**
+- 当前代码：模块与 `dsh-ctl doctor/plan/status/start/stop/snapshot/...`；改变镜像或生命周期的操作需显式 `--apply`；主力机已按授权安装激活，后续验证仍须先识别设备
 - 当前设计：`design-v1.5.md`
 - 当前决策：`decisions.md`（已锁定）
 
@@ -36,8 +36,8 @@
 | [roadmap.md](roadmap.md) | P0–P5 阶段、代码与验证状态 |
 | [packaging.md](packaging.md) | 模块 zip、payload、工具链、构建门禁 |
 | [handoff.md](handoff.md) | **备用机/PC AI 验收交接手册** |
-| [../agent/README.md](../agent/README.md) | 宿主 thin agent 协议草案（P4） |
-| [../agent-app/README.md](../agent-app/README.md) | 最小宿主 agent App（可选，未真机验证） |
+| [../agent/README.md](../agent/README.md) | Agent 协议、Python 客户端、持续会话与事件用法 |
+| [../agent-app/README.md](../agent-app/README.md) | 可选 Android 控制面、Compose App、root helper 与实测限制 |
 | [../console-app/README.md](../console-app/README.md) | Chroot Console 原生控制台 + WebView（可选） |
 | [archive/README.md](archive/README.md) | 旧笔记归档说明；旧文档不再有当前效力 |
 
@@ -56,26 +56,17 @@
 | 模块私有数据 | `/data/adb/chroot` |
 | DSH 运行时 | `/data/adb/chroot/dsh` → chroot `/opt/dsh` |
 | DSH home | `/data/adb/chroot/state/dsh-home` → chroot `/root/.dsh` |
-| DSH 工作区 | `/data/media/0/DSH/workspace` → chroot `/sdcard/DSH/workspace` |
+| DSH 工作区 | 优先已有 `state/dsh-home/workspace`（真实目录或链接目标）；否则 `/data/media/0/DSH/workspace` → `/sdcard/DSH/workspace` |
 | 控制面 | `/data/adb/chroot/control` → chroot `/opt/dsh-control` |
 
-## 3. 当前阶段边界
+## 3. 当前设备边界
 
-P1/P2 静态与代码边界：
+主力机已在用户明确授权后完成最终安装、激活和一次手动验收，详见 `verification.md` §19–20；早期“禁止主力机 apply”的文字只描述当时阶段，不是当前事实。
 
-- 读取系统状态（`doctor`）；
-- 打印挂载/生命周期计划（`plan`）；
-- 读取状态文件并校验 PID/starttime/ns inode（`status`）；
-- 模块代码/构建/本地 mock 测试。
-
-仍然禁止：
-
-- 在主力机执行任何 `mount`、`umount`、`losetup`、`unshare`、`chroot`、overlay、debugfs/tracefs 试验；
-- 改宿主 SELinux、全局 prop、全局 mount namespace；
-- 在主力机上做 apply/mount/loop 测试；
-- 把 `plan` 的输出说成“已经可用”。
-
-真正的 apply 必须等 P2：备用机/VM + private namespace + trap 清理 + 零残留验收。
+- 新改动先在明确识别的测试机/arm64 VM 的 private namespace 验证，再决定是否交付。
+- `doctor/plan/status` 是检查，不证明 chroot 已启动；挂载和生命周期操作仍需显式 `--apply`。
+- 不主动修改宿主 SELinux、全局 prop 或全局 mount namespace；真实 purge/uninstall、清数据和块设备写入不是常规验证步骤。
+- 备用机的 Magisk 结果不能外推为主力机 SukiSU 的完整兼容性，也不能承诺所有场景不会死机。
 
 ## 4. 一句话
 

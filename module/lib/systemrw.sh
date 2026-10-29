@@ -21,7 +21,7 @@ dsh_system_rw_status() {
     printf 'system-rw: holder not running\n'
     return 1
   fi
-  if dsh_guest_shell "$_pid" "grep -q ' /$_part ' /proc/mounts"; then
+  if dsh_guest_shell "$_pid" "awk -v target='/$_part' '\$2 == target && \$3 == \"overlay\" { found=1 } END { exit !found }' /proc/mounts"; then
     printf 'system-rw: /%s overlay mounted\n' "$_part"
     return 0
   fi
@@ -47,10 +47,9 @@ dsh_system_rw_on() {
   fi
   _dir=/var/lib/dsh/overlays/$_part
   dsh_guest_shell "$_pid" "set -e
+if awk -v target='/$_part' '\$2 == target && \$3 == \"overlay\" { found=1 } END { exit !found }' /proc/mounts; then exit 0; fi
 mkdir -p '$_dir/upper' '$_dir/work'
-if grep -q ' /$_part ' /proc/mounts; then echo 'already mounted'; exit 0; fi
-mount -t overlay overlay -o lowerdir=/$_part,upperdir='$_dir/upper',workdir='$_dir/work' /$_part
-echo 'overlay mounted: /$_part'" || {
+mount -t overlay overlay -o lowerdir=/$_part,upperdir='$_dir/upper',workdir='$_dir/work' /$_part" || {
     dsh_err "system-rw overlay failed: /$_part"
     return 1
   }
@@ -74,8 +73,15 @@ dsh_system_rw_off() {
     printf 'system-rw: would unmount /%s inside the holder mount namespace (use --apply)\n' "$_part"
     return 3
   fi
-  dsh_guest_shell "$_pid" "umount /$_part 2>/dev/null || true" || true
-  printf 'system-rw: /%s overlay removed (if it was mounted)\n' "$_part"
+  if ! dsh_guest_shell "$_pid" "awk -v target='/$_part' '\$2 == target && \$3 == \"overlay\" { found=1 } END { exit !found }' /proc/mounts"; then
+    printf 'system-rw: /%s not overlaid\n' "$_part"
+    return 0
+  fi
+  dsh_guest_shell "$_pid" "umount '/$_part' && ! awk -v target='/$_part' '\$2 == target && \$3 == \"overlay\" { found=1 } END { exit !found }' /proc/mounts" || {
+    dsh_err "system-rw overlay removal failed: $_part"
+    return 1
+  }
+  printf 'system-rw: /%s overlay removed\n' "$_part"
   return 0
 }
 
@@ -96,7 +102,7 @@ dsh_system_rw() {
   done
   case $_op in
   status) dsh_system_rw_status "$_part" ;;
-  on) dsh_system_rw_on "$_part" "$_apply" ;;
+  on) dsh_system_rw_on "$_part" "$_apply" && dsh_system_rw_status "$_part" ;;
   off) dsh_system_rw_off "$_part" "$_apply" ;;
   -h | --help)
     printf 'Usage: dsh-ctl system-rw status|on|off [partition] [--apply]\n'

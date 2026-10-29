@@ -1,52 +1,46 @@
 # Chroot Console（可选 Android 控制台）
 
-它不是“换个浏览器”，而是 chroot 的低频控制台；DSH Web 只是其中一个入口。
-命名跟随 chroot，而不是跟随 DSH。
+它是 chroot 的低频控制台；DSH Web 只是其中一个入口。控制台不是隐藏性组件，不需要时可以不安装。
+
+控制台按钮、状态和提示使用中文，命令输出保留原文以便排错，但 URL 中的 token 会隐藏；打开 DSH 页面仍使用内部完整地址。主界面使用 Kotlin `ComponentActivity` + Compose，WebActivity 用 Compose `AndroidView` 承载受限 WebView，旧 Java Views 已移除。控制台和 WebView 使用 `safeDrawingPadding` 处理系统栏，固定为竖屏，不修改系统自动旋转设置。结束 Console 不会停止 holder 或 chroot。状态地址优先读取 `status --json`，备用文件读取兼容 `/data/adb/chroot/state/runtime/url` 与旧 `/data/adb/chroot/state/guest/url`。
 
 ## 功能
 
-- 状态卡片：running/stopped/degraded、PID、URL、loop、镜像路径；
-- 生命周期：Start（`--apply`）、Stop、Restart、Refresh、Plan、Doctor、Recover；
-- 日志：`log 200`；
-- 快照：创建快照、列出快照；
-- Purge：二次确认后清理 `/data/adb/chroot` 和镜像目录；
-- DSH Web：只打开 `127.0.0.1` / `localhost` 的 DSH URL；
-- 设置开关：
-  - Autostart on boot（写 `state/ctl/autostart`）
-  - Protect critical paths（下一次 Start 传 `--protect-critical=off`）
-  - Guard deny/ask（`dsh-ctl guard on|off`）
-  - System-RW `/system`（运行中时 `system-rw on|off --apply`）
+- 状态：running/stopped/degraded/recovery-required、PID、URL、loop、镜像路径和失败原因。
+- 生命周期：启动（`--apply`）、停止、重启、刷新、启动计划、环境检查、清理残留（recover）。
+- 日志、快照创建/列表、带确认的清除数据。
+- DSH Web：严格解析 URI，只允许 `127.0.0.1` 或 `localhost` 的 HTTP loopback 地址。可打开内置 WebView，也可用“外部浏览器”通过 `ACTION_VIEW` 打开；内置页主框架加载失败或渲染进程退出时显示浏览器回退，不把白屏当作加载成功。
+- 设置：autostart、critical path protection、guard、private namespace 内的 System-RW。
 
-所有动作都通过设备自身的 `su`/KSU 授权，执行固定 `dsh-ctl` 命令；不接收任意 shell。
-它不提供 Accessibility UI 树/通知/剪贴板；那些由独立的 `agent-app` 提供。
+所有控制动作都通过设备自身的 `su`/KSU 授权，执行固定 `dsh-ctl` 命令，不接收任意 shell。命令的退出码和失败原因会显示；不会仅凭有输出就宣称成功。状态刷新超时为 90 秒，生命周期命令为 180 秒；超时返回 124 并提示后台操作可能仍在进行，不能把超时当成停止成功。WebView 禁止外部导航和 mixed content。
 
-## 安装方式
+guard 的 `approval-free`/`approval-guard` 是新会话的权限预设，重启 DSH/chroot 后生效；已有会话使用 `/permission` 切换。hooks 不是 root 安全边界。
 
-模块构建时会把 APK 同时放到：
+## 安装方式（必须显式选择）
 
-```text
-module/console.apk
-module/system/priv-app/ChrootConsole/ChrootConsole.apk
-```
-
-KernelSU 开机 overlay 后，桌面应直接出现 `Chroot Console` 图标。`customize.sh`/
-`service.sh` 还会尝试 `pm install -r` 作为 fallback。
-
-如果还是没有图标，手动安装：
+默认模块 zip **不包含**控制台，也不包含 `system/priv-app` 或其他系统 overlay；`customize.sh` 和 `service.sh` 不自动安装 App。
 
 ```sh
-adb install -r console-app/dist/chroot-console-0.1.0.apk
-# 或
-adb shell su -c 'pm install -r /data/adb/modules/dsh_chroot/console.apk'
+adb install -r console-app/dist/chroot-console-0.2.0.apk
 ```
+
+若需要随模块携带安装包，可使用：
+
+```sh
+./build/build-module.sh --with-console
+```
+
+这只在模块根放置 `console.apk`，不会自动安装。可在备用机上手动执行 `pm install -r /data/adb/modules/dsh_chroot/console.apk`。
+
+安装后还需在设备实际使用的 root 授权软件中主动允许 Chroot Console，再彻底结束并重新打开 App。本备用机使用 **SUList（root 管理器）**，不以面具的应用列表为准；仅切换后台可能仍沿用未授权的旧进程。不要因此修改全局“默认拒绝”策略，也不需要给 DSH Agent 授予 root。
 
 ## 构建
 
 ```sh
 ./console-app/build.sh
-# console-app/dist/chroot-console-0.1.0.apk
+# 产物：console-app/dist/chroot-console-0.2.0.apk
 ```
 
-Termux 没有 `zipalign` 时产物未对齐；发布前用 Android build-tools 补 `zipalign`。
+使用根 Gradle wrapper、Android SDK 和 JDK 17；固定 AGP/Kotlin/Compose 版本，`console-app/gradle.lockfile` 锁定依赖，`gradle/verification-metadata.xml` 校验依赖 SHA256。APK 验证 debug 签名和 zipalign，debug 签名不是发布签名。旧 Java 实现的真机结果见 `docs/verification.md`；Compose 版本的构建与设备结果单独记录，不混用旧截图证明新页面。
 
 > 这是可见 App，需要用户授予 root；不是隐藏性组件。不需要时可以不安装/不授权。

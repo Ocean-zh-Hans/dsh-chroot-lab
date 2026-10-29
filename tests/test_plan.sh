@@ -11,11 +11,15 @@ out=$(DSH_IMAGE_SIZE_GB=128 "$DSH_CTL" plan)
 assert_contains "$out" "DRY RUN ONLY"
 assert_contains "$out" "1A full /data"
 assert_contains "$out" "2B /sys rw"
-assert_contains "$out" "3A full /dev"
+assert_contains "$out" "3A /dev with block access masked"
+assert_contains "$out" "approval-free + audit + visible risk context; no hard blocking"
 assert_contains "$out" "6B critical paths recursive ro"
 assert_contains "$out" "14B recursive ro /apex"
 assert_contains "$out" "15A full /storage"
-assert_contains "$out" "/sys/fs/selinux       private tmpfs mask"
+assert_contains "$out" "/sys/fs/selinux       DSH_SELINUXFS_MODE (fresh ro mount allowed; no host bind/remount)"
+assert_contains "$out" "/dev/block            private tmpfs mask when DSH_BLOCK_ACCESS=masked"
+assert_contains "$out" "assert image free before fsck"
+assert_contains "$out" "real HTTP health"
 assert_contains "$out" "Masks are integrity guards, not a security boundary"
 assert_contains "$out" "Apply is explicit"
 
@@ -25,7 +29,7 @@ out=$(DSH_IMAGE_SIZE_GB=128 "$DSH_CTL" plan --check 2>&1) || {
 }
 assert_contains "$out" "Mode: apply-readiness"
 case "$out" in
-  *"Plan blocked"*) fail "plan --check should not be blocked in fixture" ;;
+*"Plan blocked"*) fail "plan --check should not be blocked in fixture" ;;
 esac
 assert_contains "$out" "== Mount plan =="
 
