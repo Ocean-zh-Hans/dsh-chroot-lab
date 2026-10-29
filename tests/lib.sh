@@ -150,7 +150,7 @@ if [ "${1:-}" = --claim ]; then
   "$DSH_ROOT"/*) ;;
   *) exit 1 ;;
   esac
-  mkdir "$_claim_guard" || exit 1
+  mkdir "$_claim_guard" 2>/dev/null || { printf 'lock is held: %s\n' "$_claim_guard" >&2; exit 75; }
   shift 2
   "$@"
   _claim_rc=$?

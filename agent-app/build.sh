@@ -51,7 +51,7 @@ BT=$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n
 }
 java -jar "$BT/lib/apksigner.jar" verify "$APK"
 if [ -x "$BT/zipalign" ]; then
-  "$BT/zipalign" -c 4 "$APK"
+  "$ROOT/build/zipalign.sh" "$BT" -c 4 "$APK"
 elif [ -f "$BT/zipalign.exe" ]; then
   "$BT/zipalign.exe" -c 4 "$APK"
 else

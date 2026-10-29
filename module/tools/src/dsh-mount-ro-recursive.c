@@ -91,12 +91,24 @@ static int make_rprivate(const char *path) {
 static int claim_and_exec(const char *path, char **command) {
   struct stat st;
   int fd = open(path, O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
-  if (fd < 0 || fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
-      fchmod(fd, 0600) != 0 || flock(fd, LOCK_EX | LOCK_NB) != 0) {
+  if (fd < 0) {
+    fprintf(stderr, "dsh-mount-ro-recursive: cannot open claim %s: %s\n", path,
+            strerror(errno));
+    return 1;
+  }
+  if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || fchmod(fd, 0600) != 0) {
     fprintf(stderr, "dsh-mount-ro-recursive: cannot claim %s: %s\n", path,
             strerror(errno));
-    if (fd >= 0) close(fd);
+    close(fd);
     return 1;
+  }
+  if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+    int claim_errno = errno;
+    int busy = claim_errno == EWOULDBLOCK || claim_errno == EAGAIN;
+    fprintf(stderr, "dsh-mount-ro-recursive: cannot claim %s: %s\n", path,
+            strerror(claim_errno));
+    close(fd);
+    return busy ? 75 : 1;
   }
   char claim_fd[32];
   char claim_fds[256];
