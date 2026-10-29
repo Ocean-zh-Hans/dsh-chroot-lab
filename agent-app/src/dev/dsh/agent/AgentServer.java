@@ -41,11 +41,6 @@ public final class AgentServer {
     private static final int PORT = 17321;
     private static final int MAX_LINE = 1024 * 1024;
     private static final int MAX_RESPONSE = 16 * 1024 * 1024;
-    private static final Set<String> CONFIRMS = new HashSet<>(java.util.Arrays.asList(
-            "settings.put", "prep.automation", "prep.restore", "power.reboot", "lock.unlock", "net.wifi", "net.data",
-            "net.airplane", "display.setRotation", "display.setDensity", "location.mock", "shell.exec", "fs.rm",
-            "package.install", "package.uninstall", "package.clear", "package.forceStop", "package.enable",
-            "package.disable", "perm.grant", "perm.revoke", "activity.forceStop"));
     static final EventBus events = new EventBus();
     private static final List<Connection> CONNECTIONS = new CopyOnWriteArrayList<>();
     private static final ScheduledExecutorService HEARTBEAT = Executors.newSingleThreadScheduledExecutor();
@@ -59,9 +54,6 @@ public final class AgentServer {
     private static boolean tokenInitialized;
     private static volatile ExecutorService clients;
     private static long lastUiEvent;
-    private static boolean recording;
-    private static boolean recordingIncludeSensitive;
-    private static JSONArray recordingSteps = new JSONArray();
 
     private AgentServer() {
     }
@@ -228,9 +220,6 @@ public final class AgentServer {
         if (params == null) params = new JSONObject();
         if (context == null) throw new AgentError("INTERNAL", "agent is not initialized");
         if (readonly() && isMutation(method)) throw new AgentError("READONLY", "read-only mode rejects device mutation");
-        if (readonly() && method.equals("shot") && params.has("dest")) throw new AgentError("READONLY", "read-only mode rejects file writes");
-        if (CONFIRMS.contains(method) || method.startsWith("package.") && !method.equals("package.list")
-                || method.startsWith("perm.")) AgentError.confirm(params);
         String key = params.optString("idempotencyKey");
         if (key.isEmpty() || !isMutation(method)) return dispatchInternal(method, params);
         if (key.length() > 128) throw new AgentError("INVALID_PARAMS", "idempotencyKey is too long");
@@ -297,128 +286,61 @@ public final class AgentServer {
         return readonly();
     }
 
+    private static JSONObject ping() throws Exception {
+        return new JSONObject().put("ok", true).put("via", "app")
+                .put("version", AgentMethods.VERSION).put("apiVersion", AgentMethods.API_VERSION)
+                .put("buildTime", AgentMethods.BUILD_TIME).put("service", service != null).put("port", PORT)
+                .put("readonly", readonly());
+    }
+
+    private static JSONObject selftest() throws Exception {
+        JSONArray checks = new JSONArray();
+        checks.put(check("a11y", service != null, service != null ? "" : "accessibility service is not connected"));
+        boolean root = RootClient.available();
+        checks.put(check("root", root, root ? "" : "root helper is not connected"));
+        boolean engine = false;
+        String failure = "";
+        try {
+            UiEngine.get().call("ui.refresh", new JSONObject());
+            engine = true;
+        } catch (Throwable error) {
+            failure = String.valueOf(error.getMessage());
+        }
+        checks.put(check("engine", engine, failure));
+        return new JSONObject().put("ok", service != null && engine).put("via", "app").put("checks", checks);
+    }
+
+    private static final Map<String, JSONObject> SESSIONS = new LinkedHashMap<>();
+    private static String currentSession = "";
+
     private static Object dispatchInternal(String method, JSONObject params) throws Exception {
         long started = System.nanoTime();
-        Object result;
         String via = "app";
         String failure = "";
         try {
+            if (EngineRouter.handles(method)) {
+                Object result = EngineRouter.dispatch(method, withSession(params));
+                if (result instanceof JSONObject) via = ((JSONObject) result).optString("via", "a11y");
+                return result;
+            }
             switch (method) {
-                case "ping": {
-                    JSONObject ping = backend(false, params);
-                    ping.put("service", service != null).put("port", PORT).put("apiVersion", AgentMethods.API_VERSION)
-                            .put("version", AgentMethods.VERSION).put("buildTime", AgentMethods.BUILD_TIME).put("via", via)
-                            .put("backend", new JSONObject().put("a11y", service != null ? "on" : "off")
-                                    .put("root", ping.getJSONObject("root").optBoolean("ok") ? "yes" : "no")
-                                    .put("uiautomation", ping.getJSONArray("layers").getJSONObject(0).optBoolean("ok")
-                                            ? "available" : "unavailable"));
-                    return ping;
-                }
-                case "backend.status": case "backend.selftest": case "selftest":
-                    return backend(method.endsWith("selftest"), params);
-                case "macro": return macro(params);
-                case "ui.query": return UiQuery.execute(params);
-                case "job.start":
-                    JSONObject request = params.optJSONObject("request");
-                    return Jobs.start(request == null ? params.getString("method") : request.getString("method"),
-                            request == null ? params.optJSONObject("params") : request.optJSONObject("params"));
-                case "job.status": return Jobs.status(params.getString("jobId"));
-                case "job.cancel": return Jobs.cancel(params.getString("jobId"));
-                case "job.schedule":
-                    return Jobs.schedule(params.getString("method"), params.optJSONObject("params"), params.getJSONObject("schedule"));
-                case "session.analyze": result = SessionStore.analyze(params); via = "a11y"; break;
-                case "session.current": case "session.status": result = SessionStore.status(params); break;
-                case "session.list": result = SessionStore.list(); break;
-                case "session.use": result = SessionStore.use(params); break;
-                case "session.drop": result = SessionStore.drop(params); break;
-                case "session.autosave": result = SessionStore.autosave(params); break;
-                case "session.save": result = SessionStore.save(params); break;
-                case "session.persist": result = SessionStore.persist(params); break;
-                case "session.load": result = SessionStore.load(params); break;
-                case "session.restoreLast": result = SessionStore.load(new JSONObject().put("name", "_last")); break;
-                case "session.saved.list": result = SessionStore.savedList(); break;
-                case "session.saved.delete": result = SessionStore.savedDelete(params); break;
-                case "ui.resolve": return routeUi(method, params);
-                case "ui.path": result = SessionStore.path(params); break;
-                case "ui.refs": result = SessionStore.refs(params); break;
-                case "ui.seek": result = SessionStore.seek(params); break;
-                case "ui.flag": result = SessionStore.flag(params, false); break;
-                case "ui.unflag": result = SessionStore.flag(params, true); break;
-                case "ui.flags.list": result = SessionStore.flags(params); break;
-                case "recording.start":
-                    recording = true;
-                    recordingIncludeSensitive = params.optBoolean("includeSensitive", false);
-                    recordingSteps = new JSONArray();
-                    result = new JSONObject().put("recording", true).put("includeSensitive", recordingIncludeSensitive);
-                    break;
-                case "recording.stop": return stopRecording();
-                case "recording.replay":
-                    return macro(new JSONObject().put("steps", new JSONObject(readRecording(new File(context.getFilesDir(), "recording.json"))).getJSONArray("steps")));
-                case "diag.log": case "diag.tail": case "backend.diag.tail":
-                    result = new JSONObject().put("entries", Diagnostics.tail(params.optInt("n", 50)));
-                    break;
-                case "diag.clear": result = new JSONObject().put("cleared", true); Diagnostics.clear(); break;
-                case "security.setMode":
-                    if (!params.optBoolean("readonly", true)) AgentError.confirm(params);
-                    context.getSharedPreferences("agent", 0).edit().putBoolean("readonly", params.optBoolean("readonly", true)).apply();
-                    result = new JSONObject().put("readonly", readonly());
-                    break;
-                case "security.tokenRotate":
-                    AgentError.confirm(params);
-                    if (rotateToken().isEmpty()) throw new AgentError("INTERNAL", "token rotation failed");
-                    result = new JSONObject().put("rotated", true);
-                    break;
-                case "security.tokenPolicy":
-                    if (params.has("rotateOnStart")) {
-                        AgentError.confirm(params);
-                        context.getSharedPreferences("agent", 0).edit()
-                                .putBoolean("rotateOnStart", params.getBoolean("rotateOnStart")).apply();
-                    }
-                    result = new JSONObject().put("loopbackOnly", true)
-                            .put("rotateOnStart", context.getSharedPreferences("agent", 0)
-                                    .getBoolean("rotateOnStart", false));
-                    break;
-                case "input.profile":
-                    int delay = Math.max(0, Math.min(1000, params.optInt("delayMs")));
-                    int jitter = Math.max(0, Math.min(4, params.optInt("jitterPx")));
-                    context.getSharedPreferences("agent", 0).edit().putInt("delayMs", delay).putInt("jitterPx", jitter).apply();
-                    result = new JSONObject().put("delayMs", delay).put("jitterPx", jitter);
-                    break;
+                case "ping": return ping();
+                case "session.open": return sessionOpen(params);
+                case "session.list": return sessionList();
+                case "session.use": return sessionUse(params);
+                case "session.current": case "session.status": return sessionCurrent();
+                case "session.close": case "session.drop": return sessionClose(params);
+                case "policy.get": return policyGet();
+                case "policy.set": return policySet(params);
+                case "dev.log.tail": return new JSONObject().put("ok", true).put("via", via)
+                        .put("entries", Diagnostics.tail(params.optInt("n", 50)));
+                case "dev.log.clear": Diagnostics.clear(); return new JSONObject().put("ok", true).put("cleared", true);
+                case "dev.selftest": return selftest();
                 default:
-                    if (method.startsWith("ui.") || method.equals("shot") || method.equals("screen.diff")) {
-                        return routeUi(method, params);
-                    }
-                    result = FileBridge.call(method, params);
-                    if (result == null) result = MediaBridge.call(method, params);
-                    if (result == null) result = SystemBridge.call(method, params);
-                    if (result == null && (method.startsWith("root.") || method.startsWith("shell.") || method.startsWith("settings.")
-                            || method.startsWith("package.") || method.startsWith("perm.") || method.startsWith("task.")
-                            || method.startsWith("power.") || method.startsWith("net.") || method.startsWith("display.")
-                            || method.startsWith("user.") || method.startsWith("location.") || method.startsWith("perf.")
-                            || method.startsWith("prep.") || method.startsWith("ime.") || method.startsWith("dnd.")
-                            || method.startsWith("crash."))) {
-                        result = RootClient.call(method, params);
-                    }
-                    if (result == null) throw new AgentError("UNKNOWN_METHOD", "unknown method: " + method);
-                    if (result instanceof JSONObject && ((JSONObject) result).has("via")) via = ((JSONObject) result).getString("via");
-                    break;
+                    throw new AgentError("BAD_REQUEST", "unknown method: " + method)
+                            .detail("hint", "v3: ui.view/ui.nodes/ui.diff/ui.wait/ui.shot/ui.act/ui.batch/ui.fill/"
+                                    + "ui.scrollUntil/ui.press/ui.ime/sys.status/session.*/events.*/policy.*/dev.*");
             }
-            if (result instanceof JSONArray) return result;
-            JSONObject object = (JSONObject) result;
-            if (!object.has("via")) object.put("via", via);
-            if (!object.has("degraded")) object.put("degraded", false);
-            if (recording && !method.startsWith("recording.")) {
-                JSONObject safe = new JSONObject(params.toString());
-                safe.remove("token");
-                safe.remove("pin");
-                if (!recordingIncludeSensitive && (method.equals("ui.setText") || method.equals("ui.appendText"))) {
-                    safe.put("value", "***").put("redacted", true);
-                } else if (!recordingIncludeSensitive && method.equals("ui.query")) {
-                    safe.put("expr", "").put("redacted", true);
-                }
-                recordingSteps.put(new JSONObject().put("method", method).put("params", safe));
-            }
-            return object;
         } catch (AgentError error) {
             failure = error.code;
             throw error;
@@ -430,154 +352,116 @@ public final class AgentServer {
         }
     }
 
-    private static JSONObject routeUi(String method, JSONObject params) throws Exception {
-        if (!params.optString("tier", "auto").equals("a11y") && !method.equals("ui.dump") && !method.equals("ui.find")
-                && !method.equals("ui.query") && !method.equals("ui.path")
-                && !method.equals("ui.refs") && !method.equals("ui.seek") && !method.equals("ui.flag")
-                && !method.equals("ui.unflag") && !method.equals("ui.flags.list")
-                && (!method.equals("ui.waitIdle") || service == null)) {
-            if (isMutation(method) || method.equals("ui.resolve")) SessionStore.checkWrite(params);
-            boolean degraded = false;
-            boolean rootExpected = RootClient.available();
-            try {
-                JSONObject root = RootClient.call(method, params);
-                if (root != null) return root;
-            } catch (AgentError error) {
-                if (params.optString("tier").equals("uiautomation")) throw error;
-                if (!error.code.equals("NO_ROOT") && !error.code.equals("SLOT_BUSY") && !error.code.equals("UNAVAILABLE")
-                        && !error.code.equals("A11Y_OFF") && !error.code.equals("TIMEOUT")
-                        && !error.code.equals("UNKNOWN_METHOD")) throw error;
-                degraded = rootExpected;
+    /** session 只承载"默认后端 + 计数"；页面状态由引擎按需抓取，不做跨请求缓存。 */
+    private static JSONObject withSession(JSONObject params) throws Exception {
+        String id = params.optString("session", "");
+        JSONObject session = null;
+        if (!id.isEmpty()) {
+            synchronized (SESSIONS) {
+                session = SESSIONS.get(id);
             }
-            if (degraded) {
-                JSONObject fallback;
-                switch (method) {
-                    case "ui.dump": fallback = AccessibilityBackend.dump(params); break;
-                    case "ui.find": fallback = SessionStore.find(params); break;
-                    case "ui.texts": fallback = AccessibilityBackend.texts(params); break;
-                    case "ui.windows": fallback = AccessibilityBackend.windows(); break;
-                    case "ui.wait": fallback = AccessibilityBackend.wait(params); break;
-                    case "ui.waitIdle": fallback = AccessibilityBackend.idle(params); break;
-                    case "ui.scrollUntil": fallback = AccessibilityBackend.scrollUntil(params); break;
-                    case "shot": fallback = AccessibilityBackend.shot(params); break;
-                    case "screen.diff": fallback = AccessibilityBackend.diff(params); break;
-                    case "ui.explain": fallback = SessionStore.explain(params); break;
-                    case "ui.highlight": fallback = AccessibilityBackend.highlight(params); break;
-                    case "ui.resolve": fallback = SessionStore.resolve(params); break;
-                    default: fallback = AccessibilityBackend.action(method, params); break;
-                }
-                return fallback.put("degraded", true);
+            if (session == null) throw new AgentError("NOT_FOUND", "no such session: " + id).detail("sessions", sessionIds());
+        } else if (!currentSession.isEmpty()) {
+            synchronized (SESSIONS) {
+                session = SESSIONS.get(currentSession);
             }
         }
-        JSONObject result;
-        switch (method) {
-            case "ui.dump": result = AccessibilityBackend.dump(params); break;
-            case "ui.find": result = SessionStore.find(params); break;
-            case "ui.texts": result = AccessibilityBackend.texts(params); break;
-            case "ui.windows": result = AccessibilityBackend.windows(); break;
-            case "ui.click": case "ui.longClick": case "ui.doubleTap": case "ui.gesture":
-            case "ui.setText": case "ui.appendText": case "ui.clearText": case "ui.selectAll":
-            case "ui.copy": case "ui.paste": case "ui.cut": case "ui.key": case "ui.global":
-            case "ui.swipe": case "ui.drag": case "ui.fling":
-                result = AccessibilityBackend.action(method, params); break;
-            case "shot": result = AccessibilityBackend.shot(params); break;
-            case "screen.diff": result = AccessibilityBackend.diff(params); break;
-            case "ui.snapshot":
-                result = new JSONObject().put("tree", AccessibilityBackend.dump(params)).put("shot", AccessibilityBackend.shot(params));
-                break;
-            case "ui.wait": result = AccessibilityBackend.wait(params); break;
-            case "ui.waitIdle": result = AccessibilityBackend.idle(params); break;
-            case "ui.scrollUntil": result = AccessibilityBackend.scrollUntil(params); break;
-            case "ui.explain": result = SessionStore.explain(params); break;
-            case "ui.highlight": result = AccessibilityBackend.highlight(params); break;
-            case "ui.resolve": result = SessionStore.resolve(params); break;
-            case "ui.path": result = SessionStore.path(params); break;
-            case "ui.refs": result = SessionStore.refs(params); break;
-            case "ui.seek": result = SessionStore.seek(params); break;
-            case "ui.flag": result = SessionStore.flag(params, false); break;
-            case "ui.unflag": result = SessionStore.flag(params, true); break;
-            case "ui.flags.list": result = SessionStore.flags(params); break;
-            default: throw new AgentError("UNKNOWN_METHOD", "unknown method: " + method);
+        if (session != null) {
+            session.put("calls", session.optInt("calls") + 1).put("lastUsedAt", System.currentTimeMillis());
+            if (!params.has("backend")) {
+                String backend = session.optString("backend", "auto");
+                if (!backend.isEmpty() && !backend.equals("auto")) params.put("backend", backend);
+            }
         }
-        if (!result.has("via")) result.put("via", "a11y");
-        if (!result.has("degraded")) result.put("degraded", false);
-        return result;
+        return params;
     }
 
-    private static JSONObject macro(JSONObject params) throws Exception {
-        JSONArray steps = params.getJSONArray("steps");
-        if (steps.length() > 100) throw new AgentError("INVALID_PARAMS", "macro exceeds 100 steps");
-        JSONArray trace = new JSONArray();
-        JSONObject retry = params.optJSONObject("retry");
-        int retries = retry == null ? params.optInt("retry") : Math.min(3, retry.optInt("times"));
-        long backoff = retry == null ? 0 : Math.min(5000, retry.optLong("backoffMs", retry.optLong("backoff", 0)));
-        retries = Math.max(0, Math.min(3, retries));
-        long deadline = System.currentTimeMillis() + Math.max(1000, Math.min(300000, params.optLong("maxMs", 60000)));
-        for (int i = 0; i < steps.length(); i++) {
-            if (System.currentTimeMillis() > deadline) throw new AgentError("TIMEOUT", "macro exceeded its deadline");
-            JSONObject step = steps.getJSONObject(i);
-            if (step.optBoolean("redacted")) throw new AgentError("INVALID_PARAMS", "redacted recording step cannot be replayed");
-            JSONObject output = new JSONObject().put("stage", i).put("method", step.getString("method"));
-            for (int attempt = 0; ; attempt++) {
-                output.put("attempt", attempt + 1);
-                try {
-                    output.put("ok", true).put("result", dispatch(step.getString("method"), step.optJSONObject("params")));
-                    break;
-                } catch (AgentError error) {
-                    output.put("ok", false).put("error", error(error.code, error.getMessage()));
-                    if (error.retryable && error.resultState.equals("OK") && attempt < retries) {
-                        if (backoff > 0) Thread.sleep(backoff);
-                        continue;
-                    }
-                    if (params.optBoolean("stopOnError", true)) return new JSONObject().put("completed", false)
-                            .put("failedAt", i).put("trace", trace.put(output));
-                    throw error;
-                }
-            }
-            trace.put(output);
+    private static JSONArray sessionIds() {
+        JSONArray ids = new JSONArray();
+        synchronized (SESSIONS) {
+            for (String id : SESSIONS.keySet()) ids.put(id);
         }
-        return new JSONObject().put("completed", true).put("trace", trace);
+        return ids;
     }
 
-    private static JSONObject backend(boolean selftest, JSONObject params) throws Exception {
-        JSONObject a11y = new JSONObject().put("name", "a11y").put("ok", service != null)
-                .put("bound", service != null).put("reason", service == null ? "A11Y_OFF" : JSONObject.NULL);
-        JSONObject root = RootClient.status();
-        JSONArray layers = new JSONArray().put(root.getJSONObject("uiautomation")).put(a11y).put(root.getJSONObject("shell"));
-        JSONObject result = new JSONObject().put("layers", layers).put("a11y", a11y)
-                .put("root", root.getJSONObject("root")).put("socket", server != null)
-                .put("readonly", readonly()).put("bootId", events.bootId())
-                .put("eventsPerSec", events.eventsPerSec()).put("eventQueueDepth", events.queueDepth())
-                .put("lastFallbackReason", SessionStore.lastFallbackReason() == null
-                        ? JSONObject.NULL : SessionStore.lastFallbackReason())
-                .put("cooldownMs", Diagnostics.cooldownRemaining());
-        if (!selftest) return result;
-        JSONArray checks = new JSONArray();
-        checks.put(check("socket", server != null, server != null ? "" : "SOCKET_OFF"));
-        checks.put(check("token", !token(context).isEmpty(), "TOKEN_INVALID"));
-        checks.put(check("a11y", service != null, service == null ? "A11Y_OFF" : ""));
-        if (service != null) {
-            long started = System.nanoTime();
-            try {
-                JSONObject analyzed = SessionStore.analyze(new JSONObject());
-                checks.put(new JSONObject().put("item", "dump").put("ok", true)
-                        .put("ms", (System.nanoTime() - started) / 1000000).put("nodeCount", analyzed.getInt("nodeCount")));
-            } catch (Exception e) {
-                checks.put(check("dump", false, e instanceof AgentError ? ((AgentError) e).code : "INTERNAL"));
-            }
-            if (android.os.Build.VERSION.SDK_INT >= 30) {
-                try {
-                    JSONObject shot = AccessibilityBackend.shot(new JSONObject());
-                    checks.put(new JSONObject().put("item", "shot").put("ok", true).put("width", shot.getInt("width")));
-                } catch (Exception e) {
-                    checks.put(check("shot", false, e instanceof AgentError ? ((AgentError) e).code : "INTERNAL"));
-                }
-            }
+    private static JSONObject sessionOpen(JSONObject params) throws Exception {
+        String id = "s-" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        JSONObject session = new JSONObject()
+                .put("id", id)
+                .put("name", params.optString("name", ""))
+                .put("backend", params.optString("backend", "auto"))
+                .put("createdAt", System.currentTimeMillis())
+                .put("calls", 0);
+        synchronized (SESSIONS) {
+            if (SESSIONS.size() >= 8) throw new AgentError("UNAVAILABLE", "at most 8 sessions; close one first");
+            SESSIONS.put(id, session);
         }
-        checks.put(new JSONObject().put("item", "input").put("ok", service != null)
-                .put("executed", false).put("reason", "selftest never injects input"));
-        return result.put("checks", checks).put("via", "app").put("degraded", false);
+        currentSession = id;
+        return new JSONObject().put("ok", true).put("via", "app").put("session", new JSONObject(session.toString()))
+                .put("current", id);
     }
+
+    private static JSONObject sessionList() throws Exception {
+        JSONArray items = new JSONArray();
+        synchronized (SESSIONS) {
+            for (JSONObject session : SESSIONS.values()) items.put(new JSONObject(session.toString()));
+        }
+        return new JSONObject().put("ok", true).put("via", "app").put("sessions", items).put("current", currentSession);
+    }
+
+    private static JSONObject sessionUse(JSONObject params) throws Exception {
+        String id = params.optString("id", params.optString("session", ""));
+        synchronized (SESSIONS) {
+            if (SESSIONS.get(id) == null) throw new AgentError("NOT_FOUND", "no such session: " + id).detail("sessions", sessionIds());
+        }
+        currentSession = id;
+        return new JSONObject().put("ok", true).put("via", "app").put("current", id);
+    }
+
+    private static JSONObject sessionCurrent() throws Exception {
+        JSONObject session = null;
+        synchronized (SESSIONS) {
+            if (!currentSession.isEmpty()) session = SESSIONS.get(currentSession);
+        }
+        return new JSONObject().put("ok", true).put("via", "app").put("current", currentSession)
+                .put("session", session == null ? JSONObject.NULL : new JSONObject(session.toString()));
+    }
+
+    private static JSONObject sessionClose(JSONObject params) throws Exception {
+        String id = params.optString("id", params.optString("session", currentSession));
+        boolean removed;
+        synchronized (SESSIONS) {
+            removed = SESSIONS.remove(id) != null;
+        }
+        if (!removed) throw new AgentError("NOT_FOUND", "no such session: " + id);
+        if (id.equals(currentSession)) currentSession = "";
+        return new JSONObject().put("ok", true).put("via", "app").put("closed", id);
+    }
+
+    private static JSONObject policyGet() throws Exception {
+        JSONObject policy = new JSONObject()
+                .put("backend", context.getSharedPreferences("agent", 0).getString("backend", "auto"))
+                .put("readonly", readonly());
+        return new JSONObject().put("ok", true).put("via", "app").put("policy", policy);
+    }
+
+    private static JSONObject policySet(JSONObject params) throws Exception {
+        if (params.has("readonly")) {
+            boolean readonly = params.optBoolean("readonly", true);
+            if (!readonly) AgentError.confirm(params);
+            context.getSharedPreferences("agent", 0).edit().putBoolean("readonly", readonly).apply();
+        }
+        if (params.has("backend")) {
+            String backend = params.optString("backend", "auto");
+            if (!backend.equals("auto") && !backend.equals("a11y") && !backend.equals("uia") && !backend.equals("shell")) {
+                throw new AgentError("BAD_REQUEST", "backend must be auto|a11y|uia|shell")
+                        .detail("alternatives", new JSONArray().put("auto").put("a11y").put("uia").put("shell"));
+            }
+            context.getSharedPreferences("agent", 0).edit().putString("backend", backend).apply();
+        }
+        return policyGet();
+    }
+
 
     private static JSONObject check(String item, boolean ok, String error) throws Exception {
         boolean valid = ok && (error == null || error.isEmpty());
@@ -597,45 +481,14 @@ public final class AgentServer {
         }
     }
 
-    private static JSONObject stopRecording() throws Exception {
-        recording = false;
-        File file = new File(context.getFilesDir(), "recording.json");
-        File temp = new File(context.getFilesDir(), "recording-" + UUID.randomUUID() + ".tmp");
-        try (FileOutputStream output = new FileOutputStream(temp)) {
-            output.write(new JSONObject().put("version", 1).put("steps", recordingSteps).toString().getBytes(StandardCharsets.UTF_8));
-            output.getFD().sync();
-        }
-        java.nio.file.Files.move(temp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        file.setReadable(false, false);
-        file.setReadable(true, true);
-        file.setWritable(false, false);
-        file.setWritable(true, true);
-        return new JSONObject().put("recording", false).put("steps", recordingSteps);
-    }
-
-    private static String readRecording(File file) throws Exception {
-        if (file.length() > 1024 * 1024) throw new AgentError("INVALID_PARAMS", "recording is too large");
-        try (FileInputStream input = new FileInputStream(file)) {
-            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
-            byte[] buffer = new byte[4096];
-            while (true) {
-                int count = input.read(buffer);
-                if (count < 0) break;
-                bytes.write(buffer, 0, count);
-            }
-            return new String(bytes.toByteArray(), StandardCharsets.UTF_8);
-        }
-    }
-
     static void onAccessibilityEvent(AccessibilityEvent event) {
+        UiClock.INSTANCE.note();
         try {
             String pkg = event.getPackageName() == null ? "" : event.getPackageName().toString();
             if (!pkg.equals("com.android.systemui") && (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                     || event.getEventType() == AccessibilityEvent.TYPE_WINDOWS_CHANGED || pkg.equals(events.foreground()))) {
                 events.uiChanged(pkg);
             }
-            SessionStore.event(event);
             if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                 String previous = events.foreground();
                 events.foreground(pkg);
@@ -691,7 +544,15 @@ public final class AgentServer {
     }
 
     private static String digest(String method, JSONObject params) throws Exception {
-        return SessionNode.hash(method + "\n" + params.optString("sessionId") + "\n" + canonical(params));
+        return sha256(method + "\n" + params.optString("session") + "\n" + canonical(params));
+    }
+
+    private static String sha256(String text) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] bytes = digest.digest(text.getBytes(StandardCharsets.UTF_8));
+        StringBuilder out = new StringBuilder();
+        for (byte b : bytes) out.append(String.format("%02x", b));
+        return out.toString();
     }
 
     private static void pruneIdempotency() {
