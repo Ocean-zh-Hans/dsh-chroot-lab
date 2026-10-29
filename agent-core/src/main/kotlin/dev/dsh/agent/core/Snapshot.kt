@@ -71,15 +71,20 @@ class NodeBuilder(
 class SnapshotBuilder(
     private val g: Long = 1,
     private val seq: Long = 1,
-    private val pkg: String = "",
-    private val activity: String = "",
+    private val at: Long = 0L,
+    pkg: String = "",
+    activity: String = "",
     private val screen: Rect = Rect(0, 0, 1080, 2400),
 ) {
     private val nodes = ArrayList<Node>()
     private val roots = ArrayList<Int>()
     private var keyboard = false
+    private var pkgName = pkg
+    private var actName = activity
 
     fun keyboard(visible: Boolean): SnapshotBuilder { keyboard = visible; return this }
+    fun packageName(value: String): SnapshotBuilder { pkgName = value; return this }
+    fun activityName(value: String): SnapshotBuilder { actName = value; return this }
 
     fun add(
         cls: String,
@@ -92,12 +97,13 @@ class SnapshotBuilder(
         flags: Int = 0,
         nativeId: Long = 0,
         window: Int = 0,
-        pkg: String = this.pkg,
+        z: Int = 0,
+        nodePkg: String = "",
     ): Int {
         val id = nodes.size
         val depth = if (parent < 0) 0 else nodes[parent].depth + 1
         val index = if (parent < 0) roots.size else nodes[parent].children.size
-        val path = if (parent < 0) "$id" else nodes[parent].path + "/$index"
+        val path = if (parent < 0) id.toString() else nodes[parent].path + "/" + index
         val n = Node(
             id = id,
             parent = parent,
@@ -105,7 +111,7 @@ class SnapshotBuilder(
             window = window,
             depth = depth,
             cls = cls,
-            pkg = pkg,
+            pkg = nodePkg.ifEmpty { pkgName },
             viewId = viewId,
             text = text,
             desc = desc,
@@ -115,7 +121,7 @@ class SnapshotBuilder(
             nativeId = nativeId,
             path = path,
             index = index,
-            z = id,
+            z = z,
         )
         nodes.add(n)
         if (parent < 0) roots.add(id) else {
@@ -125,5 +131,5 @@ class SnapshotBuilder(
         return id
     }
 
-    fun build(): Snapshot = Snapshot(g, seq, 0, pkg, activity, keyboard, screen, nodes.toList(), roots.toList())
+    fun build(): Snapshot = Snapshot(g, seq, at, pkgName, actName, keyboard, screen, nodes.toList(), roots.toList())
 }

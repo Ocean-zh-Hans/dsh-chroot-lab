@@ -80,6 +80,7 @@ Session Page 序列 + ref 表 + 事件缓冲（默认一个 default 会话）
 
 > 命名原则：读 `ui.*`、写 `ui.*`、运维 `sys/session/events/policy/dev`。
 > 参数一律扁平 JSON；目标一律 `ref` 或 `where` 二选一。
+> 所有读写方法额外接受 `backend: "auto"|"a11y"|"uia"|"shell"`（见 §8），响应带 `via` 与 `ms`。
 
 ### 4.1 读（5）
 
@@ -182,7 +183,60 @@ interface TreeSource {
 
 ---
 
-## 8. 断代式重构：删什么、留什么
+## 8. 后端选择（a11y / uia / shell）
+
+原则：**后端不由引擎替调用方决定**。引擎把"能力 + 当前可用性 + 代价"摊开，由 AI 按场景自己挑。
+
+### 8.1 能力表（`sys.status.backends` 返回同款数据）
+
+| 维度 | `a11y` | `uia` | `shell` |
+|---|---|---|---|
+| 读树 | 进程内，有稳定节点身份（sourceNodeId） | 跨进程 JSON，只有序号无身份 | 不做（需独占 uiautomator） |
+| 点击/滑动 | 语义动作 + dispatchGesture | 坐标注入，绕过 a11y 手势限制 | `input tap/swipe`，最慢 |
+| 文本输入 | ACTION_SET_TEXT，中文 OK | 点焦点 + 键事件，中文不行 | `input text`，仅 ASCII |
+| 按键/全局 | performGlobalAction | injectKeyEvent | `input keyevent` |
+| 截图 | takeScreenshot | takeScreenshot | `screencap` |
+| 独占资源 | 无 | **全局单槽** | 无 |
+| 需要 root | 否 | 是 | 是 |
+| 典型延迟 | 20–80ms | 40–150ms | 150–500ms |
+| 特殊优势 | 节点身份、语义动作、可用性可探测 | 手势被拒时仍能生效；a11y 关闭也能用 | 前两条都挂时仍可用 |
+
+### 8.2 选择
+
+- 单次调用：`backend: "auto" | "a11y" | "uia" | "shell"`
+- 整场会话：`session.open {backend:"uia"}`
+- 全局默认：`policy.backend`（默认 `auto`）
+- `auto` 的优先链按操作类别：
+  - tap/long/swipe/scroll → a11y → uia → shell
+  - setText/clear/append → a11y →（uia 点焦点后键注入）→ shell（仅 ASCII）
+  - press/global → a11y → uia → shell
+  - shot → a11y → uia → shell
+  - 读树 → 永远 a11y（uia 无身份，仅用于 a11y 不可用时）
+
+### 8.3 反馈
+
+每个响应带 `via`、`ms`；失败额外带 `alternatives`，让 AI 一次就知道换谁：
+
+```json
+{"ok":false,"code":"BLOCKED","via":"a11y","ms":48,
+ "alternatives":[{"backend":"uia","why":"手势未被接受，坐标注入可绕过","cost":"+40ms"},
+                 {"backend":"shell","why":"input tap 一定能发出去","cost":"+300ms"}]}
+```
+
+### 8.4 扩展位
+
+后端接口 = 能力声明 + read/act/query 三个方法。加新后端只需实现接口 + 在能力表加一行：
+
+- `ime`：自建输入法广播，绕开拒绝 ACTION_SET_TEXT 的输入框（Portal 做法）
+- `ocr`：树拿不到时（游戏 / Flutter canvas）截图 + OCR 出可点区域
+- `shizuku`：root 不可用时用 shell 权限顶替
+
+### 8.5 约束
+
+- `uia` **不常驻**：空闲 60s 主动断开，把 UiAutomation 槽位还回去，避免我变成新的独占者。
+- `shell` 只做兜底：每次要起一个 `input` 进程（150–500ms），文本仅 ASCII。
+
+## 9. 断代式重构：删什么、留什么
 
 **删（约 2,300 行）**
 - `SessionStore.java`(998) 会话/树/旧 patch 启发式
@@ -203,7 +257,7 @@ interface TreeSource {
 
 ---
 
-## 9. 第三方无障碍服务互斥（GKD）
+## 10. 第三方无障碍服务互斥（GKD）
 
 Android 同一时刻允许多个无障碍服务，但两个"控制类"服务会互相打断（GKD 会自动点广告，抢焦点）。
 约定：
@@ -213,7 +267,7 @@ Android 同一时刻允许多个无障碍服务，但两个"控制类"服务会�
 
 ---
 
-## 10. 里程碑
+## 11. 里程碑
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
