@@ -20,6 +20,12 @@ dsh_lifecycle_exec() {
   esac
   DSH_LIFECYCLE_CLAIM_ACTIVE=1 "$_helper" --claim-wait "$_lifecycle_timeout" \
     "$DSH_CTL_DIR/lifecycle.claim" "${DSH_TEST_SHELL:-/system/bin/sh}" "$@"
+  _lifecycle_rc=$?
+  if [ "$_lifecycle_rc" -eq 75 ]; then
+    dsh_err "lifecycle lock is held: $DSH_CTL_DIR/lifecycle.claim"
+    return 1
+  fi
+  return "$_lifecycle_rc"
 }
 
 dsh_lock_path_safe() {
@@ -103,7 +109,12 @@ dsh_lock_acquire() {
     }
     DSH_LOCK_OWNER_PID=$$ DSH_LOCK_GUARD_ACTIVE=1 "$_lock_helper" --claim "$DSH_CTL_DIR/lock.guard" \
       "${DSH_TEST_SHELL:-/system/bin/sh}" "$DSH_MODULE_DIR/bin/dsh-lock"
-    return $?
+    _lock_rc=$?
+    if [ "$_lock_rc" -eq 75 ]; then
+      dsh_err "lock is held or cannot be acquired: $DSH_LOCK_DIR"
+      return 1
+    fi
+    return "$_lock_rc"
   fi
   _lock_owner_pid=${DSH_LOCK_OWNER_PID:-$$}
   _candidate=$DSH_LOCK_DIR.candidate.$$

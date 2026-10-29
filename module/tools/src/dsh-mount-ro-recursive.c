@@ -103,11 +103,13 @@ static int claim_and_exec(const char *path, char **command,
       return 1;
     }
     if (flock(fd, LOCK_EX | LOCK_NB) == 0) break;
-    if (errno != EWOULDBLOCK || waited >= wait_seconds) {
+    int claim_errno = errno;
+    int busy = claim_errno == EWOULDBLOCK || claim_errno == EAGAIN;
+    if (!busy || waited >= wait_seconds) {
       fprintf(stderr, "dsh-mount-ro-recursive: cannot claim %s: %s\n", path,
-              strerror(errno));
+              strerror(claim_errno));
       close(fd);
-      return 1;
+      return busy ? 75 : 1;
     }
     close(fd);
     if (sleep(1) != 0) {

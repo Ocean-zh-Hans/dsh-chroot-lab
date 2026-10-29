@@ -29,6 +29,10 @@
 |---|---|
 | [requirements.md](requirements.md) | 目标、非目标、硬需求、验收定义 |
 | [design-v1.5.md](design-v1.5.md) | **当前设计**：架构、挂载、生命周期、快照、安全门 |
+| [agent-engine-v3.md](agent-engine-v3.md) | **Agent APK 当前设计**：v3 API、后端选择、错误契约、能力边界 §12 |
+| [agent-capability-matrix.md](agent-capability-matrix.md) | **能力矩阵**：什么进 APK（眼+手）、什么留给 Ubuntu shell/root |
+| [kotlin-migration.md](kotlin-migration.md) | Java→Kotlin 全量迁移清单、构建改动与验收状态 |
+| [research/README.md](research/README.md) | 8 组同类项目调研索引、质量规则与进度 |
 | [decisions.md](decisions.md) | **已锁定决策**：`1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A` |
 | [hiddenness.md](hiddenness.md) | 应用层隐藏性：App 能看到/看不到什么 |
 | [verification.md](verification.md) | 本机已验证、未验证、能力矩阵 |

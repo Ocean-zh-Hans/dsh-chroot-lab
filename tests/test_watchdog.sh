@@ -9,6 +9,7 @@ fixture_env "$case_dir"
 export DSH_TEST_ROOT="$CASE"
 export DSH_PROC=/proc
 export DSH_WATCHDOG_LOCK_TIMEOUT=2
+export DSH_TEST_SKIP_NS_SCAN=1
 export DSH_WATCHDOG_INTERVAL=1
 export DSH_WATCHDOG_STOP_TIMEOUT=5
 export DSH_TEST_SKIP_NS_SCAN=1

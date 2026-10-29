@@ -11,7 +11,7 @@ export DSH_PROC=/proc
 pid=$$
 awk '{ sub(/^.*\) /, ""); print $20 }' "/proc/$pid/stat" >"$DSH_ROOT/state/guest/launcher.starttime"
 printf '%s\n' "$pid" >"$DSH_ROOT/state/guest/launcher.pid"
-printf '%s\n' 'mnt:[4026531840]' >"$DSH_ROOT/state/guest/launcher.ns"
+readlink "/proc/$pid/ns/mnt" >"$DSH_ROOT/state/guest/launcher.ns"
 
 cat >"$CASE/bin/nsenter" <<'EOF'
 #!/bin/sh

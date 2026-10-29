@@ -3,6 +3,7 @@ import java.util.jar.JarOutputStream
 
 plugins {
     `java-library`
+    kotlin("jvm")
 }
 
 val sdk = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
@@ -18,8 +19,15 @@ java {
     targetCompatibility = JavaVersion.VERSION_1_8
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
+    }
+}
+
 dependencies {
     compileOnly(files(androidJar))
+    implementation(kotlin("stdlib"))
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -32,6 +40,7 @@ tasks.register<JavaExec>("dexJar") {
     val outputDirectory = layout.buildDirectory.dir("helper-dex")
     val outputFile = layout.buildDirectory.file("dsh-root-helper.jar")
     inputs.files(sourceSets.main.get().allJava)
+    inputs.files(configurations.runtimeClasspath)
     inputs.file(androidJar)
     inputs.file(d8Jar)
     outputs.file(outputFile)
@@ -43,8 +52,10 @@ tasks.register<JavaExec>("dexJar") {
         if (!d8Jar.isFile) error("d8.jar not found: $d8Jar")
         outputDirectory.get().asFile.deleteRecursively()
         outputDirectory.get().asFile.mkdirs()
+        val inputs = mutableListOf(classes.get().outputs.files.singleFile.absolutePath)
+        configurations.runtimeClasspath.get().files.filter { it.name.endsWith(".jar") }.forEach { inputs.add(it.absolutePath) }
         args("--lib", androidJar.absolutePath, "--min-api", "29", "--output",
-            outputDirectory.get().asFile.absolutePath, classes.get().outputs.files.singleFile.absolutePath)
+            outputDirectory.get().asFile.absolutePath, *inputs.toTypedArray())
     }
     doLast {
         val dex = outputDirectory.get().file("classes.dex").asFile

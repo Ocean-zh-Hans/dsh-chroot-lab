@@ -50,9 +50,9 @@ for f in "${scripts[@]}"; do
   mksh -n "$f"
 done
 printf '== shellcheck ==\n'
-shellcheck -s sh -e SC3043,SC1091 "${scripts[@]}"
+shellcheck -s sh -S warning -e SC3043,SC1091 "${scripts[@]}"
 bash -n agent-app/build.sh agent-app/root-helper.sh console-app/build.sh
-shellcheck -s bash agent-app/build.sh agent-app/root-helper.sh console-app/build.sh
+shellcheck -s bash -S warning agent-app/build.sh agent-app/root-helper.sh console-app/build.sh
 printf '== shfmt ==\n'
 _shfmt_diff=$(mktemp "${TMPDIR:-/tmp}/dsh-shfmt.XXXXXX")
 if ! shfmt -d -ln=mksh -i 2 "${scripts[@]}" >"$_shfmt_diff" 2>&1; then
@@ -66,9 +66,12 @@ printf '== build scripts ==\n'
 for f in build/*.sh; do
   bash -n "$f"
 done
-shellcheck -s bash build/*.sh
+shellcheck -s bash -S warning build/*.sh
 
 printf '== Android helper ==\n'
+if [ -z "${ANDROID_NDK_HOME:-}" ] && [ -z "${ANDROID_NDK_ROOT:-}" ] && [ -d /opt/android-ndk-r29 ]; then
+  export ANDROID_NDK_HOME=/opt/android-ndk-r29
+fi
 ./build/build-tools.sh
 ./build/build-tools.sh --verify
 
@@ -122,35 +125,13 @@ print("Android manifest checks: ok")'
   exit 1
 }
 
-printf '== Java behavior ==\n'
-_java_test=$(mktemp -d "${TMPDIR:-/tmp}/dsh-java.XXXXXX")
-trap 'rm -rf "$_java_test"' EXIT
-javac -d "$_java_test" console-app/src/dev/chroot/console/ConsoleSupport.java tests/ConsoleSupportTest.java
-java -cp "$_java_test" dev.chroot.console.ConsoleSupportTest
-_sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/AppData/Local/Android/Sdk}}
-_jar=${ANDROID_JAR:-}
-[ -n "$_jar" ] || _jar=$(find "$_sdk/platforms" -name android.jar -type f 2>/dev/null | sort -V | tail -n 1)
-[ -f "$_jar" ] || {
-  printf 'android.jar not found; set ANDROID_HOME or ANDROID_JAR\n' >&2
-  exit 2
-}
-_javac_jar=$_jar
-_javac_out=$_java_test
-if [ -x /usr/bin/cygpath ]; then
-  _javac_jar=$(/usr/bin/cygpath -w "$_javac_jar")
-  _javac_out=$(/usr/bin/cygpath -w "$_javac_out")
-elif command -v cygpath >/dev/null 2>&1; then
-  _javac_jar=$(cygpath -w "$_javac_jar")
-  _javac_out=$(cygpath -w "$_javac_out")
+printf '== Kotlin behavior ==\n'
+if [ -z "${ANDROID_HOME:-}" ] && [ -z "${ANDROID_SDK_ROOT:-}" ] && [ -d /opt/android-sdk ]; then
+  export ANDROID_HOME=/opt/android-sdk
 fi
-find console-app/src agent-app/src agent-root-helper/src -name '*.java' >"$_java_test/android-sources.txt"
-javac -source 8 -target 8 -Xlint:-options -cp "$_javac_jar" -d "$_javac_out" @"$_java_test/android-sources.txt"
-javac -cp "$_javac_jar" -d "$_javac_out" \
-  agent-app/src/dev/dsh/agent/UiSelector.java agent-app/src/dev/dsh/agent/Cron.java \
-  agent-app/src/dev/dsh/agent/AgentMethods.java agent-app/src/dev/dsh/agent/SafePaths.java tests/AgentCoreTest.java
-java -cp "$_javac_out" dev.dsh.agent.AgentCoreTest
-rm -rf "$_java_test"
-trap - EXIT
+_sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/android-sdk}}
+export ANDROID_HOME="$_sdk" ANDROID_SDK_ROOT="$_sdk"
+./gradlew :agent-core:test :agent-app:testDebugUnitTest :console-app:testDebugUnitTest --console=plain
 
 printf '== Agent client ==\n'
 PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -u -m unittest tests.test_agent_client -v

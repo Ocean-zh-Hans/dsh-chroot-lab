@@ -162,7 +162,7 @@ if [ "${1:-}" = --claim ] || [ "${1:-}" = --claim-wait ]; then
   esac
   _claim_i=0
   until mkdir "$_claim_guard" 2>/dev/null; do
-    [ "$_claim_i" -lt "$_claim_wait" ] || exit 1
+    [ "$_claim_i" -lt "$_claim_wait" ] || { printf 'lock is held: %s\n' "$_claim_guard" >&2; exit 75; }
     sleep 1 || exit 1
     _claim_i=$((_claim_i + 1))
   done
