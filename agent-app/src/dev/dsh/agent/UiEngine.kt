@@ -174,6 +174,9 @@ class UiEngine private constructor() {
         val started = SystemClock.uptimeMillis()
         val op = params.optString("op", "")
         if (op.isEmpty()) throw err("BAD_REQUEST", "op is required")
+        if (op == "back" || op == "home" || op == "recents" || op == "press") {
+            return if (op == "press") press(params) else press(JSONObject(params.toString()).put("key", op))
+        }
         val v = current(params)
         val target = resolve(v, params)
         val node = v.snapshot.node(target.nodeId)
