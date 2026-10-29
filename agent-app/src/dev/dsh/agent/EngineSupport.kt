@@ -84,6 +84,7 @@ internal object Capture {
             root.recycle()
         }
         builder.keyboard(keyboard).packageName(pkg)
+            .activityName(if (pkg.isNotEmpty() && pkg == UiClock.pkg) UiClock.activity else "")
         return Captured(builder.build(), handles)
     }
 
@@ -206,10 +207,21 @@ internal object Gestures {
 /** 无障碍事件的时间戳：用来判断界面是否已静默（settle）。 */
 internal object UiClock {
     @Volatile
+    var pkg: String = ""
+
+    @Volatile
+    var activity: String = ""
+
+    @Volatile
     var lastEventAt: Long = 0L
 
     @Volatile
     var events: Long = 0L
+
+    fun page(pkgName: String, activityName: String) {
+        pkg = pkgName
+        activity = activityName
+    }
 
     fun note() {
         lastEventAt = SystemClock.uptimeMillis()

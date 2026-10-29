@@ -490,6 +490,7 @@ public final class AgentServer {
                 events.uiChanged(pkg);
             }
             if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                UiClock.INSTANCE.page(pkg, event.getClassName() == null ? "" : event.getClassName().toString());
                 String previous = events.foreground();
                 events.foreground(pkg);
                 if (!previous.equals(pkg)) events.publish("app.foreground", new JSONObject().put("package", pkg));

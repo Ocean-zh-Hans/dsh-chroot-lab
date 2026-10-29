@@ -243,7 +243,7 @@ interface TreeSource {
 - `AccessibilityBackend.java`(455) 旧 tier/verify 逻辑 → 由 A11yTreeSource 取代
 - `SessionPersistence.java`(251)、`SessionNode.java`(215)
 - `UiQuery.java`(240)、`UiSelector.java`(165)、`Where.java`(已迁到 agent-core)
-- `AgentServer.java`(946) 旧 69 方法分发 → 重写为 ApiServer(~400)
+- `AgentServer.java`(946) 旧 69 方法分发 → 重写为 v3-only 分发（现 ~806 行，保留 socket/token/幂等/事件基础设施）
 
 **留（能力，不保留旧接口）**
 - `SystemBridge`(469) 系统状态/电源/网络/设置
@@ -272,5 +272,5 @@ Android 同一时刻允许多个无障碍服务，但两个"控制类"服务会�
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | M1 | agent-core：Model/Snapshot/RefStore/Diff/View/Where + 14 个单测 | ✅ 完成（a5712e6） |
-| M2 | A11yTreeSource + ApiServer（16 方法）+ 删旧类 | 🟡 进行中 |
+| M2 | A11yTreeSource + ApiServer（16 方法）+ 删旧类 | 🟢 代码完成（0744b2f 起，APK 已编出；待真机验收） |
 | M3 | 打磨：遮挡、批量优化、events 接线、dev.selftest 场景脚本 | ⬜ |

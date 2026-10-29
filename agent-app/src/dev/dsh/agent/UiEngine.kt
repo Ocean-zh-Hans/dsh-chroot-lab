@@ -11,6 +11,7 @@ import dev.dsh.agent.core.Flags
 import dev.dsh.agent.core.Node
 import dev.dsh.agent.core.Query
 import dev.dsh.agent.core.RefStore
+import dev.dsh.agent.core.Snapshot
 import dev.dsh.agent.core.SnapshotView
 import dev.dsh.agent.core.ViewOptions
 import dev.dsh.agent.core.ViewRenderer
@@ -30,6 +31,7 @@ class UiEngine private constructor() {
     private val refs = RefStore()
     private val lock = ReentrantLock()
     private var g = 0L
+    private var lastSignature = ""
     private var view: SnapshotView? = null
     private var previous: SnapshotView? = null
     private var handles: Map<Long, AccessibilityNodeInfo> = emptyMap()
@@ -41,7 +43,7 @@ class UiEngine private constructor() {
         private const val STALE_MS = 30_000L
         private val ROUTED = setOf(
             "ui.view", "ui.nodes", "ui.diff", "ui.act", "ui.batch", "ui.fill",
-            "ui.scrollUntil", "ui.wait", "ui.refresh", "ui.press", "ui.shot", "sys.status",
+            "ui.scrollUntil", "ui.scroll", "ui.wait", "ui.refresh", "ui.press", "ui.ime", "ui.shot", "sys.status",
         )
 
         @JvmStatic
@@ -59,6 +61,8 @@ class UiEngine private constructor() {
         "ui.batch" -> batch(params)
         "ui.fill" -> fill(params)
         "ui.scrollUntil" -> scrollUntil(params)
+        "ui.scroll" -> scroll(params)
+        "ui.ime" -> ime(params)
         "ui.wait" -> waitFor(params)
         "ui.refresh" -> locked { captureNow().let { pageJson(it) } }
         "ui.press" -> press(params)
@@ -201,6 +205,21 @@ class UiEngine private constructor() {
         for (i in 0 until ops.length()) {
             val op = ops.getJSONObject(i)
             val name = op.optString("op", "")
+            if (name == "press") {
+                val pressed = try {
+                    press(op)
+                } catch (e: AgentError) {
+                    e.detail("index", i)
+                    throw e
+                }
+                results.put(JSONObject().put("index", i).put("op", name).put("ref", "")
+                    .put("relocated", false).put("via", pressed.optString("via", "a11y")))
+                if (i < ops.length() - 1) {
+                    settle()
+                    v = captureNow()
+                }
+                continue
+            }
             val target = try {
                 resolve(v, op)
             } catch (e: AgentError) {
@@ -271,6 +290,59 @@ class UiEngine private constructor() {
         val id = Query.select(v, where).first()
         JSONObject().put("ok", true).put("ref", v.refOf(id) ?: "").put("scrolls", times)
             .put("page", pageJson(v)).put("ms", SystemClock.uptimeMillis() - started)
+    }
+
+    private fun scroll(params: JSONObject): JSONObject = locked {
+        val started = SystemClock.uptimeMillis()
+        val v = current(params)
+        val direction = params.optString("direction", "forward")
+        val target = if (params.has("ref") || params.has("where")) resolve(v, params) else null
+        val node = target?.let { v.snapshot.node(it.nodeId) }
+            ?: v.snapshot.nodes.firstOrNull { it.scrollable && it.has(Flags.VISIBLE) }
+            ?: throw err("NOT_FOUND", "no scrollable container")
+        val via = scrollNode(node, direction, params)
+        settle()
+        val after = captureNow()
+        JSONObject().put("ok", true).put("ref", target?.ref ?: "").put("direction", direction).put("via", via)
+            .put("page", pageJson(after))
+            .put("change", changeJson(Diff.compute(v, after, UiClock.quietMs(), true)))
+            .put("ms", SystemClock.uptimeMillis() - started)
+    }
+
+    private fun ime(params: JSONObject): JSONObject = locked {
+        val started = SystemClock.uptimeMillis()
+        val action = params.optString("op", "set")
+        val v = current(params)
+        when (action) {
+            "show" -> {
+                val editable = v.snapshot.nodes.firstOrNull { it.editable && it.has(Flags.VISIBLE) }
+                    ?: throw err("NOT_FOUND", "no editable field on screen")
+                val h = handle(editable) ?: throw err("STALE", "node handle is gone")
+                h.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                settle()
+                JSONObject().put("ok", true).put("op", action).put("via", "a11y")
+                    .put("page", pageJson(captureNow())).put("ms", SystemClock.uptimeMillis() - started)
+            }
+            "hide" -> {
+                global(AccessibilityService.GLOBAL_ACTION_BACK, "back", params)
+                settle()
+                JSONObject().put("ok", true).put("op", action).put("via", "a11y")
+                    .put("page", pageJson(captureNow())).put("ms", SystemClock.uptimeMillis() - started)
+            }
+            "set", "clear", "submit" -> {
+                val target = resolve(v, params)
+                val node = v.snapshot.node(target.nodeId)
+                val text = if (action == "clear") "" else params.optString("text", "")
+                val via = if (action == "submit") keyEnter(params) else setText(node, text, params.optBoolean("append", false), params)
+                settle()
+                val after = captureNow()
+                JSONObject().put("ok", true).put("op", action).put("ref", target.ref ?: "")
+                    .put("via", via).put("page", pageJson(after))
+                    .put("change", changeJson(Diff.compute(v, after, UiClock.quietMs(), true)))
+                    .put("ms", SystemClock.uptimeMillis() - started)
+            }
+            else -> throw err("BAD_REQUEST", "op must be set|clear|submit|show|hide")
+        }
     }
 
     private fun press(params: JSONObject): JSONObject = locked {
@@ -578,14 +650,29 @@ class UiEngine private constructor() {
 
     private fun captureNow(): SnapshotView {
         val svc = service()
-        g += 1
         val cap = Capture.capture(svc, g, UiClock.events)
+        val sig = signature(cap.snapshot)
+        if (sig != lastSignature) {
+            g += 1
+            lastSignature = sig
+        }
         recycleHandles()
         handles = cap.handles
-        val bound = refs.bind(cap.snapshot)
+        val bound = refs.bind(cap.snapshot.copy(g = g))
         previous = view
         view = bound
         return bound
+    }
+
+    /** 页面指纹：只用来判断"这一代是否变化"，不参与 ref 绑定。 */
+    private fun signature(s: Snapshot): String {
+        val sb = StringBuilder(64 + s.nodes.size * 32)
+        sb.append(s.pkg).append('|').append(s.activity).append('|').append(s.keyboard).append('|').append(s.nodes.size)
+        for (n in s.nodes) {
+            sb.append('|').append(n.cls.hashCode()).append(',').append(n.text.hashCode())
+                .append(',').append(n.desc.hashCode()).append(',').append(n.bounds)
+        }
+        return sb.toString()
     }
 
     private fun recycleHandles() {
