@@ -77,7 +77,14 @@ mkdir -p "$CHROOT_HOME/control" "$CHROOT_HOME/state/ctl" "$CHROOT_HOME/state/gue
   "$CHROOT_HOME/snapshots" "$CHROOT_HOME/payload" "$CHROOT_HOME/rootfs-staging" || abort "cannot create $CHROOT_HOME"
 rm -f "$CHROOT_HOME/state/ctl/watchdog.disabled" || abort "cannot enable watchdog for this installation"
 
+_ttyd_down=0
+[ ! -e "$CHROOT_HOME/control/s6/ttyd/down" ] || _ttyd_down=1
 cp -af "$MODPATH/control/." "$CHROOT_HOME/control/" || abort "cannot copy control files"
+if [ "$_ttyd_down" -eq 1 ]; then
+  : >"$CHROOT_HOME/control/s6/ttyd/down" || abort "cannot preserve ttyd down state"
+else
+  rm -f "$CHROOT_HOME/control/s6/ttyd/down" || abort "cannot preserve ttyd enabled state"
+fi
 for _f in "$MODPATH"/bin/* "$MODPATH"/tools/bin/* "$MODPATH"/tools/libexec/*; do
   [ -f "$_f" ] || continue
   chmod 0755 "$_f" || abort "cannot make module tools executable"

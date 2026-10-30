@@ -47,6 +47,7 @@ dsh_status_run() {
   _last_good=$(dsh_read_line "$DSH_LAST_GOOD_FILE" 2>/dev/null || true)
   _url=$(dsh_read_line "$DSH_URL_FILE" 2>/dev/null || true)
   [ -n "$_url" ] || _url=$(dsh_status_file_value url 2>/dev/null || true)
+  _url=$(printf '%s\n' "$_url" | sed -E 's/([?&](token|access_token|password)=)[^& ]*/\1REDACTED/g')
   _started=$(dsh_status_file_value started 2>/dev/null || true)
   _purge_in_progress=0
   [ ! -e "$DSH_PURGE_MARKER" ] || _purge_in_progress=1

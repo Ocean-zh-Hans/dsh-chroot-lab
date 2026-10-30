@@ -85,7 +85,7 @@ tools/
 - 只有明确的镜像 e2fsck 失败才尝试一次 last-good；其他启动失败不抹掉当前系统。
 - `uninstall.sh` 保留用户数据，但先 stop/disable watchdog，再 stop holder；失败必须报错，不能带着活动挂载或 daemon 卸载。
 
-`DSH_SELINUXFS_MODE` 默认 `mask`；`ro` 只在 private namespace 新建只读 selinuxfs，禁止宿主 bind/remount。`DSH_BLOCK_ACCESS` 默认 `masked`，在 private namespace 遮住 `/dev/block`，只有显式 `full` 才放开；这不是对 `/proc/1/root` 或 `mknod` 的绝对防护。
+`DSH_SELINUXFS_MODE` 当前默认 `ro`，只在 private namespace 新建只读 selinuxfs，禁止宿主 bind/remount。`DSH_BLOCK_ACCESS` 当前默认 `ro`，但 `ro` 只是只读视图，不能阻止对设备节点的写入；默认仍保持 `ro` 以维持“全手机可读”，`masked` 仅显式可选，真正写保护靠 R4 人工门禁，`full` 仅显式 R4。
 
 ## 5. 工具链
 

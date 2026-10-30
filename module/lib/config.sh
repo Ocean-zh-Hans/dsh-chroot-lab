@@ -67,15 +67,15 @@ dsh_config_init() {
   : "${DSH_SYS:=/sys}"
   : "${DSH_IMAGE_SIZE_GB:=128}"
   : "${DSH_PROTECT_CRITICAL:=1}"
-  : "${DSH_SELINUXFS_MASK:=1}"
+  : "${DSH_SELINUXFS_MASK:=0}"
   if [ "${DSH_SELINUXFS_MODE+x}" != x ]; then
     if dsh_bool "$DSH_SELINUXFS_MASK"; then
       DSH_SELINUXFS_MODE=mask
     else
-      DSH_SELINUXFS_MODE=rw
+      DSH_SELINUXFS_MODE=ro
     fi
   fi
-  : "${DSH_BLOCK_ACCESS:=masked}"
+  : "${DSH_BLOCK_ACCESS:=ro}"
   : "${DSH_SYSTEM_RW:=0}"
   : "${DSH_APPLY:=0}"
   : "${DSH_HOST_ROOT:=}"
@@ -127,7 +127,7 @@ dsh_config_init() {
 
 dsh_config_check_paths() {
   _rc=0
-  for _p in "$DSH_ROOT" "$DSH_IMAGE_DIR" "$DSH_IMAGE" "$DSH_ROOTFS_DIR" "$DSH_GUEST_TMP" "$DSH_WORKSPACE_DIR"; do
+  for _p in "$DSH_ROOT" "$DSH_IMAGE_DIR" "$DSH_IMAGE" "$DSH_ROOTFS_DIR" "$DSH_TMP" "$DSH_GUEST_TMP" "$DSH_WORKSPACE_DIR"; do
     if ! dsh_is_abs "$_p"; then
       dsh_err "path must be absolute: $_p"
       _rc=1
@@ -150,6 +150,17 @@ dsh_config_check_paths() {
     dsh_err "image directory must not equal the media or data root"
     _rc=1
   fi
+  case $DSH_IMAGE in
+  "$DSH_IMAGE_DIR"/*) ;;
+  *)
+    dsh_err "image must live under DSH_IMAGE_DIR: $DSH_IMAGE"
+    _rc=1
+    ;;
+  esac
+  if [ -L "$DSH_ROOTFS_DIR" ]; then
+    dsh_err "rootfs mountpoint must not be a symlink: $DSH_ROOTFS_DIR"
+    _rc=1
+  fi
   case $DSH_SELINUXFS_MODE in
   mask | ro | rw) ;;
   *)
@@ -158,7 +169,7 @@ dsh_config_check_paths() {
     ;;
   esac
   case $DSH_BLOCK_ACCESS in
-  masked | full) ;;
+  masked | ro | full) ;;
   *)
     dsh_err "invalid block access mode: $DSH_BLOCK_ACCESS"
     _rc=1

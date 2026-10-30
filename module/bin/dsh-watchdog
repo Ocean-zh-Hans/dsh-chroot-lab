@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # shellcheck shell=sh disable=SC3043,SC2329
-# Host watchdog: identity/loop/DSH-health/SELinux checks and delegated cleanup.
+# Host watchdog: identity/loop/DSH-health checks and delegated cleanup.
 # It never directly mounts/unmounts; dsh-ctl owns resource operations.
 
 set -u
@@ -32,6 +32,26 @@ if [ "${1:-}" = _lifecycle-claimed ]; then
   shift
 fi
 
+# Return every loop device attached to any rootfs image we own, except the
+# optional live holder loop. This covers pre-install/pre-restore backups and
+# snapshot images, not just $DSH_IMAGE.
+dsh_watchdog_all_image_loops() {
+  _exclude=$1
+  for _img in "$DSH_IMAGE" "$DSH_IMAGE_DIR"/rootfs*.img "$DSH_IMAGE_DIR"/snapshots/rootfs-*.img; do
+    [ -f "$_img" ] || continue
+    _attached_list=$(dsh_loop_attached_images "$_img") || {
+      dsh_warn "watchdog: cannot query image loops: $_img"
+      return 1
+    }
+    for _attached in $_attached_list; do
+      [ -n "$_attached" ] || continue
+      if [ -z "$_exclude" ] || ! dsh_loop_same_device "$_attached" "$_exclude"; then
+        printf '%s\n' "$_attached"
+      fi
+    done
+  done
+}
+
 dsh_watchdog_residual_check() {
   local _attached _loop _mounted=0 _rc=0
   _loop=$(dsh_read_line "$DSH_LOOP_FILE" 2>/dev/null || true)
@@ -39,7 +59,7 @@ dsh_watchdog_residual_check() {
     dsh_warn "watchdog: recorded loop remains while inactive: $_loop"
     _rc=1
   }
-  _attached=$(dsh_loop_attached_images "$DSH_IMAGE") || {
+  _attached=$(dsh_watchdog_all_image_loops "") || {
     dsh_warn "watchdog: cannot query image loop attachments"
     return 1
   }
@@ -68,14 +88,12 @@ dsh_watchdog_residual_check() {
 }
 
 dsh_watchdog_once() {
-  dsh_selinux_restore || return 1
   _state=$(dsh_state_get state 2>/dev/null || true)
   case $_state in
   starting | running | stopping | degraded) ;;
   *)
     dsh_watchdog_residual_check || return 1
-    [ "$(dsh_selinux_read || true)" = 1 ]
-    return $?
+    return 0
     ;;
   esac
 
@@ -86,7 +104,7 @@ dsh_watchdog_once() {
 
   if ! dsh_is_uint "$_pid" || ! dsh_proc_alive "$_pid"; then
     dsh_warn "watchdog: holder is not alive (state=$_state pid=${_pid:-none})"
-    DSH_APPLY=0 "$DSH_CTL" stop >/dev/null 2>&1 || dsh_warn "watchdog: cleanup incomplete"
+    DSH_RISK_BYPASS=1 DSH_APPLY=0 "$DSH_CTL" stop >/dev/null 2>&1 || dsh_warn "watchdog: cleanup incomplete"
     return 1
   fi
   if ! dsh_proc_validate_identity "$_pid" "$_st" "$_ns"; then
@@ -96,10 +114,10 @@ dsh_watchdog_once() {
   fi
   if [ -z "$_loop" ] || ! dsh_loop_matches_image "$_loop" "$DSH_IMAGE"; then
     dsh_err "watchdog: loop backing does not match the recorded device"
-    DSH_APPLY=0 "$DSH_CTL" stop >/dev/null 2>&1 || dsh_warn "watchdog: cleanup incomplete"
+    DSH_RISK_BYPASS=1 DSH_APPLY=0 "$DSH_CTL" stop >/dev/null 2>&1 || dsh_warn "watchdog: cleanup incomplete"
     return 1
   fi
-  _unexpected_loops=$(dsh_loop_unexpected_images "$_loop" "$DSH_IMAGE") || {
+  _unexpected_loops=$(dsh_watchdog_all_image_loops "$_loop") || {
     dsh_state_update state=degraded note=loop-query-failed
     return 1
   }
@@ -128,12 +146,6 @@ dsh_watchdog_once() {
     ;;
   esac
 
-  _enforce=$(dsh_read_line "$DSH_SYS/fs/selinux/enforce" 2>/dev/null || true)
-  if [ "$_enforce" != 1 ]; then
-    dsh_err "watchdog: global SELinux enforce=${_enforce:-unreadable}"
-    dsh_state_update state=recovery-required note=selinux-not-enforcing
-    return 1
-  fi
   return 0
 }
 
@@ -335,7 +347,7 @@ version | -V | --version)
   cat <<'EOF'
 Usage: dsh-watchdog [--version] --once | --daemon | --stop [--disable] | --enable | --status
 
---once      check holder identity, loop backing, and SELinux; clean up if needed
+--once      check holder identity, loop backing, and DSH health; clean up if needed
 --daemon    run the check every DSH_WATCHDOG_INTERVAL seconds (default 30)
 --stop      stop the owned daemon; --disable also prevents new claims
 --enable    allow new claims after a failed purge or explicit disable

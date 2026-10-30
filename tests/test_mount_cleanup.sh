@@ -106,4 +106,23 @@ MSYS=winsymlinks:nativestrict ln -s "$CASE/module-meta.json" "$CASE/module-link.
 if dsh_mount_bind_ro_file "$CASE/module-link.json" "$CASE/meta-target/link.json"; then fail 'symlink metadata source was accepted'; fi
 if dsh_mount_bind_ro_file "$CASE/module-meta.json" "$CASE/meta-target"; then fail 'directory metadata target was accepted'; fi
 
+# P2-2: a syntactically in-root target whose parent is a symlink escaping the
+# rootfs must be rejected before mkdir follows it into the host.
+symlink_root="$CASE/symlink-root"
+host_etc="$CASE/host-etc"
+mkdir -p "$symlink_root" "$host_etc"
+ln -s "$host_etc" "$symlink_root/etc"
+if DSH_ROOTFS_DIR="$symlink_root" dsh_mount_prepare_point "$symlink_root/etc/new-dir"; then
+  fail 'mountpoint through an escaping symlink was accepted'
+fi
+[ ! -e "$host_etc/new-dir" ] || fail 'escaping symlink created a host directory'
+
+# A symlink that stays inside the rootfs is still allowed.
+mkdir -p "$symlink_root/real"
+ln -s real "$symlink_root/link"
+if ! DSH_ROOTFS_DIR="$symlink_root" dsh_mount_prepare_point "$symlink_root/link/new-dir"; then
+  fail 'in-root symlink was rejected'
+fi
+[ -d "$symlink_root/real/new-dir" ] || fail 'in-root symlink target was not created'
+
 printf 'test_mount_cleanup: ok\n'

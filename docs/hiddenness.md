@@ -1,6 +1,6 @@
 # 应用层隐藏性模型
 
-- 日期：2026-10-26
+- 日期：2026-10-26；2026-10-30 按新读写模型修订
 - 目标定义（不是已达成的承诺）：**游戏、银行、Play Integrity、普通 root 检测 App 不会因为本模块的可见痕迹发现 root/异常**。
 - 不是：防恶意 root、防物理接触、防 chroot 内部 root、把 chroot 变成安全沙箱。
 - 用户明确：**不在乎 chroot 里藏什么，全开都行**；`/sdcard` 里 `ubuntu-rootfs` 这种名字本身不是封号理由，不为名字过度设计。
@@ -10,7 +10,7 @@
 | 信号 | 普通 App 能否看到 | 本模块怎么做 |
 |---|---|---|
 | 全局 `ro.debuggable`/`ro.secure`/`init.svc.*`/`persist.*` | 能（`getprop`） | **绝不改**；不 resetprop |
-| 全局 SELinux 是否 permissive | 通常不能直接读 `/sys/fs/selinux/enforce`（untrusted_app 有 neverallow）；特权/root 检测可能能 | 保持 Enforcing；不默认 `setenforce 0`；不靠 permissive |
+| 全局 SELinux 是否 permissive | DSH 不读取、不修改、不判断；App 层检测不属于本模块控制 | **不把 SELinux 当信号或门禁**；不运行 `getenforce`/`setenforce`，不保存 `selinux.orig` |
 | 应用自己的 `/proc/self/mountinfo` | 能 | 所有 chroot mount 在 private mount ns；App 看不到 |
 | `/sdcard` 目录名 | 能（有存储权限） | `ubuntu-rootfs`/`DSH` 可接受；不放 `magisk`/`kernelsu`/`su` 标记 |
 | `/sdcard/ubuntu-rootfs/rootfs.img` | 能（若目录可进） | 目录 0700 + `.nomedia`；低强度信号，不强制改名 |
@@ -19,17 +19,17 @@
 | `/data/data`、`/data/system` | 普通 App 不可读；chroot 内 root 可见 | 对 App 隐藏无影响；对完整性另说 |
 | `u:r:ksu:s0` 域 | App 看不到别的进程域 | 不是 App 隐藏问题；不写自定义域 |
 | `/proc/1/root` | App 不可读 | 安全边界问题，不是 App 检测面 |
-| `/dev/block` | App 不可读；chroot 内 root 可见 | 对 App 隐藏无影响；3A 保留 |
+| `/dev/block` | App 不可读；chroot 内 root 可见 | 默认提供只读设备节点；原始写只在显式 `DSH_BLOCK_ACCESS=full` 开放 |
 | root 进程名（s6/node/ttyd） | 受 `hidepid=invisible` 影响 | doctor 检查；本机已是 invisible |
 | 监听端口（DSH/ttyd 127.0.0.1） | App 可扫 localhost | 不是 root 信号；保持 loopback |
 | KSU 管理器/模块包名 | App 可通过 PackageManager 看到管理器包；模块目录不可读 | 保持 `selinux_hide`/`mount_hide`/`avc_spoof`/`kernel_umount` |
 
 ## 2. 必须守住的“应用可见”不变量
 
-1. **全局 SELinux 保持 Enforcing**：不默认 `setenforce 0`；`--permissive` 仅显式 break-glass。
+1. **DSH 不读取、不修改、不判断全局 SELinux**：不运行 `getenforce`/`setenforce`，不把 SELinux 状态作为启动/停止/doctor/watchdog 条件。
 2. **不改全局 prop**：不 `resetprop` 改 `ro.*`/`init.svc.*`/`persist.*`。
 3. **所有 chroot mount 在 private mount namespace**：`unshare --mount --propagation private`；每个 rbind 后 `make-rprivate`；绝不全局 mount/overlay。
-4. **selinuxfs 默认遮罩**：private ns tmpfs；也可显式选择 `DSH_SELINUXFS_MODE=ro` 新建只读 selinuxfs，禁止宿主 bind/remount。`/sys` 其余保持 rw（2B），但不把全局 SELinux 写权限交给 chroot。
+4. **selinuxfs 默认只读可见**：private ns 内新建只读 selinuxfs（`DSH_SELINUXFS_MODE=ro`）；`mask` 仅显式选项，禁止宿主 bind/remount。`/sys` 其余保持 rw（2B）。
 5. **KSU 隐藏特性保持启用**：`selinux_hide`/`mount_hide`/`avc_spoof`/`kernel_umount`。
 6. **服务只监听 loopback**：DSH/ttyd 绑定 127.0.0.1。
 7. **宿主 `/proc` hidepid=invisible**：doctor 检查；不同 ROM 可能不同。
@@ -47,8 +47,8 @@
 
 ## 4. 风险与边界
 
-- **2B `/sys` rw**：除 selinuxfs 默认遮罩或显式只读模式外，chroot 内 root 仍可改 cgroup/kernel tunables；这是能力选择，不是 App 可见面。
-- **3A `/dev` rbind**：默认遮住 `/dev/block` 以减少粗心路径误写；显式 `DSH_BLOCK_ACCESS=full` 仍可写块设备，可能破坏系统。
+- **2B `/sys` rw**：除 selinuxfs 默认只读视图外，chroot 内 root 仍可改 cgroup/kernel tunables；这是能力选择，不是 App 可见面。
+- **3A `/dev` rbind**：默认提供 `/dev/block` 只读设备节点；显式 `DSH_BLOCK_ACCESS=full` 才可写块设备，可能破坏系统。
 - **5A 全部在 chroot**：chroot 内 root 有 `/proc/1/root` 逃逸；`mknod`、直接 syscall 和其他宿主入口仍可能访问块设备，路径遮罩不是安全边界。
 - **`u:r:ksu:s0`**：permissive allow-all；全局 Enforcing 不约束它；不能拿它当安全/隐藏保证。
 - **App 检测**：银行/游戏可能使用 Play Integrity、KeyStore、包扫描、mount 扫描、进程扫描、端口扫描；本模块只保证不改全局可见信号，不保证未知检测永远通过。
@@ -63,7 +63,7 @@ full 设计可以保留，前提是：
 - `/sdcard` 不出现明显 root 标记；
 - 不把“名字/loop/内部路径”当硬隐藏指标。
 
-需要重点防范的是：**全局 permissive、全局 prop 改动、全局 mount/overlay、可被 App 读到的包/进程/端口**。这些只是已知检测面的一部分，不是完整列表。
+需要重点防范的是：**全局 prop 改动、全局 mount/overlay、可被 App 读到的包/进程/端口**。SELinux 状态不再由本模块读取或修改；这些只是已知检测面的一部分，不是完整列表。
 
 Console 和 agent 都是可见的可选 App，默认模块不安装它们，也不添加 `system/priv-app` overlay。只有用户明确选择安装时才增加包可见面；是否影响银行/游戏/Play Integrity 必须实测，不能预设“可见 App 一定无影响”。
 

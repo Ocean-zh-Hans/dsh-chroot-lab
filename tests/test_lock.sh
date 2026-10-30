@@ -80,6 +80,13 @@ dsh_lock_acquire || fail "stale lock was not reclaimed"
 assert_eq "$(cat "$DSH_LOCK_DIR/pid")" "$$"
 dsh_lock_release
 
+# P2-6: a live PID with missing identity must not be treated as a live lock.
+mkdir "$DSH_LOCK_DIR"
+printf '%s\n' "$$" >"$DSH_LOCK_DIR/pid"
+dsh_lock_acquire || fail "lock with missing identity was not reclaimed"
+assert_eq "$(cat "$DSH_LOCK_DIR/pid")" "$$"
+dsh_lock_release
+
 REAL_MV=$(command -v mv)
 export REAL_MV
 export DSH_LOCK_DIR

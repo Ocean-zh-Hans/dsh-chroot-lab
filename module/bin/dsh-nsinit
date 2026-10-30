@@ -239,6 +239,15 @@ masked)
     dsh_mount_mask_tmpfs "$ROOT/dev/block" || exit 5
   fi
   ;;
+ro)
+  [ ! -L "$ROOT/dev/block" ] || {
+    dsh_err "refusing to read-only bind a /dev/block symlink"
+    exit 5
+  }
+  if [ -d "$ROOT/dev/block" ]; then
+    dsh_mount_bind_ro_path "${DSH_HOST_ROOT:-}/dev/block" "$ROOT/dev/block" || exit 5
+  fi
+  ;;
 full) ;;
 esac
 dsh_mount_one devpts devpts "$ROOT/dev/pts" "newinstance,ptmxmode=0666,mode=620" || exit 5
@@ -383,8 +392,8 @@ dsh_mount_bind_ro_file "$DSH_GUEST_DIR/module.json" "$ROOT/run/dsh/module.json" 
 dsh_mount_bind_ro_file "$DSH_GUEST_DIR/module.sha256" "$ROOT/run/dsh/module.sha256" || exit 5
 dsh_mount_bind "$DSH_LOG_DIR" "$ROOT/var/log/dsh" || exit 5
 
-# Mask the configured paths, not only their defaults. These masks reduce
-# accidental writes; guest root can still bypass them through raw devices.
+# Keep DSH internals/module/image data readable but not writable. This is an
+# integrity guard, not a confidentiality boundary: the guest root is host root.
 _nsinit_root_real=$(readlink -f "${DSH_HOST_ROOT:-}$DSH_ROOT" 2>/dev/null || true)
 _nsinit_image_real=$(readlink -f "${DSH_HOST_ROOT:-}$DSH_IMAGE_DIR" 2>/dev/null || true)
 _nsinit_module_real=$(readlink -f "$DSH_MODULE_DIR" 2>/dev/null || true)
@@ -402,12 +411,32 @@ _nsinit_image_relative=${DSH_IMAGE_DIR#"$DSH_MEDIA"/}
   fi
 } | while IFS= read -r _p; do
   [ -n "$_p" ] || continue
-  dsh_mount_mask_tmpfs "$ROOT$_p" || exit 1
+  _src=${DSH_HOST_ROOT:-}$_p
+  [ -e "$_src" ] || _src=$_p
+  dsh_mount_bind_ro_path "$_src" "$ROOT$_p" || exit 1
 done || exit 5
 
-# Network config inside the rootfs.
+# Network config inside the rootfs. Resolve existing /etc paths first: a
+# rootfs symlink such as /etc -> /etc must not redirect these writes to the
+# host. Missing paths are created only after the parent resolves inside ROOT.
+dsh_mount_realpath_under "$ROOT/etc" "$ROOT" || {
+  dsh_err "refusing symlinked /etc outside rootfs: $ROOT/etc"
+  exit 5
+}
+[ ! -L "$ROOT/etc" ] || {
+  dsh_err "refusing symlinked /etc: $ROOT/etc"
+  exit 5
+}
 mkdir -p "$ROOT/etc" || exit 5
 for _f in resolv.conf hosts; do
+  dsh_mount_realpath_under "$ROOT/etc/$_f" "$ROOT" || {
+    dsh_err "refusing symlink outside rootfs: $ROOT/etc/$_f"
+    exit 5
+  }
+  [ ! -L "$ROOT/etc/$_f" ] || {
+    dsh_err "refusing symlinked network file: $ROOT/etc/$_f"
+    exit 5
+  }
   if [ -e "$ROOT/etc/$_f" ] && [ ! -e "$ROOT/etc/$_f.dsh-orig" ]; then
     cp -a "$ROOT/etc/$_f" "$ROOT/etc/$_f.dsh-orig" 2>/dev/null || true
   fi
@@ -421,6 +450,14 @@ if [ -d "$ROOT/opt/dsh-control/s6" ]; then
   cp -a "$ROOT/opt/dsh-control/s6/." "$ROOT/run/s6/" || exit 5
 fi
 if [ -f "$ROOT/opt/dsh-control/profile.d/dsh-android.sh" ]; then
+  dsh_mount_realpath_under "$ROOT/etc/profile.d" "$ROOT" || {
+    dsh_err "refusing symlinked /etc/profile.d outside rootfs"
+    exit 5
+  }
+  [ ! -L "$ROOT/etc/profile.d" ] || {
+    dsh_err "refusing symlinked /etc/profile.d"
+    exit 5
+  }
   mkdir -p "$ROOT/etc/profile.d" || true
   cp -a "$ROOT/opt/dsh-control/profile.d/dsh-android.sh" "$ROOT/etc/profile.d/dsh-android.sh" 2>/dev/null || true
 fi

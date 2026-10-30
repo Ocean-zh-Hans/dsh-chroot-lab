@@ -53,7 +53,6 @@ mount -t overlay overlay -o lowerdir=/$_part,upperdir='$_dir/upper',workdir='$_d
     dsh_err "system-rw overlay failed: /$_part"
     return 1
   }
-  printf '%s\n' "$_part" >>"$DSH_CTL_DIR/system-rw.list" 2>/dev/null || true
   return 0
 }
 

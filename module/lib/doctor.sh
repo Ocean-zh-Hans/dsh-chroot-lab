@@ -41,32 +41,6 @@ dsh_doc_check_root() {
   fi
 }
 
-dsh_doc_check_selinux() {
-  _f=$DSH_SYS/fs/selinux/enforce
-  if [ -r "$_f" ]; then
-    _v=$(dsh_read_line "$_f" 2>/dev/null || true)
-    if [ "$_v" = 1 ]; then
-      dsh_doc_pass "global SELinux enforce=1"
-    else
-      dsh_doc_fail "global SELinux enforce=${_v:-unreadable}, expected 1"
-    fi
-  else
-    dsh_doc_fail "cannot read $_f"
-  fi
-
-  _ctx_f=$DSH_PROC/self/attr/current
-  if [ -r "$_ctx_f" ]; then
-    _ctx=$(dsh_read_line "$_ctx_f" 2>/dev/null || true)
-    case $_ctx in
-    u:r:ksu:s0 | u:r:magisk:s0) dsh_doc_pass "domain is $_ctx (root-manager domain; not a security boundary)" ;;
-    '') dsh_doc_warn "domain context is empty" ;;
-    *) dsh_doc_warn "domain is $_ctx (expected u:r:ksu:s0 on this device)" ;;
-    esac
-  else
-    dsh_doc_warn "cannot read $_ctx_f"
-  fi
-}
-
 dsh_doc_check_tmp() {
   if [ -d "$DSH_TMP" ] && [ -w "$DSH_TMP" ]; then
     dsh_doc_pass "host tmp exists and is writable: $DSH_TMP"
@@ -450,7 +424,6 @@ dsh_doctor_run() {
 
   dsh_config_check_paths || dsh_doc_fail "configuration paths are invalid"
   dsh_doc_check_root
-  dsh_doc_check_selinux
   dsh_doc_check_tmp
   dsh_doc_check_layout
   dsh_doc_check_media

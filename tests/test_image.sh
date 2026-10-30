@@ -14,14 +14,29 @@ assert_contains "$out" "installed image:"
 assert_eq "$(cat "$DSH_IMAGE")" "first-install"
 rm -f "$DSH_IMAGE"
 
-out=$("$DSH_CTL" image create --source "$DSH_ROOT" --size=1M --apply)
+SOURCE="$CASE/rootfs-source"
+mkdir -p "$SOURCE/etc" "$SOURCE/usr" "$SOURCE/bin"
+printf 'rootfs-fixture\n' >"$SOURCE/etc/os-release"
+out=$("$DSH_CTL" image create --source "$SOURCE" --size=1M --apply)
 assert_contains "$out" "created image:"
 [ -f "$DSH_IMAGE" ] || fail "image not created"
+set +e
+out=$("$DSH_CTL" image create --source / --size=1M --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -ne 0 ] || fail "image create accepted / as source"
+assert_contains "$out" "non-rootfs"
+set +e
+out=$("$DSH_CTL" image create --source "$SOURCE" --size=1G2M --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -ne 0 ] || fail "image create accepted malformed size"
+assert_contains "$out" "invalid image size"
 [ "$(stat -c %a "$DSH_IMAGE")" = "600" ] || fail "image mode is not 600"
 initial_size=$(stat -c %s "$DSH_IMAGE")
 
 set +e
-out=$("$DSH_CTL" image create --source "$DSH_ROOT" --size=1M 2>&1)
+out=$("$DSH_CTL" image create --source "$SOURCE" --size=1M 2>&1)
 rc=$?
 set -e
 assert_eq "$rc" 3
@@ -50,5 +65,18 @@ rc=$?
 set -e
 [ "$rc" -ne 0 ] || fail "install accepted a bad checksum"
 assert_eq "$(cat "$DSH_IMAGE")" "verified image"
+
+set +e
+out=$("$DSH_CTL" image create --source "$SOURCE" --size=1M 2>&1)
+rc=$?
+set -e
+assert_eq "$rc" 3
+assert_contains "$out" "source-size:"
+set +e
+out=$("$DSH_CTL" image install --source "$source_img" 2>&1)
+rc=$?
+set -e
+assert_eq "$rc" 3
+assert_contains "$out" "sha256:"
 
 printf 'test_image: ok\n'

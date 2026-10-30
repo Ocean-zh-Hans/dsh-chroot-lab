@@ -45,6 +45,7 @@ case "${1:-}" in
       exit 1
     fi
     : >"$DSH_TEST_ROOT/attach-called"
+    printf '%s\n' "$DSH_TEST_LOOP" >"$_state"
     printf '%s\n' "$DSH_TEST_LOOP"
     ;;
   "$DSH_TEST_ROOT/free-loop")
@@ -130,5 +131,20 @@ out=$(dsh_loop_attach "$DSH_IMAGE")
 unset DSH_LOOP_CANDIDATES DSH_TEST_FIND_BUSY DSH_TEST_ALLOW_NON_DEV_LOOP DSH_TEST_TOYBOX
 assert_eq "$out" "$CASE/free-loop"
 [ -f "$CASE/explicit-loop" ] || fail "verified free candidate was not attached explicitly"
+
+# P2-3: if the loop record cannot be written, the just-attached loop must be
+# detached immediately so stop/recover is not left without a loop identity.
+rm -f "$CASE/losetup.state" "$CASE/detached"
+rm -rf "$CASE/no-such-dir"
+export DSH_TEST_ALLOW_NON_DEV_LOOP=1
+set +e
+out=$(dsh_loop_attach_record "$DSH_IMAGE" "$CASE/no-such-dir/record" 2>&1)
+rc=$?
+set -e
+unset DSH_TEST_ALLOW_NON_DEV_LOOP
+[ "$rc" -ne 0 ] || fail "loop record write failure returned success"
+assert_contains "$out" "cannot record loop"
+[ ! -e "$CASE/losetup.state" ] || fail "loop was not detached after record write failure"
+assert_contains "$(cat "$CASE/detached")" "$DSH_TEST_LOOP"
 
 printf 'test_loop: ok\n'

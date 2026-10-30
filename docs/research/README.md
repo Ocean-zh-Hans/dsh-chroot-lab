@@ -75,3 +75,7 @@
 - 子代理通道已单测可用；并发过多会失败，按 2 个一批派发，失败后单发重试。
 - 每个子代理结束后检查：文件是否存在、行数是否 >=300、引用是否可解析、是否修改了代码或真机。
 - 最终汇总到 docs/research/SYNTHESIS.md（待所有组完成后写）：跨项目共识、分歧、对我们的 P0 建议。
+
+## 6. Chroot Core 专项学习（2026-10-30）
+
+- `chroot-v2-study.md`：`knowledge/` 与 `references/` 的 chroot/mount/loop/SELinux/服务监督专项学习记录；只读研究，不是代码改动。

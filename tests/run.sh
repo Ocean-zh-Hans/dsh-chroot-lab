@@ -7,6 +7,7 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
 tests=(
   "$ROOT/tests/test_cli.sh"
+  "$ROOT/tests/test_risk.sh"
   "$ROOT/tests/test_install.sh"
   "$ROOT/tests/test_plan.sh"
   "$ROOT/tests/test_doctor.sh"
@@ -32,6 +33,7 @@ tests=(
   "$ROOT/tests/test_image.sh"
   "$ROOT/tests/test_dsh_run.sh"
   "$ROOT/tests/test_android_env.sh"
+  "$ROOT/tests/test_config.sh"
 )
 
 for t in "${tests[@]}"; do

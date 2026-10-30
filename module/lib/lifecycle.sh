@@ -3,53 +3,6 @@
 # All commands are gated: start only runs when the caller passed --apply.
 # doctor/plan/status never attach, mount, unmount, or detach anything.
 
-dsh_selinux_read() {
-  _v=$(dsh_read_line "$DSH_SYS/fs/selinux/enforce" 2>/dev/null || true)
-  dsh_is_uint "$_v" && printf '%s\n' "$_v"
-}
-
-dsh_selinux_set() {
-  _target=$1
-  if command -v setenforce >/dev/null 2>&1; then
-    setenforce "$_target"
-  else
-    /system/bin/setenforce "$_target"
-  fi
-}
-
-dsh_selinux_save_and_disable() {
-  _orig=$(dsh_selinux_read || true)
-  if [ -z "$_orig" ]; then
-    dsh_err "cannot read SELinux enforce state; refusing --permissive"
-    return 1
-  fi
-  printf '%s\n' "$_orig" >"$DSH_CTL_DIR/selinux.orig" || return 1
-  dsh_warn "break-glass: setenforce 0; stop will restore enforce=$_orig"
-  dsh_selinux_set 0 || {
-    rm -f "$DSH_CTL_DIR/selinux.orig"
-    dsh_err "setenforce 0 failed"
-    return 1
-  }
-}
-
-dsh_selinux_restore() {
-  [ -f "$DSH_CTL_DIR/selinux.orig" ] || return 0
-  _orig=$(dsh_read_line "$DSH_CTL_DIR/selinux.orig" 2>/dev/null || true)
-  case $_orig in
-  0 | 1) ;;
-  *)
-    dsh_warn "invalid saved SELinux state: ${_orig:-empty}"
-    return 1
-    ;;
-  esac
-  dsh_selinux_set "$_orig" || {
-    dsh_err "failed to restore SELinux enforce=$_orig"
-    return 1
-  }
-  rm -f "$DSH_CTL_DIR/selinux.orig"
-  dsh_log "SELinux enforce restored to $_orig"
-}
-
 dsh_nsenter_supports_fd() {
   _nsenter=$(dsh_tool_path nsenter || true)
   [ -n "$_nsenter" ] || return 1
@@ -232,11 +185,6 @@ dsh_recover_stale_locked() {
     dsh_state_update state=recovery-required note=recovery-prepare-failed
     return 1
   }
-  dsh_selinux_restore || _rc=1
-  [ "$(dsh_selinux_read || true)" = 1 ] || {
-    dsh_err "global SELinux is not enforcing"
-    _rc=1
-  }
   if [ "$_rc" -eq 0 ]; then
     dsh_clear_runtime_files || _rc=1
     dsh_recovery_clear || _rc=1
@@ -317,11 +265,6 @@ dsh_recover_dead_locked() {
       _rc=1
     fi
   fi
-  dsh_selinux_restore || _rc=1
-  [ "$(dsh_selinux_read || true)" = 1 ] || {
-    dsh_err "global SELinux is not enforcing"
-    _rc=1
-  }
   if [ "$_rc" -eq 0 ]; then
     dsh_clear_runtime_files || _rc=1
     dsh_recovery_clear || _rc=1
@@ -337,22 +280,20 @@ dsh_recover_dead_locked() {
 
 dsh_start_usage() {
   cat <<'EOF'
-Usage: dsh-ctl start [--protect-critical=off] [--permissive] [--apply]
+Usage: dsh-ctl start [--protect-critical=off] [--apply]
 
 --apply is mandatory in P2; without it the command only prints what would run.
---permissive is an explicit break-glass; stop/watchdog restores the saved state.
+SELinux is intentionally not read, changed, or used as a gate.
 EOF
 }
 
 dsh_start_attempt() {
   _protect=$DSH_PROTECT_CRITICAL
-  _permissive=0
   _apply=0
   for _arg in "$@"; do
     case $_arg in
     --protect-critical=off | --protect-critical=0) _protect=0 ;;
     --protect-critical=on | --protect-critical=1) _protect=1 ;;
-    --permissive) _permissive=1 ;;
     --apply) _apply=1 ;;
     -h | --help)
       dsh_start_usage
@@ -393,9 +334,6 @@ dsh_start_attempt() {
     return 1
   }
   DSH_START_ACTIVE=1
-  if [ "$_permissive" -eq 1 ]; then
-    dsh_selinux_save_and_disable || return 1
-  fi
 
   dsh_state_update state=starting note=
   rm -f "$DSH_PID_FILE" "$DSH_STARTTIME_FILE" "$DSH_BOOT_ID_FILE" "$DSH_NS_FILE" "$DSH_URL_FILE" "$DSH_HEALTH_FILE" "$DSH_LOOP_FILE" \
@@ -421,11 +359,10 @@ dsh_start_attempt() {
     dsh_state_update state=failed note=recovery-prepare-failed
     return 1
   }
-  _loop=$(dsh_loop_attach "$DSH_IMAGE") || {
-    dsh_state_update state=failed note=losetup-failed
+  _loop=$(dsh_loop_attach_record "$DSH_IMAGE" "$DSH_LOOP_FILE") || {
+    dsh_state_update state=failed note=loop-record-failed
     return 1
   }
-  printf '%s\n' "$_loop" >"$DSH_LOOP_FILE" || return 1
   dsh_log "image attached: $_loop"
 
   _unshare=$(dsh_tool_path unshare || true)
@@ -520,10 +457,8 @@ dsh_start_locked() {
   if [ "$DSH_START_ACTIVE" = 1 ] && [ "$_rc" -ne 0 ]; then
     _state=$(dsh_state_get state 2>/dev/null || true)
     if [ "$_state" = degraded ]; then
-      if ! dsh_selinux_restore || [ "$(dsh_selinux_read || true)" != 1 ]; then
-        dsh_state_update state=recovery-required note=selinux-restore-failed
-        return 4
-      fi
+      # The holder was deliberately left alive for diagnosis; do not tear it
+      # down from the failure-cleanup path. SELinux is not part of lifecycle.
       DSH_START_ACTIVE=0
       return "$_rc"
     fi
@@ -554,6 +489,22 @@ dsh_start() {
   _rc=$?
   dsh_lock_release
   return "$_rc"
+}
+
+# Start the host watchdog after a successful manual start. service.sh starts
+# it for boot starts; this covers `dsh-ctl start --apply` when autostart was
+# off. A live owner is left alone.
+dsh_watchdog_start_bg() {
+  [ "${DSH_TEST_SKIP_WATCHDOG:-0}" = 1 ] && return 0
+  [ -x "$DSH_WATCHDOG" ] || return 0
+  _wd_owner=$DSH_CTL_DIR/watchdog.owner
+  _wd_pid=$(dsh_read_line "$_wd_owner/pid" 2>/dev/null || true)
+  if dsh_is_uint "$_wd_pid" && dsh_proc_alive "$_wd_pid"; then
+    return 0
+  fi
+  mkdir -p "$DSH_LOG_DIR" 2>/dev/null || true
+  (setsid "$DSH_WATCHDOG" --daemon >>"$DSH_LOG_DIR/watchdog.log" 2>&1 &) || return 1
+  return 0
 }
 
 dsh_stop_locked() {

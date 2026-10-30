@@ -1,5 +1,7 @@
 # DSH chroot 控制面与恢复
 
+> 2026-10-30：`docs/plan-v2.md` 已把默认读模型改为“读全开、`selinuxfs=ro`、`/dev/block=ro`”；本文件下表仍描述当前运行时代码，目标值在 plan-v2 的 P1 实现后切换。
+
 本目录在 guest 中以只读方式挂载为 `/opt/dsh-control`。模块目录、控制目录和活动镜像仍默认遮蔽；本目录可见不代表宿主模块目录完全开放。
 
 ## 自检信息
@@ -31,9 +33,9 @@
 | `DSH_MEDIA` | `/data/media/0` | 配置文件；启动 | Android 媒体根目录。 |
 | `DSH_IMAGE_SIZE_GB` | `128` | 配置文件；创建镜像时 | 稀疏镜像表观大小，不是立即占用的磁盘空间。 |
 | `DSH_PROTECT_CRITICAL` | `1` | 配置文件；启动 | 保护 `/metadata`、persist、qmcs 等递归只读。关闭会扩大误写面。 |
-| `DSH_SELINUXFS_MODE` | `mask` | 配置文件；启动 | `mask`=遮蔽；`ro`=private ns 新建只读 selinuxfs；`rw`=沿用可写视图，可能改全局 SELinux，风险最高。 |
-| `DSH_SELINUXFS_MASK` | `1` | 配置文件；旧兼容 | 仅在未设置 MODE 时映射 mask/rw；新配置使用 MODE。 |
-| `DSH_BLOCK_ACCESS` | `masked` | 配置文件；启动 | 默认遮蔽 `/dev/block`；`full` 开放全部块设备，误写可损坏手机。遮罩不是对恶意 root 的绝对安全边界。 |
+| `DSH_SELINUXFS_MODE` | `ro`（当前默认） | 配置文件；启动 | `mask`=遮蔽；`ro`=private ns 新建只读 selinuxfs；`rw`=沿用可写视图。plan-v2 目标默认 `ro`。 |
+| `DSH_SELINUXFS_MASK` | `0` | 配置文件；旧兼容 | 仅在未设置 MODE 时映射 mask/rw；新配置使用 MODE。 |
+| `DSH_BLOCK_ACCESS` | `ro`（当前默认，可读不隐藏；ro 不是写保护） | 配置文件；启动 | `ro`=只读视图；`masked`=显式遮蔽；`full`=开放全部块设备，误写可损坏手机；真正写保护靠 R4 人工门禁。 |
 | `DSH_SYSTEM_RW` | `0` | 配置文件/控制器 | system 可写不是默认能力；不同 ROM/AVB 兼容性未验证。 |
 | `DSH_APPLY` | `0` | 控制器环境 | mount 产生的操作要求每次显式 `--apply`。不要直接裸跑 nsinit。 |
 | `DSH_LOOP` | 控制器分配 | 启动 holder 时 | 当前镜像的 loop 设备。不得手工替换记录或 detach 陌生设备。 |

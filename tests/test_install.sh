@@ -98,6 +98,15 @@ assert_eq "$(cat "$case_dir/root/state/workspace/marker")" 'preserve-workspace'
 assert_eq "$(cat "$case_dir/root/state/dsh-home/workspace/marker")" 'keep-legacy'
 rm -rf "$case_dir/root/state/dsh-home/workspace"
 
+# P3-4: module update must preserve the host ttyd down state.
+mkdir -p "$case_dir/root/control/s6/ttyd"
+: >"$case_dir/root/control/s6/ttyd/down"
+DSH_TEST_ROOT="$case_dir" MODPATH="$case_dir/module" DSH_ROOT="$case_dir/root" sh -c '. "$1/customize.sh"' sh "$case_dir/module" >/dev/null 2>&1
+[ -f "$case_dir/root/control/s6/ttyd/down" ] || fail 'update re-enabled a disabled ttyd'
+rm -f "$case_dir/root/control/s6/ttyd/down"
+DSH_TEST_ROOT="$case_dir" MODPATH="$case_dir/module" DSH_ROOT="$case_dir/root" sh -c '. "$1/customize.sh"' sh "$case_dir/module" >/dev/null 2>&1
+[ ! -e "$case_dir/root/control/s6/ttyd/down" ] || fail 'update disabled an enabled ttyd'
+
 cat >"$case_dir/module/bin/dsh-watchdog" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$DSH_TEST_ROOT/uninstall.log"

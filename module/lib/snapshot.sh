@@ -126,17 +126,53 @@ dsh_snapshot_validate_archive() {
     return 1
   }
   tar -tvzf "$1" 2>/dev/null | awk '
+    function normalize(path,    n, i, a, out) {
+      n = split(path, a, "/")
+      out = ""
+      for (i = 1; i <= n; i++) {
+        if (a[i] == "" || a[i] == ".") continue
+        if (a[i] == "..") {
+          if (out == "") return ""
+          if (index(out, "/")) sub(/\/[^\/]*$/, "", out)
+          else out = ""
+          continue
+        }
+        if (out == "") out = a[i]
+        else out = out "/" a[i]
+      }
+      return out
+    }
     NF < 6 { bad = 1; next }
     {
       type = substr($1, 1, 1)
       $1 = $2 = $3 = $4 = $5 = ""
       sub(/^ +/, "", $0)
-      if (type == "l") sub(/ -> .*/, "", $0)
-      if (index($0, " link to ")) {
-        target = $0
-        sub(/^.* link to /, "", target)
-        if (target ~ /^\// || target ~ /(^|\/)\.\.(\/|$)/) bad = 1
-        sub(/ link to .*/, "", $0)
+      target = ""
+      if (type == "l" || type == "h") {
+        if (index($0, " -> ")) {
+          target = $0
+          sub(/^.* -> /, "", target)
+          sub(/ -> .*$/, "", $0)
+        } else if (index($0, " link to ")) {
+          target = $0
+          sub(/^.* link to /, "", target)
+          sub(/ link to .*$/, "", $0)
+        }
+      }
+      if (type == "l" && target == "") bad = 1
+      if (target != "") {
+        if (target ~ /^\// || index(target, "\\") != 0) {
+          bad = 1
+        } else if (type == "h") {
+          resolved = normalize(target)
+          if (resolved != "state" && resolved !~ /^state\//) bad = 1
+        } else {
+          dir = $0
+          sub(/\/[^\/]*$/, "", dir)
+          if (dir == $0) dir = ""
+          resolved = normalize(dir "/" target)
+          if (resolved != "state" && resolved !~ /^state\//) bad = 1
+        }
       }
       if ($0 ~ /^\// || $0 ~ /(^|\/)\.\.(\/|$)/) bad = 1
     }

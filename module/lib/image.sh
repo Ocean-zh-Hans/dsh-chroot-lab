@@ -48,7 +48,16 @@ dsh_image_create_locked() {
     ;;
   esac
   case $_size in
-  '' | *[!0-9KMGkmg]*)
+  [0-9]*[GgMmKk])
+    _size_num=${_size%?}
+    case $_size_num in
+    '' | *[!0-9]*)
+      dsh_err "invalid image size: $_size"
+      return 2
+      ;;
+    esac
+    ;;
+  *)
     dsh_err "invalid image size: $_size"
     return 2
     ;;
@@ -56,6 +65,16 @@ dsh_image_create_locked() {
   [ -d "$_source" ] || {
     dsh_err "staging rootfs missing: $_source"
     return 1
+  }
+  case $_source in
+  / | /data | /data/adb | /data/media | /mnt | /storage | /sdcard | "$DSH_ROOT" | "$DSH_IMAGE_DIR")
+    dsh_err "refusing obvious non-rootfs source: $_source"
+    return 2
+    ;;
+  esac
+  [ -d "$_source/etc" ] && [ -d "$_source/usr" ] || {
+    dsh_err "source does not look like a rootfs (missing etc/usr): $_source"
+    return 2
   }
   [ ! -e "$DSH_IMAGE" ] || {
     dsh_err "image already exists: $DSH_IMAGE"
@@ -134,7 +153,9 @@ dsh_image_create() {
     shift
   done
   if [ "$_apply" -ne 1 ]; then
-    printf 'image: would create %s from %s (use --apply)\n' "$DSH_IMAGE" "$_source"
+    _preview_size=$(du -sk "$_source" 2>/dev/null | awk '{print $1 * 1024}')
+    [ -n "$_preview_size" ] || _preview_size=unknown
+    printf 'image: would create %s from %s\nsource-size: %s bytes\n(use --apply)\n' "$DSH_IMAGE" "$_source" "$_preview_size"
     return 3
   fi
   if [ "${DSH_IMAGE_CLAIM_ACTIVE:-0}" = 1 ]; then
@@ -249,7 +270,11 @@ dsh_image_install() {
   }
   [ -n "$_checksum" ] || _checksum=$_source.sha256
   if [ "$_apply" -ne 1 ]; then
-    printf 'image: would verify and install %s (use --apply)\n' "$_source"
+    _preview_size=$(stat -c %s "$_source" 2>/dev/null || true)
+    [ -n "$_preview_size" ] || _preview_size=unknown
+    _preview_sha=$(dsh_sha256 "$_source" 2>/dev/null || true)
+    [ -n "$_preview_sha" ] || _preview_sha=unavailable
+    printf 'image: would verify and install %s\nsize: %s bytes\nsha256: %s\n(use --apply)\n' "$_source" "$_preview_size" "$_preview_sha"
     return 3
   fi
   if [ "${DSH_IMAGE_CLAIM_ACTIVE:-0}" = 1 ]; then

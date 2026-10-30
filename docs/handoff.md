@@ -1,8 +1,8 @@
 # 交接：设备 / PC AI 验收手册
 
-- 状态：**主力机模块 `0.2.1`、Console/Agent `0.2.0` 已安装并激活；chroot/DSH 自启、真实启停、只读备份与 last-good 冷快照、外部浏览器和 Agent 本机 API 已通过；未验证真实模型会话或应用检测**
+- 状态：**主力机是正式运行环境；当前读写模型按 2026-10-30 `plan-v2.md` 重写，SELinux 不再是 DSH 的读取/修改/门禁项。**
 - 目的：在**明确识别的设备/arm64 VM** 上分层完成 P2/P3/P5 验收，不把一台设备的结果外推到另一台
-- 主力机仅允许用户明确授权的恢复、备份、安装和激活：固定序列号 `3B1F6KE5MS11JHR8`。SELinux 保持 Enforcing，不降级用户 DSH runtime/插件，不覆盖 chroot 历史工作区，不给 Agent root；`pre-compose-upgrade-20261029` 为已验证的 last-good。
+- 主力机仅允许用户明确授权的恢复、备份、安装和激活：固定序列号 `3B1F6KE5MS11JHR8`。SELinux 不读取、不修改、不判断；不降级用户 DSH runtime/插件，不覆盖 chroot 历史工作区，不给 Agent root；`pre-compose-upgrade-20261029` 为已验证的 last-good。
 
 ---
 
@@ -157,8 +157,8 @@ guest 的配置和恢复说明位于 `/opt/dsh-control/README.md`；`/run/dsh/mo
 2. 宿主 `/proc/self/mountinfo` 不含 `dsh-rootfs`；
 3. 记录 `/data/data`、`/data/user`、`/data/user_de` 的实际 profile 可见范围；完整 `/data` 绑定不等于所有应用私有数据可写，写入前需单独确认并备份；
 4. `/mnt`、`/data_mirror`、`/storage`、`/sdcard` 可见；
-5. `/dev/block` 默认遮罩，活动 loop 路径在 guest 中不可直接访问；binder/ashmem 可用；
-6. `/sys` 保持设计的 rw 视图；`DSH_SELINUXFS_MODE=ro` 时读取真实 `enforce`，但不允许修改全局 SELinux；
+5. `/dev/block` 默认只读可见，原始写只允许显式 `DSH_BLOCK_ACCESS=full`；binder/ashmem 可用；
+6. `/sys` 保持设计的 rw 视图；guest 内 selinuxfs 默认只读可见，不读取/不修改全局 SELinux；`/dev/block` 默认只读；
 7. `/apex` 子挂载递归 ro；`touch /apex/...` 应失败；
 8. `/linkerconfig` 递归 ro；
 9. `/metadata`、`/mnt/vendor/persist`、`/mnt/vendor/qmcs` ro；
@@ -216,7 +216,7 @@ purge 先写操作标记阻止 watchdog claim，执行 `dsh-watchdog --stop --di
 ### 4.1 DSH
 
 `dsh-run` 根据 profile 依赖选择 hooks patch。优先复用当前 runtime 中同版本的 permission-presets，只在 profile 缺少该条目时创建链接，不覆盖已有依赖；无法提供时明确降级为 `hooks-audit-only.patch.yml`，审计依赖也缺失时禁用 patch。`/run/dsh/hooks.status` 和 `dsh.log` 记录 `full`、`audit-only` 或 `disabled` 及原因；这是本层请求状态，不冒充上游加载成功。完整 patch 下默认 `approval-free` 不弹批准；`approval-guard` 只在显式开启时使用。
-`SessionStart`/高风险 `UserPromptSubmit` 通过 `additionalContext` 提醒块设备和全局 SELinux/prop 风险，`PostToolUse` 保留审计；不再使用 PreToolUse 硬拦截。SessionStart 提醒可能错过首个请求，不能当作安全边界。
+`SessionStart`/高风险 `UserPromptSubmit` 通过 `additionalContext` 提醒块设备和全局 prop 风险；`PostToolUse` 保留审计；不再使用 PreToolUse 硬拦截。SessionStart 提醒可能错过首个请求，不能当作安全边界。
 
 `dsh-run` 还会进行真实 loopback HTTP 健康检查并维护带时间戳的 heartbeat。启动超时或连续健康失败会先 TERM web 子进程，等待最多 10 秒后仅 KILL 该登记子进程，由 s6 重启 DSH 服务；watcher 失败状态不会被正常退出覆盖。健康恢复后可回到 running。status 需要新鲜 heartbeat，旧 URL 文件不再单独代表 running。
 
@@ -342,6 +342,6 @@ su -c 'printf ... | nc 127.0.0.1 17321'
 - 在主力机执行超出用户明确授权范围的 `start --apply` / `rescue --apply` / `system-rw --apply`；本轮只允许既定 private-namespace 手动验证，不允许 rescue/system-rw；
 - 在宿主 namespace 做 mount/overlay/debugfs/tracefs/loop 试验；
 - 对 `/sys/fs/selinux` 做任何 bind/remount；
-- 默认 `setenforce 0`；
+- 运行 `setenforce`（DSH 不读取、不修改、不判断 SELinux）；
 - 用 `kill -9` 代替 `dsh-ctl stop`；
 - 未确认 loop 已 detach 就复制/删除镜像。
