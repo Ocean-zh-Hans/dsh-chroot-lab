@@ -82,7 +82,7 @@ data class AppInfo(
     val versions: List<String> = emptyList(),
 )
 
-data class AppPlugin(val name: String, val kind: String, val active: Boolean)
+data class AppPlugin(val name: String, val kind: String, val enabled: Boolean, val active: Boolean)
 
 object ConsoleRepo {
     private const val CTL = "/data/adb/modules/dsh_chroot/bin/dsh-ctl"
@@ -322,6 +322,7 @@ object ConsoleRepo {
                         AppPlugin(
                             name = item.optString("name"),
                             kind = item.optString("kind"),
+                            enabled = item.optBoolean("enabled", true),
                             active = item.optBoolean("active"),
                         ),
                     )

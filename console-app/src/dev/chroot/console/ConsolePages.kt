@@ -291,6 +291,7 @@ fun SoftwarePage(
     onInstall: (source: String, version: String, target: String, sha256: String) -> Unit,
     onTtyd: (enable: Boolean) -> Unit,
     onPin: (name: String, current: String) -> Unit,
+    onPlugin: (name: String, on: Boolean) -> Unit,
     onPending: (String) -> Unit,
     busy: Boolean = false,
 ) {
@@ -391,14 +392,33 @@ fun SoftwarePage(
                         InfoLine("控制面插件", if (live) "没有读到插件清单" else "需要先启动 chroot")
                     } else {
                         plugins.forEach { plugin ->
-                            InfoLine(
-                                label = plugin.name,
-                                value = if (plugin.kind == "preset") {
-                                    if (plugin.active) "生效中" else "未启用"
-                                } else {
-                                    "已安装"
-                                },
-                            )
+                            val toggle = when (plugin.name) {
+                                "hooks-audit-only.patch.yml" -> "hooks"
+                                "hooks.patch.yml" -> "hooks-full"
+                                else -> null
+                            }
+                            if (toggle != null) {
+                                ToggleRow(
+                                    label = if (toggle == "hooks") "审计钩子" else "完整钩子",
+                                    hint = if (plugin.enabled) {
+                                        if (plugin.active) "启用 · 本次启动已选中" else "启用 · 本次启动未选中"
+                                    } else {
+                                        "已停用 · 下次 start 生效"
+                                    },
+                                    checked = plugin.enabled,
+                                    enabled = !busy,
+                                    onChange = { on -> onPlugin(toggle, on) },
+                                )
+                            } else {
+                                InfoLine(
+                                    label = plugin.name,
+                                    value = if (plugin.kind == "preset") {
+                                        if (plugin.enabled) "已启用" else "已停用"
+                                    } else {
+                                        "已安装"
+                                    },
+                                )
+                            }
                         }
                     }
                     val ttydOn = ttyd.configured == "on"

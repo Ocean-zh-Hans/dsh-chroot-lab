@@ -432,11 +432,20 @@ fun AboutScreen(status: ConsoleStatus, runtime: RuntimeInfo) {
 }
 
 @Composable
-private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ToggleRow(
+    label: String,
+    checked: Boolean,
+    hint: String? = null,
+    enabled: Boolean = true,
+    onChange: (Boolean) -> Unit,
+) {
     val palette = consolePalette()
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = palette.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Column(Modifier.weight(1f)) {
+            Text(label, color = if (enabled) palette.text else palette.faint, fontSize = 14.sp)
+            if (hint != null) Text(hint, color = palette.faint, fontSize = 11.sp)
+        }
+        Switch(checked = checked, enabled = enabled, onCheckedChange = onChange)
     }
 }
 

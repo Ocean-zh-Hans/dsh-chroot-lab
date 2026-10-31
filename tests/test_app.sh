@@ -323,5 +323,39 @@ else
   printf 'skip: app pin tests need node\n' >&2
 fi
 
+# ---- app plugin（控制面插件启停） --------------------------------------
+CTL_CONTROL="$DSH_ROOT/control"
+mkdir -p "$CTL_CONTROL/dsh"
+printf 'patch: full\n' >"$CTL_CONTROL/dsh/hooks.patch.yml"
+printf 'patch: audit\n' >"$CTL_CONTROL/dsh/hooks-audit-only.patch.yml"
+out=$("$DSH_CTL" app plugins) || fail "app plugins failed: $out"
+assert_contains "$out" "enabled"
+
+out=$("$DSH_CTL" app plugin hooks off --apply) || fail "app plugin hooks off failed: $out"
+assert_contains "$out" "plugin: hooks off"
+[ ! -f "$CTL_CONTROL/dsh/hooks-audit-only.patch.yml" ] || fail "hooks patch still enabled"
+[ -f "$CTL_CONTROL/dsh/hooks-audit-only.patch.yml.disabled" ] || fail "hooks patch was not parked as .disabled"
+out=$("$DSH_CTL" app plugins) || fail "app plugins after disable failed"
+assert_contains "$out" "disabled"
+
+out=$("$DSH_CTL" app plugin hooks on --apply) || fail "app plugin hooks on failed: $out"
+assert_contains "$out" "plugin: hooks on"
+[ -f "$CTL_CONTROL/dsh/hooks-audit-only.patch.yml" ] || fail "hooks patch was not restored"
+
+out=$("$DSH_CTL" app plugin hooks on --apply) || fail "app plugin idempotent on failed: $out"
+assert_contains "$out" "already on"
+
+set +e
+out=$("$DSH_CTL" app plugin nosuch on --apply 2>&1)
+rc=$?
+[ "$rc" -eq 2 ] || fail "app plugin with an unknown name returned $rc"
+out=$("$DSH_CTL" app plugin hooks maybe --apply 2>&1)
+rc=$?
+[ "$rc" -eq 2 ] || fail "app plugin with a bad state returned $rc"
+out=$("$DSH_CTL" app plugin hooks off 2>&1)
+rc=$?
+[ "$rc" -eq 3 ] || fail "app plugin without --apply returned $rc"
+set -e
+
 
 printf 'test_app: ok\n'

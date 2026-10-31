@@ -291,6 +291,15 @@ fun ConsoleRoot() {
                         onRefresh = { scope.launch { refresh() } },
                         onInstall = { source, version, target, sha -> explain = riskAppInstall(source, version, target, sha) },
                         onPin = { name, current -> pinTarget = name to current },
+                    onPlugin = { name, on ->
+                        explain = RiskRequest(
+                            op = "app plugin",
+                            title = (if (on) "启用 " else "停用 ") + name,
+                            args = listOf("app", "plugin", name, if (on) "on" else "off"),
+                            reason = "操作者请求" + (if (on) "启用" else "停用") + "控制面插件 " + name,
+                            impact = "改的是 /opt/dsh-control/dsh 下的 patch 文件；对 hooks 模式的影响在下次 start/restart 生效",
+                        )
+                    },
                     onTtyd = { enable -> explain = riskTtyd(enable) },
                         onPending = { what -> banner = what + " 还没实现；这一步先只记录在 docs/console-design.md。" },
                         busy = busy,

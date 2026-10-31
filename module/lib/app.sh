@@ -66,6 +66,7 @@ Read-only:
   packages [--json]       DSH 依赖、全局包与 @deepseek-ai 作用域插件目录
   pin <pkg> <range> --apply  改构建清单里的依赖范围（需已停；不装包）
   apply --apply            进 guest 跑 pnpm install（需运行中）
+  plugin <name> on|off --apply  启停控制面插件（hooks / hooks-full / ttyd）
   list [--json]           宿主侧已安装的 DSH 版本（versions/）
 
 Write (require --apply, chroot 必须已停止):
@@ -225,14 +226,16 @@ dsh_app_plugins() {
     _first=1
     for _preset in hooks.patch.yml hooks-audit-only.patch.yml runtime.patch.yml; do
       [ -f "$DSH_CONTROL_DIR/dsh/$_preset" ] || continue
+      # enabled：patch 文件在场（可被 plugin off 改名停用）；active：本次启动实际选中。
+      _enabled=false
+      [ -f "$DSH_CONTROL_DIR/dsh/$_preset" ] && _enabled=true
       _active=false
       case $_mode:$_preset in
-      full:hooks.patch.yml) _active=true ;;
-      audit-only:hooks-audit-only.patch.yml) _active=true ;;
+      full:hooks.patch.yml | audit-only:hooks-audit-only.patch.yml) _active=true ;;
       esac
       [ "$_first" = 1 ] || printf ','
       _first=0
-      printf '{"name":%s,"kind":"preset","active":%s}' "$(dsh_app_json_str "$_preset")" "$_active"
+      printf '{"name":%s,"kind":"preset","enabled":%s,"active":%s}' "$(dsh_app_json_str "$_preset")" "$_enabled" "$_active"
     done
     if [ -d "$DSH_CONTROL_DIR/dsh/phone-mcp" ]; then
       [ "$_first" = 1 ] || printf ','
@@ -244,12 +247,11 @@ dsh_app_plugins() {
   fi
   printf 'hooks     : %s\n' "$_mode"
   for _preset in hooks.patch.yml hooks-audit-only.patch.yml runtime.patch.yml; do
-    [ -f "$DSH_CONTROL_DIR/dsh/$_preset" ] || continue
-    _active=inactive
-    case $_mode:$_preset in
-    full:hooks.patch.yml | audit-only:hooks-audit-only.patch.yml) _active=active ;;
-    esac
-    printf 'preset    : %-28s %s\n' "$_preset" "$_active"
+    if [ -f "$DSH_CONTROL_DIR/dsh/$_preset" ]; then
+      printf 'preset    : %-28s enabled\n' "$_preset"
+    elif [ -f "$DSH_CONTROL_DIR/dsh/$_preset.disabled" ]; then
+      printf 'preset    : %-28s disabled\n' "$_preset"
+    fi
   done
   if [ -d "$DSH_CONTROL_DIR/dsh/phone-mcp" ]; then
     printf 'tool      : %-28s %s\n' phone-mcp installed
@@ -873,6 +875,98 @@ dsh_app_apply() {
   return 0
 }
 
+# 控制面插件的启停只做一件事：把对应的 patch 文件改名。dsh-run 判定 hooks 模式时
+# 只看文件是否存在（module/control/bin/dsh-run:121-152），所以改名就是唯一的开关，
+# 不需要另立状态文件，也不会和运行时的推导打架。
+dsh_app_plugin_file() {
+  case $1 in
+  hooks) printf '%s\n' "$DSH_CONTROL_DIR/dsh/hooks-audit-only.patch.yml" ;;
+  hooks-full) printf '%s\n' "$DSH_CONTROL_DIR/dsh/hooks.patch.yml" ;;
+  *) return 1 ;;
+  esac
+}
+
+dsh_app_plugin() {
+  _apply=0
+  _name=
+  _want=
+  while [ $# -gt 0 ]; do
+    case $1 in
+    --apply) _apply=1 ;;
+    -h | --help)
+      printf 'Usage: dsh-ctl app plugin <hooks|hooks-full|ttyd> <on|off> --apply\n'
+      return 0
+      ;;
+    -*) dsh_err "app plugin: unexpected option: $1" && return 2 ;;
+    *)
+      if [ -z "$_name" ]; then _name=$1; elif [ -z "$_want" ]; then _want=$1; else
+        dsh_err "app plugin: too many arguments: $1"
+        return 2
+      fi
+      ;;
+    esac
+    shift
+  done
+  [ -n "$_name" ] && [ -n "$_want" ] || {
+    dsh_err "app plugin: need <name> <on|off>"
+    return 2
+  }
+  case $_want in
+  on | off) ;;
+  *)
+    dsh_err "app plugin: state must be on or off, not $_want"
+    return 2
+    ;;
+  esac
+  if [ "$_apply" -eq 1 ]; then :; else
+    dsh_err "app plugin: refuses to run without --apply"
+    return 3
+  fi
+  if [ "$_name" = ttyd ]; then
+    # ttyd 是运行时服务，交给现成的实现（需要 chroot 运行中）。
+    if [ "$_want" = on ]; then
+      dsh_ttyd_enable || return 4
+    else
+      dsh_ttyd_disable || return 4
+    fi
+    printf 'plugin: ttyd %s\n' "$_want"
+    return 0
+  fi
+  _file=$(dsh_app_plugin_file "$_name") || {
+    dsh_err "app plugin: unknown plugin: $_name（可用：hooks / hooks-full / ttyd）"
+    return 2
+  }
+  _off=$_file.disabled
+  _live=0
+  [ -f "$_file" ] && _live=1
+  case $_want in
+  off) _target=0 ;;
+  on) _target=1 ;;
+  esac
+  if [ "$_live" -eq "$_target" ]; then
+    printf 'plugin: %s already %s\n' "$_name" "$_want"
+    return 0
+  fi
+  if [ "$_want" = off ]; then
+    mv "$_file" "$_off" || {
+      dsh_err "app plugin: 无法停用 $_file"
+      return 4
+    }
+  else
+    [ -f "$_off" ] || {
+      dsh_err "app plugin: 找不到备份 $_off"
+      return 4
+    }
+    mv "$_off" "$_file" || {
+      dsh_err "app plugin: 无法启用 $_file"
+      return 4
+    }
+  fi
+  printf 'plugin: %s %s\n' "$_name" "$_want"
+  printf 'note: 下次 start/restart 才生效（dsh-run 启动时读 patch 文件）\n'
+  return 0
+}
+
 dsh_app_packages() {
   _json=0
   while [ $# -gt 0 ]; do
@@ -931,6 +1025,7 @@ dsh_app_run() {
   packages) dsh_app_packages "$@" ;;
   pin) dsh_app_pin "$@" ;;
   apply) dsh_app_apply "$@" ;;
+  plugin) dsh_app_plugin "$@" ;;
   help | -h | --help | '') dsh_app_usage ;;
   *)
     dsh_err "app: unknown subcommand: $_sub"
