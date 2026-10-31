@@ -1,7 +1,7 @@
 # DSH chroot 计划 v2（读全开 / 写粗心好人）
 
 - 日期：2026-10-30
-- 状态：**执行中；P0 文档与策略清理、P2-1/P2-2/P2-3/P2-4/P2-5/P2-6、P3-1–P3-7 已落地（P3-2 预览摘要仍待补）；P1 读可见性已实现；`/dev/block=ro` 保持默认可读，但 ro 只是视图、不能宣称写保护，真正写保护必须靠 R4 人工门禁；宿主 config 已从 masked 改为 ro，运行中的实例仍为 masked，需下次 start 生效；P3-8 已落地 `risk.sh` + R0/R3 dispatcher 门禁/token/审计，R1/R2/R4 命令级接线仍待补；2026-10-30 审计报告 `audit-reports/2026-10-30-chroot-issues.md` 为最新阻断依据**
+- 状态：**执行中；P0 文档与策略清理、P2-1/P2-2/P2-3/P2-4/P2-5/P2-6、P3-1–P3-7 已落地（P3-2 预览摘要已完成）；P1 读可见性已实现；`/dev/block=ro` 保持默认可读，但 ro 只是视图、不能宣称写保护，真正写保护必须靠 R4 人工门禁；宿主 config 已从 masked 改为 ro，运行中的实例仍为 masked，需下次 start 生效；P3-8 已落地 `risk.sh` + R0/R3 dispatcher 门禁/token/审计，R1/R2/R4 原语与 test_risk 覆盖已补；实际文件写入口仍待接入；2026-10-30 审计报告 `audit-reports/2026-10-30-chroot-issues.md` 为最新阻断依据**
 - 范围：`module/` 宿主模块、chroot 生命周期、镜像/快照、挂载、watchdog、控制面与相关设计文档
 - 明确不在本计划：Agent APK/Console App（另一分支重新设计，相关文档不再作为 chroot 主线依据）
 
@@ -134,13 +134,13 @@ chroot 内的 root 是本机 root 的一部分，不是访客：
 | ID | 工作 | 文件 | 验收 |
 |---|---|---|---|
 | P3-1 ✅ | `snapshot` 未知子命令直接报 usage，不默认 create | `module/bin/dsh-ctl` | `snapshot craete` 不建快照 |
-| P3-2 ✅ | `image create` 拒绝 `/` 和明显非 rootfs 源；`--source` 摘要/大小预览 | `module/lib/image.sh`、`dsh-ctl` | `/` 作为 source 被拒；create 预览 size，install 预览 size+sha |
+| P3-2 ✅ | `image create` 拒绝 `/` 和明显非 rootfs 源；`--source` 摘要/大小预览 | `module/lib/image.sh`、`dsh-ctl` | `/` 作为 source 被拒；create 预览 size，install 预览 size+sha（已由 `test_image.sh` 覆盖） |
 | P3-3 ✅ | `config` 校验 `DSH_TMP`、`DSH_IMAGE` 必须在 `DSH_IMAGE_DIR` 下、`DSH_ROOTFS_DIR` realpath 不得是符号链接 | `module/lib/config.sh` | 越界配置在 doctor --for-apply 前失败 |
 | P3-4 ✅ | `customize.sh` 不再覆盖 `control/s6/ttyd/down` 等运行时状态；更新前后保持 ttyd 开关 | `module/customize.sh` | 更新前后 `ttyd status` 一致 |
 | P3-5 ✅ | `service.sh` 日志轮转失败降级为警告，不阻止启动 | `module/service.sh` | 只读/满盘模拟仍进入 boot |
 | P3-6 ✅ | `status` 人类/JSON 输出对 URL token 脱敏；`plan.sh` 修正 1A/9A 过期文案 | `module/lib/status.sh`、`module/lib/plan.sh` | 输出无原始 token；plan 与当前策略一致 |
 | P3-7 ✅ | `system-rw.list`/ttyd 状态持久化去死字段；`image` size 语法严格化 | `module/lib/systemrw.sh`、`image.sh` | 状态可重建；`G`/`1G2M` 被拒 |
-| P3-8 🚧 | 写操作五档落地：R0 无限制、R1 AI 普通、R2 AI 敏感数据、R3 AI 重大、R4 人工 | `module/lib/risk.sh`、`module/bin/dsh-ctl`、`module/lib/systemrw.sh`、`image.sh`、`purge`/`restore` 入口 | 已落地 R0/R3 dispatcher 门禁 + 单次 token + 审计，R4 无 TTY 拒绝；R1/R2/R4 命令级接线仍待补 |
+| P3-8 🚧 | 写操作五档落地：R0 无限制、R1 AI 普通、R2 AI 敏感数据、R3 AI 重大、R4 人工 | `module/lib/risk.sh`、`module/bin/dsh-ctl`、`module/lib/systemrw.sh`、`image.sh`、`purge`/`restore` 入口 | R0/R3 dispatcher 门禁 + 单次 token + 审计；R1 可确认、R2 备份+token、R4 无 TTY 拒绝均通过 `test_risk`；实际文件写入口仍待接入 |
 
 ### P4 验证与清理
 

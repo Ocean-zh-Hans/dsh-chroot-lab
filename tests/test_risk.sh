@@ -60,3 +60,34 @@ rc=$?
 set -e
 [ "$rc" -eq 3 ] || fail "R4 without TTY returned $rc"
 assert_contains "$out" "R4 requires a human TTY approval"
+
+# R1: a simple overwrite can be approved by DSH_RISK_CONFIRM=yes.
+set +e
+out=$(DSH_RISK_CONFIRM=no "$DSH_CTL" risk check --op file --sub overwrite 2>&1 </dev/null)
+rc=$?
+set -e
+[ "$rc" -eq 3 ] || fail "R1 without confirm returned $rc"
+set +e
+out=$(DSH_RISK_CONFIRM=yes "$DSH_CTL" risk check --op file --sub overwrite 2>&1 </dev/null)
+rc=$?
+set -e
+[ "$rc" -eq 0 ] || fail "R1 with confirm returned $rc"
+
+# R2: app-private data requires an existing backup and a valid token.
+backup=$CASE/backup.tar
+printf 'backup' >"$backup"
+set +e
+out=$(DSH_RISK_REASON='operator requested app data write' "$DSH_CTL" risk check \
+  --op data --sub write --backup "$backup" 2>&1 </dev/null)
+rc=$?
+set -e
+[ "$rc" -eq 3 ] || fail "R2 without token returned $rc"
+r2_token=$("$DSH_CTL" risk issue --op data --target "$CASE" \
+  --reason 'operator requested app data write' --impact 'modify app private data' \
+  --level R2 --backup "$backup")
+set +e
+out=$(DSH_RISK_REASON='operator requested app data write' DSH_RISK_BACKUP="$backup" \
+  DSH_RISK_TOKEN="$r2_token" "$DSH_CTL" risk check --op data --sub write --backup "$backup" 2>&1 </dev/null)
+rc=$?
+set -e
+[ "$rc" -eq 0 ] || fail "R2 with backup and token returned $rc"

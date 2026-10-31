@@ -13,6 +13,8 @@ dsh_risk_level() {
   autostart:on | autostart:off) printf 'R3\n' ;;
   guard:on | guard:off) printf 'R3\n' ;;
   ttyd:on | ttyd:off) printf 'R3\n' ;;
+  file:overwrite | sdcard:overwrite) printf 'R1\n' ;;
+  data:write | app-data:write | data:delete) printf 'R2\n' ;;
   block:full | block:write | raw:write) printf 'R4\n' ;;
   fixperm:* | doctor:* | plan:* | status:* | config:* | log:* | logs:* | version:* | help:* | risk:* | boot:*) printf 'R0\n' ;;
   *) printf 'R0\n' ;;
@@ -44,6 +46,7 @@ dsh_risk_issue() {
   _risk_target=
   _risk_reason=
   _risk_impact=
+  _risk_backup=
   _risk_level=R3
   while [ "$#" -gt 0 ]; do
     case $1 in
@@ -65,6 +68,10 @@ dsh_risk_issue() {
       ;;
     --level)
       _risk_level=${2:-}
+      shift 2
+      ;;
+    --backup)
+      _risk_backup=${2:-}
       shift 2
       ;;
     *)
@@ -92,6 +99,10 @@ dsh_risk_issue() {
     dsh_err "risk issue requires --impact"
     return 2
   }
+  if [ "$_risk_level" = R2 ] && [ -z "$_risk_backup" ]; then
+    dsh_err "R2 risk issue requires --backup"
+    return 2
+  fi
   _risk_dir=${DSH_RISK_DIR:-$DSH_CTL_DIR/risk}
   mkdir -p "$_risk_dir" || return 1
   chmod 0700 "$_risk_dir" || return 1
@@ -103,8 +114,8 @@ dsh_risk_issue() {
   _risk_expiry=$(($(date '+%s') + ${DSH_RISK_TOKEN_TTL:-600}))
   _risk_file=$(dsh_risk_token_file "$_risk_op")
   _risk_tmp=$_risk_file.tmp.$$
-  printf 'version=1\ntoken=%s\nop=%s\ntarget=%s\nlevel=%s\nexpiry=%s\nimpact=%s\n' \
-    "$_risk_token" "$_risk_op" "$_risk_target" "$_risk_level" "$_risk_expiry" "$_risk_impact" >"$_risk_tmp" || return 1
+  printf 'version=1\ntoken=%s\nop=%s\ntarget=%s\nlevel=%s\nexpiry=%s\nimpact=%s\nbackup=%s\n' \
+    "$_risk_token" "$_risk_op" "$_risk_target" "$_risk_level" "$_risk_expiry" "$_risk_impact" "$_risk_backup" >"$_risk_tmp" || return 1
   chmod 0600 "$_risk_tmp" || {
     rm -f "$_risk_tmp"
     return 1
@@ -165,6 +176,13 @@ dsh_risk_gate() {
     ;;
   R2 | R3)
     _risk_reason=${DSH_RISK_REASON:-}
+    if [ "$_risk_level" = R2 ]; then
+      [ -n "${DSH_RISK_BACKUP:-}" ] && [ -e "${DSH_RISK_BACKUP:-}" ] || {
+        dsh_risk_audit "$_risk_level" "$_risk_op" "$_risk_target" denied
+        dsh_err "R2 requires DSH_RISK_BACKUP pointing to an existing backup"
+        return 3
+      }
+    fi
     [ "${#_risk_reason}" -ge 8 ] || {
       dsh_risk_audit "$_risk_level" "$_risk_op" "$_risk_target" denied
       dsh_err "$_risk_level requires DSH_RISK_REASON (at least 8 characters)"
@@ -218,6 +236,10 @@ dsh_risk_cli() {
         ;;
       --target)
         _risk_target=${2:-}
+        shift 2
+        ;;
+      --backup)
+        DSH_RISK_BACKUP=${2:-}
         shift 2
         ;;
       *)
