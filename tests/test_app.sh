@@ -24,6 +24,9 @@ starttime=$(awk '{ sub(/^.*\) /, ""); print $20 }' "/proc/$pid/stat")
 printf '%s\n' "$pid" >"$DSH_ROOT/state/guest/launcher.pid"
 printf '%s\n' "$starttime" >"$DSH_ROOT/state/guest/launcher.starttime"
 printf '%s\n' "$ns" >"$DSH_ROOT/state/guest/launcher.ns"
+printf '%s\n' "$pid" >"$DSH_ROOT/state/guest/launcher.pid"
+printf '%s\n' "$starttime" >"$DSH_ROOT/state/guest/launcher.starttime"
+printf '%s\n' "$ns" >"$DSH_ROOT/state/guest/launcher.ns"
 printf 'state=running\n' >"$DSH_ROOT/state/ctl/status"
 # The holder identity is a real process, so probe the real /proc here.
 export DSH_PROC=/proc
@@ -182,5 +185,87 @@ rc=$?
 set -e
 [ "$rc" -eq 4 ] || fail "app rollback without previous returned $rc"
 assert_contains "$out" "no previous version recorded"
+
+# ---- app install -------------------------------------------------------
+# R3 runs before argument validation, so the token tests come first.
+set +e
+out=$("$DSH_CTL" app install --from registry --version 9.9.9 --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -ne 0 ] || fail "app install without a risk token succeeded"
+assert_contains "$out" "R3 requires"
+
+set +e
+out=$(DSH_RISK_REASON='operator installs dsh' DSH_RISK_TOKEN="$token" \
+  "$DSH_CTL" app install --from registry --version 9.9.9 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 3 ] || fail "app install without --apply returned $rc"
+assert_contains "$out" "--apply required"
+
+set +e
+out=$(DSH_RISK_REASON='operator installs dsh' DSH_RISK_TOKEN="$token" \
+  "$DSH_CTL" app install --from floppy --version 9.9.9 --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 2 ] || fail "app install with an unknown source returned $rc"
+assert_contains "$out" "registry|tarball|local"
+
+set +e
+out=$(DSH_RISK_REASON='operator installs dsh' DSH_RISK_TOKEN="$token" \
+  "$DSH_CTL" app install --from tarball --url file:///tmp/dsh.tgz --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 2 ] || fail "app install with a non-http url returned $rc"
+assert_contains "$out" "must be http"
+
+set +e
+out=$(DSH_RISK_REASON='operator installs dsh' DSH_RISK_TOKEN="$token" \
+  "$DSH_CTL" app install --from local --file /data/media/0/../../etc/passwd --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 2 ] || fail "app install with .. in --file returned $rc"
+assert_contains "$out" "must not contain .."
+
+set +e
+out=$(DSH_RISK_REASON='operator installs dsh' DSH_RISK_TOKEN="$token" \
+  "$DSH_CTL" app install --from registry --version 1.4.2 --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 4 ] || fail "app install over an existing version returned $rc"
+assert_contains "$out" "already exists"
+
+# Happy path with a fixture package (no guest involved): the holder must be running,
+# because installing writes into the live /opt/dsh tree.
+printf '%s\n' "$pid" >"$DSH_ROOT/state/guest/launcher.pid"
+printf '%s\n' "$starttime" >"$DSH_ROOT/state/guest/launcher.starttime"
+printf '%s\n' "$ns" >"$DSH_ROOT/state/guest/launcher.ns"
+printf 'state=running\n' >"$DSH_ROOT/state/ctl/status"
+pkgdir="$case_dir/pkg/1.5.0"
+mkdir -p "$pkgdir/bin"
+printf '#!/bin/sh\necho 1.5.0\n' >"$pkgdir/bin/dsh"
+chmod 0755 "$pkgdir/bin/dsh"
+out=$(DSH_RISK_REASON='operator installs dsh' DSH_RISK_TOKEN="$token" \
+  DSH_APP_INSTALL_FIXTURE_DIR="$pkgdir" \
+  "$DSH_CTL" app install --from local --file /data/local/tmp/pkg --version 1.5.0 --apply) ||
+  fail "app install failed: $out"
+assert_contains "$out" "installed : versions/1.5.0"
+[ -x "$DSH_ROOT/dsh/versions/1.5.0/bin/dsh" ] || fail "app install did not publish versions/1.5.0"
+[ ! -e "$DSH_ROOT/dsh/versions/.staging.$$" ] || fail "app install left a staging directory behind"
+assert_contains "$(cat "$DSH_ROOT/dsh/versions/1.5.0/.dsh-install")" "source=local"
+
+# A package without bin/dsh is rejected and leaves nothing behind.
+badpkg="$case_dir/pkg/broken"
+mkdir -p "$badpkg"
+printf 'nothing here\n' >"$badpkg/README"
+set +e
+out=$(DSH_RISK_REASON='operator installs dsh' DSH_RISK_TOKEN="$token" \
+  DSH_APP_INSTALL_FIXTURE_DIR="$badpkg" \
+  "$DSH_CTL" app install --from local --file /data/local/tmp/broken --version 9.9.8 --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 4 ] || fail "app install of a package without bin/dsh returned $rc"
+assert_contains "$out" "包内没有 bin/dsh"
+[ ! -e "$DSH_ROOT/dsh/versions/9.9.8" ] || fail "failed app install published a version"
 
 printf 'test_app: ok\n'

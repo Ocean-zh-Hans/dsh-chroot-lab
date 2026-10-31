@@ -270,6 +270,7 @@ fun ConsoleRoot() {
                         onSwitch = { version -> explain = riskAppSwitch(version) },
                         onRollback = { explain = riskAppRollback(appInfo.previous) },
                         onRefresh = { scope.launch { refresh() } },
+                        onInstall = { source, version, target, sha -> explain = riskAppInstall(source, version, target, sha) },
                         onPending = { what -> banner = what + " 还没实现；这一步先只记录在 docs/console-design.md。" },
                         busy = busy,
                     )
@@ -558,6 +559,39 @@ private fun riskAppSwitch(version: String): RiskRequest = RiskRequest(
         "怎么恢复" to "用「回滚上一版」切回当前版本。",
     ),
 )
+
+private fun riskAppInstall(source: String, version: String, target: String, sha256: String): RiskRequest {
+    val args = mutableListOf("app", "install", "--from", source, "--version", version)
+    when (source) {
+        "tarball" -> {
+            args += "--url"
+            args += target
+        }
+        "local" -> {
+            args += "--file"
+            args += target
+        }
+    }
+    if (sha256.isNotBlank()) {
+        args += "--sha256"
+        args += sha256
+    }
+    args += "--apply"
+    return RiskRequest(
+        op = "app",
+        title = "安装 DSH " + version,
+        args = args,
+        reason = "控制台安装 DSH 版本",
+        impact = "往 /data/adb 下的 versions/ 写入新版本，不动正在使用的版本",
+        destructive = true,
+        sections = listOf(
+            "是什么" to "把 " + version + " 取到 versions/" + version + "，校验通过后才发布。",
+            "什么时候用" to "想升级或试用新版本时。安装不会切换版本。",
+            "会有什么后果" to "占用一份安装体积；current 不变，正在用的版本不受影响。",
+            "怎么恢复" to "装完不满意，删掉 versions/" + version + " 即可；切换过的用「回滚上一版」。",
+        ),
+    )
+}
 
 private fun riskAppRollback(previous: String): RiskRequest = RiskRequest(
     op = "app",

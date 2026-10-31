@@ -38,6 +38,12 @@ Write (require --apply, chroot 必须已停止):
 
 Guest command (require running):
   exec [--timeout N] -- <command>            在 guest 里跑一条命令并原样返回输出
+
+Install (require --apply, chroot 必须正在运行):
+  install --from registry --version <v> --apply [--activate] [--force]
+  install --from tarball  --url <https url> --apply [--version <v>] [--sha256 <hex>] [--activate]
+  install --from local    --file <guest path(.tgz|dir)> --apply [--version <v>] [--activate]
+                          取到 versions/.staging.* 校验后原子发布为 versions/<v>
 EOF
 }
 
@@ -399,6 +405,258 @@ dsh_app_exec() {
   DSH_GUEST_COMMAND_TIMEOUT=$_timeout dsh_guest_run "$_app_pid" /bin/sh -c "$_cmd"
 }
 
+# ---- 安装 ---------------------------------------------------------------
+# 取包必须进 guest（node/npm/curl 都在 rootfs 里），但落点 /opt/dsh 是宿主目录的
+# bind，宿主能直接读，所以"下载/解包"在 guest、"校验/发布"在宿主。发布是原子 rename，
+# 失败只会留下可清的 .staging.*，不会污染 versions/ 或 current。
+dsh_app_default_version() {
+  _dv=$(basename "${1%/}")
+  case $_dv in
+  *.tar.gz) _dv=${_dv%.tar.gz} ;;
+  *.tgz) _dv=${_dv%.tgz} ;;
+  *.tar) _dv=${_dv%.tar} ;;
+  esac
+  printf '%s\n' "$_dv"
+}
+
+dsh_app_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v busybox >/dev/null 2>&1; then
+    busybox sha256sum "$1" | awk '{print $1}'
+  else
+    return 1
+  fi
+}
+
+dsh_app_install_fail() {
+  _app_fetch_err=$1
+  [ -n "${_app_stage:-}" ] && rm -rf "$_app_stage"
+  dsh_err "$1"
+  return 4
+}
+
+# guest 侧取包；失败时把原因写进 _app_fetch_err 并返回非零。
+dsh_app_fetch() {
+  case $_app_from in
+  registry)
+    _app_pkg=${DSH_APP_PACKAGE:-@deepseek-ai/dsh}
+    DSH_GUEST_COMMAND_TIMEOUT=$_app_tmo dsh_guest_shell "$_app_pid" "set -e
+if command -v npm >/dev/null 2>&1; then
+  npm install --global --prefix '$_app_gdir' '$_app_pkg@$_app_ver' >/dev/null 2>&1
+elif command -v pnpm >/dev/null 2>&1; then
+  pnpm add --global --prefix '$_app_gdir' '$_app_pkg@$_app_ver' >/dev/null 2>&1
+else
+  echo 'guest has neither npm nor pnpm' >&2
+  exit 1
+fi" || {
+      _app_fetch_err="app install: guest 下载 $_app_pkg@$_app_ver 失败（网络或包名？DSH_APP_PACKAGE=$_app_pkg）"
+      return 4
+    }
+    ;;
+  tarball)
+    DSH_GUEST_COMMAND_TIMEOUT=$_app_tmo dsh_guest_shell "$_app_pid" "set -e
+command -v curl >/dev/null 2>&1 || { echo 'guest has no curl' >&2; exit 1; }
+curl -fsSL --max-time '$_app_tmo' '$_app_url' -o '$_app_gdir/.install.tgz'" || {
+      _app_fetch_err="app install: 下载 $_app_url 失败"
+      return 4
+    }
+    ;;
+  local)
+    DSH_GUEST_COMMAND_TIMEOUT=$_app_tmo dsh_guest_shell "$_app_pid" "set -e
+[ -e '$_app_file' ] || { echo 'not found: $_app_file' >&2; exit 1; }
+if [ -d '$_app_file' ]; then
+  cp -a '$_app_file/.' '$_app_gdir/'
+else
+  cp -f '$_app_file' '$_app_gdir/.install.tgz'
+fi" || {
+      _app_fetch_err="app install: 复制 $_app_file 失败"
+      return 4
+    }
+    ;;
+  esac
+  return 0
+}
+
+dsh_app_install() {
+  _app_from=
+  _app_ver=
+  _app_url=
+  _app_file=
+  _app_sha=
+  _app_force=0
+  _app_activate=0
+  _app_apply=0
+  _app_tmo=${DSH_APP_INSTALL_TIMEOUT:-900}
+  _app_stage=
+  while [ $# -gt 0 ]; do
+    case $1 in
+    --from)
+      shift
+      _app_from=${1:-}
+      ;;
+    --version)
+      shift
+      _app_ver=${1:-}
+      ;;
+    --url)
+      shift
+      _app_url=${1:-}
+      ;;
+    --file)
+      shift
+      _app_file=${1:-}
+      ;;
+    --sha256)
+      shift
+      _app_sha=${1:-}
+      ;;
+    --force) _app_force=1 ;;
+    --activate) _app_activate=1 ;;
+    --apply) _app_apply=1 ;;
+    -*)
+      dsh_err "app install: unknown option: $1"
+      return 2
+      ;;
+    *)
+      dsh_err "app install: unexpected argument: $1"
+      return 2
+      ;;
+    esac
+    shift
+  done
+  [ "$_app_apply" = 1 ] || {
+    dsh_err "app install: --apply required"
+    return 3
+  }
+  case $_app_from in
+  registry)
+    [ -n "$_app_ver" ] || {
+      dsh_err "app install --from registry: --version required"
+      return 2
+    }
+    ;;
+  tarball)
+    [ -n "$_app_url" ] || {
+      dsh_err "app install --from tarball: --url required"
+      return 2
+    }
+    case $_app_url in
+    https://* | http://*) ;;
+    *)
+      dsh_err "app install: --url must be http(s)"
+      return 2
+      ;;
+    esac
+    ;;
+  local)
+    [ -n "$_app_file" ] || {
+      dsh_err "app install --from local: --file required"
+      return 2
+    }
+    case $_app_file in
+    /*) ;;
+    *)
+      dsh_err "app install: --file must be an absolute guest path"
+      return 2
+      ;;
+    esac
+    case $_app_file in
+    *..*)
+      dsh_err "app install: --file must not contain .."
+      return 2
+      ;;
+    esac
+    ;;
+  *)
+    dsh_err "app install: --from registry|tarball|local"
+    return 2
+    ;;
+  esac
+  [ -n "$_app_ver" ] || _app_ver=$(dsh_app_default_version "${_app_url:-$_app_file}")
+  case $_app_ver in
+  '' | *[!A-Za-z0-9._-]* | .* | -*)
+    dsh_err "app install: invalid version name: $_app_ver"
+    return 2
+    ;;
+  esac
+  [ ! -e "$DSH_RUNTIME_DIR/versions/$_app_ver" ] || {
+    dsh_err "app install: versions/$_app_ver already exists (remove it first to reinstall)"
+    return 4
+  }
+  _app_pid=$(dsh_app_require_running) || return 4
+  [ -d "$DSH_RUNTIME_DIR/versions" ] || mkdir -p "$DSH_RUNTIME_DIR/versions" || return 4
+  _app_stage=$DSH_RUNTIME_DIR/versions/.staging.$$
+  _app_gdir=/opt/dsh/versions/.staging.$$
+  rm -rf "$_app_stage"
+  mkdir -p "$_app_stage" && chmod 0755 "$_app_stage" || {
+    dsh_err "app install: cannot create $_app_stage"
+    return 4
+  }
+  dsh_step "安装 DSH $_app_ver（$_app_from）"
+  if [ -n "${DSH_APP_INSTALL_FIXTURE_DIR:-}" ]; then
+    # 仅测试用：把夹具目录当成"已经下载好的包"，完全不进 guest。
+    cp -a "$DSH_APP_INSTALL_FIXTURE_DIR/." "$_app_stage/" || dsh_app_install_fail "app install: fixture copy failed" || return 4
+  else
+    dsh_app_fetch || {
+      dsh_app_install_fail "$_app_fetch_err" || return 4
+      return 4
+    }
+  fi
+  if [ -f "$_app_stage/.install.tgz" ]; then
+    if [ -n "$_app_sha" ]; then
+      _got_sha=$(dsh_app_sha256 "$_app_stage/.install.tgz") || dsh_app_install_fail "app install: no sha256sum available to verify --sha256" || return 4
+      [ "$_got_sha" = "$_app_sha" ] || dsh_app_install_fail "app install: sha256 mismatch (want $_app_sha, got $_got_sha)" || return 4
+      dsh_step "sha256 校验通过"
+    fi
+    DSH_GUEST_COMMAND_TIMEOUT=$_app_tmo dsh_guest_shell "$_app_pid" "set -e
+tar -xzf '$_app_gdir/.install.tgz' -C '$_app_gdir'
+rm -f '$_app_gdir/.install.tgz'" || dsh_app_install_fail "app install: 解包失败" || return 4
+  fi
+  # 有些打包会多一层顶层目录：只有一个子目录、且子目录里有 bin/dsh 时，把它提上来。
+  if [ ! -f "$_app_stage/bin/dsh" ]; then
+    _entries=$(find "$_app_stage" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
+    _subdir=$(find "$_app_stage" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+    if [ "$_entries" = 1 ] && [ -n "$_subdir" ] && [ -f "$_subdir/bin/dsh" ]; then
+      (cd "$_subdir" && tar cf - .) | (cd "$_app_stage" && tar xf -) || dsh_app_install_fail "app install: 提升顶层目录失败" || return 4
+      rm -rf "$_subdir"
+    fi
+  fi
+  [ -f "$_app_stage/bin/dsh" ] || dsh_app_install_fail "app install: 包内没有 bin/dsh（现有：$(ls "$_app_stage" 2>/dev/null | tr '\n' ' ')）" || return 4
+  chmod 0755 "$_app_stage/bin/dsh" 2>/dev/null || true
+  [ -x "$_app_stage/bin/dsh" ] || dsh_app_install_fail "app install: bin/dsh 不可执行" || return 4
+  if [ "$_app_force" = 0 ] && [ -z "${DSH_APP_INSTALL_FIXTURE_DIR:-}" ]; then
+    _want=$(printf '%s' "$_app_ver" | sed 's/^v//')
+    _got_ver=$(DSH_GUEST_COMMAND_TIMEOUT=$_app_tmo dsh_guest_run "$_app_pid" "$_app_gdir/bin/dsh" --version 2>/dev/null | tail -n 1 | sed 's/^v//' | tr -d '\r') || _got_ver=
+    if [ -n "$_got_ver" ] && [ "$_got_ver" != "$_want" ]; then
+      dsh_app_install_fail "app install: 新版本自报 $_got_ver，与请求的 $_want 不一致（确认无误可加 --force）" || return 4
+    fi
+    [ -n "$_got_ver" ] || dsh_warn "app install: 新版本没能自报版本号，跳过版本比对"
+  fi
+  {
+    printf 'source=%s\n' "$_app_from"
+    printf 'version=%s\n' "$_app_ver"
+    [ -n "$_app_url" ] && printf 'url=%s\n' "$_app_url"
+    [ -n "$_app_file" ] && printf 'file=%s\n' "$_app_file"
+    [ -n "$_app_sha" ] && printf 'sha256=%s\n' "$_app_sha"
+    printf 'installed_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || true)"
+  } >"$_app_stage/.dsh-install" || dsh_app_install_fail "app install: 写安装信息失败" || return 4
+  dsh_step "发布 versions/$_app_ver"
+  mv "$_app_stage" "$DSH_RUNTIME_DIR/versions/$_app_ver" || dsh_app_install_fail "app install: 发布 versions/$_app_ver 失败" || return 4
+  _app_stage=
+  dsh_log "app: installed $_app_ver from $_app_from"
+  printf 'installed : versions/%s\n' "$_app_ver"
+  if [ "$_app_activate" = 1 ]; then
+    if dsh_app_assert_stopped 2>/dev/null; then
+      dsh_app_link_version "$_app_ver"
+    else
+      dsh_warn "chroot 正在运行，未激活；停止后执行 dsh-ctl app switch $_app_ver --apply"
+    fi
+  else
+    printf 'next      : dsh-ctl app switch %s --apply（需先停止 chroot）\n' "$_app_ver"
+  fi
+}
+
 dsh_app_run() {
   _sub=${1:-}
   [ $# -gt 0 ] && shift
@@ -410,6 +668,7 @@ dsh_app_run() {
   switch) dsh_app_switch "$@" ;;
   rollback) dsh_app_rollback "$@" ;;
   exec) dsh_app_exec "$@" ;;
+  install) dsh_app_install "$@" ;;
   help | -h | --help | '') dsh_app_usage ;;
   *)
     dsh_err "app: unknown subcommand: $_sub"

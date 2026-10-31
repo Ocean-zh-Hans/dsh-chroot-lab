@@ -39,6 +39,7 @@ Read-only:
   config                 resolved paths/knobs
   risk issue|check|status issue a one-time R2/R3/R4 token, dry-run gate, or inspect tokens
   app version|deps|plugins|list [--json]   software layer probes (chroot must be running)
+  app install --from registry|tarball|local ... --apply   install a version (chroot running)
   app exec [--timeout N] -- <command>      run one command inside the guest
 
 Lifecycle (apply is explicit):
@@ -87,7 +88,7 @@ if [ "${DSH_LIFECYCLE_CLAIM_ACTIVE:-0}" != 1 ]; then
     ;;
   app)
     case ${2:-} in
-    switch | rollback | exec)
+    switch | rollback | exec | install)
       dsh_risk_gate app "${2:-}" "" || exit $?
       dsh_lifecycle_exec "$0" _lifecycle-claimed "$@"
       exit $?

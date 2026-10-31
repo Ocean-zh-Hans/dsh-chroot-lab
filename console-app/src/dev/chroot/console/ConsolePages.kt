@@ -286,10 +286,12 @@ fun SoftwarePage(
     onSwitch: (String) -> Unit,
     onRollback: () -> Unit,
     onRefresh: () -> Unit,
+    onInstall: (source: String, version: String, target: String, sha256: String) -> Unit,
     onPending: (String) -> Unit,
     busy: Boolean = false,
 ) {
     val palette = consolePalette()
+    var installOpen by remember { mutableStateOf(false) }
     val live = status.state == "running"
     val stopped = !live
     val currentName = app.current.substringAfterLast('/')
@@ -335,9 +337,17 @@ fun SoftwarePage(
                             GhostButton("刷新版本", enabled = live && !busy, onClick = onRefresh)
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    GhostButton("安装新版本", enabled = live && !busy) { installOpen = true }
                     if (live) {
                         Spacer(Modifier.height(8.dp))
                         Text("切换版本要先停止 chroot：运行中的 DSH 用的是旧 inode。", color = palette.faint, fontSize = 11.sp)
+                    }
+                    if (installOpen) {
+                        InstallSheet(busy = busy, onDismiss = { installOpen = false }) { source, version, target, sha ->
+                            installOpen = false
+                            onInstall(source, version, target, sha)
+                        }
                     }
                 }
             }

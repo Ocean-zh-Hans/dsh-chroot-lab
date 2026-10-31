@@ -15,7 +15,7 @@ dsh_risk_level() {
   ttyd:on | ttyd:off) printf 'R3\n' ;;
   file:overwrite | sdcard:overwrite) printf 'R1\n' ;;
   app:exec) printf 'R1\n' ;;
-  app:switch | app:rollback) printf 'R3\n' ;;
+  app:switch | app:rollback | app:install) printf 'R3\n' ;;
   data:write | app-data:write | data:delete) printf 'R2\n' ;;
   block:full | block:write | raw:write) printf 'R4\n' ;;
   app:version | app:deps | app:plugins | app:list | app:'') printf 'R0\n' ;;

@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -154,5 +155,98 @@ fun SlideToConfirm(text: String, tint: Color, enabled: Boolean = true, onConfirm
                     },
                 ),
         ) {}
+    }
+}
+
+// 安装新版本：来源是"选一个"，不是"填一个"——三个 chip 对应三种取包方式，
+// 每种只暴露自己的必填项，避免用户面对一堆用不上的输入框。
+private val installSources = listOf(
+    Triple("registry", "镜像源", "从 npm/pnpm 源装指定版本"),
+    Triple("tarball", "压缩包", "给一个 https 的 .tar.gz 地址"),
+    Triple("local", "本地文件", "给 guest 内的 .tar.gz 或已解包目录"),
+)
+
+@Composable
+fun InstallSheet(
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (source: String, version: String, target: String, sha256: String) -> Unit,
+) {
+    val palette = consolePalette()
+    var source by remember { mutableStateOf("registry") }
+    var version by remember { mutableStateOf("") }
+    var target by remember { mutableStateOf("") }
+    var sha by remember { mutableStateOf("") }
+    val hint = installSources.first { it.first == source }.third
+    val ready = !busy && version.isNotBlank() && (source == "registry" || target.isNotBlank())
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        GlassCard {
+            Column(Modifier.padding(18.dp)) {
+                Text("安装 DSH 版本", color = palette.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Text("装进 versions/<版本>，不会自动切换；装完可在版本列表里点切换。", color = palette.faint, fontSize = 12.sp)
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    installSources.forEach { entry ->
+                        if (entry.first == source) {
+                            PrimaryButton(entry.second, enabled = !busy, onClick = {})
+                        } else {
+                            GhostButton(entry.second, enabled = !busy) { source = entry.first }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(hint, color = palette.faint, fontSize = 11.sp)
+                Spacer(Modifier.height(12.dp))
+                SheetField("版本号", version, "例如 1.5.0", !busy) { version = it }
+                when (source) {
+                    "tarball" -> {
+                        Spacer(Modifier.height(10.dp))
+                        SheetField("下载地址", target, "https://…/dsh.tar.gz", !busy) { target = it }
+                        Spacer(Modifier.height(10.dp))
+                        SheetField("sha256（可选）", sha, "下载后校验，防中间篡改", !busy) { sha = it }
+                    }
+                    "local" -> {
+                        Spacer(Modifier.height(10.dp))
+                        SheetField("文件路径", target, "/data/media/0/Download/dsh.tar.gz", !busy) { target = it }
+                        Spacer(Modifier.height(10.dp))
+                        SheetField("sha256（可选）", sha, "只对压缩包生效", !busy) { sha = it }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GhostButton("取消", enabled = !busy, onClick = onDismiss)
+                    PrimaryButton(
+                        text = "下一步",
+                        enabled = ready,
+                        onClick = { onConfirm(source, version, target, sha) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SheetField(label: String, value: String, placeholder: String, enabled: Boolean, onChange: (String) -> Unit) {
+    val palette = consolePalette()
+    Column {
+        Text(label, color = palette.sub, fontSize = 11.sp)
+        Box(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            androidx.compose.foundation.text.BasicTextField(
+                value = value,
+                onValueChange = onChange,
+                enabled = enabled,
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(color = palette.text, fontSize = 13.sp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                decorationBox = { inner ->
+                    if (value.isEmpty()) {
+                        Text(placeholder, color = palette.faint, fontSize = 13.sp)
+                    }
+                    inner()
+                },
+            )
+        }
     }
 }

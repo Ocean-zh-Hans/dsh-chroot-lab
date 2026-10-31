@@ -180,7 +180,7 @@
 | `app switch <v> --apply` / `app rollback --apply` | 已实现（R3，要求已停止） | 只改宿主侧 `$DSH_RUNTIME_DIR/{current,previous}` 符号链接；不下载、不改 rootfs |
 | `app exec -- <cmd>` | 已实现（R1） | 一次性 guest 命令，超时 15s、输出原样返回 |
 | `app plugins --json` | 已实现（只读） | 列控制面预设与 phone-mcp 及生效状态；启用/禁用未做 |
-| `app upgrade`（下载新版本） | 未实现 | 需要下载与校验链路，暂由 `app switch` 承担“已装版本之间切换” |
+| `app install --from registry|tarball|local`（下载/解包 + sha256 校验 + 原子发布） | 已实现（R3，chroot 需运行；UI 为来源下拉） | guest 取包到 `versions/.staging.*`，宿主校验后 `rename` 成 `versions/<v>`；不自动切换 |
 | `ttyd status --json` | 仅文本 | 控制台开终端前需要端口/进程状态（软件页现在只能显示"状态待上报"） |
 | `status --json` 的抽稀 | 字段偏多 | 控制台只需要 `state/pid/loop/image/url/rootfs_mounted/loop_query/residual_resources/watchdog_running/autostart/health_age/image_bytes`，其余字段可留给 `--verbose` |
 | `log --follow` / `log --json` | 无 | C1 任务条要边跑边看到日志 |
@@ -216,7 +216,7 @@
 | 任务时间线（`#step:` 分步） | 已实现 | 控制台解析并在 sheet 里逐条打勾；`dsh-ctl` 在 `DSH_STEPS=1` 下输出步骤（`start`/`stop`/`snapshot restore`），控制台通过 `ConsoleRepo.ctlRisky` 自动带上该变量；`tests/test_steps.sh` 守住"默认不输出" |
 | 终端全屏页 | 未实现（依赖 `ttyd status --json`） | — |
 | DSH 版本切换/回滚 | 已实现（`app switch`/`app rollback`，R3，需先停止） | `ConsoleRepo.appInfo()` + 软件页「已安装版本」 |
-| 依赖改版本、插件启停、下载安装新版本 | 未实现（`app exec` 可临时绕过，但不算产品能力） | — |
+| 依赖改版本、插件启停 | 未实现（`app exec` 可临时绕过，但不算产品能力） | — |
 | 快照删除 | 未实现（依赖 `snapshot delete`） | — |
 
 未实现入口一律用 banner 明确说明"还没实现"，不假装可用。
