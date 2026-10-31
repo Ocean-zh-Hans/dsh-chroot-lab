@@ -285,6 +285,7 @@ fun SoftwarePage(
     onTerminal: () -> Unit,
     onSwitch: (String) -> Unit,
     onRollback: () -> Unit,
+    onRefresh: () -> Unit,
     onPending: (String) -> Unit,
     busy: Boolean = false,
 ) {
@@ -331,7 +332,7 @@ fun SoftwarePage(
                             GhostButton("回滚上一版", enabled = stopped && app.previous.isNotBlank() && !busy, onClick = onRollback)
                         }
                         Box(Modifier.weight(1f)) {
-                            GhostButton("刷新版本", enabled = live && !busy) { onPending("重新读取版本") }
+                            GhostButton("刷新版本", enabled = live && !busy, onClick = onRefresh)
                         }
                     }
                     if (live) {

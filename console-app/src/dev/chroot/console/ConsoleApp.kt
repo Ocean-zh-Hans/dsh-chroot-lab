@@ -269,6 +269,7 @@ fun ConsoleRoot() {
                         onTerminal = { route("terminal") },
                         onSwitch = { version -> explain = riskAppSwitch(version) },
                         onRollback = { explain = riskAppRollback(appInfo.previous) },
+                        onRefresh = { scope.launch { refresh() } },
                         onPending = { what -> banner = what + " 还没实现；这一步先只记录在 docs/console-design.md。" },
                         busy = busy,
                     )
