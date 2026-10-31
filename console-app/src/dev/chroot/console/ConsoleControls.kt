@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,6 +39,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.sp
 
 /**
@@ -247,6 +249,48 @@ private fun SheetField(label: String, value: String, placeholder: String, enable
                     inner()
                 },
             )
+        }
+    }
+}
+
+/** 改依赖版本范围：只填一个字符串，写入宿主上的 package.json。 */
+@Composable
+fun PinDialog(
+    name: String,
+    current: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    val palette = consolePalette()
+    var range by remember(name) { mutableStateOf(current) }
+    Dialog(onDismissRequest = onDismiss) {
+        GlassCard {
+            Column(Modifier.padding(20.dp)) {
+                Text("改依赖版本", color = palette.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Text(name, color = palette.sub, fontSize = 13.sp)
+                Spacer(Modifier.height(14.dp))
+                OutlinedTextField(
+                    value = range,
+                    onValueChange = { range = it },
+                    singleLine = true,
+                    label = { Text("版本范围", fontSize = 12.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "当前 " + current + "。只改构建清单，不装包；装包要在 chroot 运行时执行 pnpm install。",
+                    color = palette.faint,
+                    fontSize = 11.sp,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.weight(1f)) { GhostButton("取消", onClick = onDismiss) }
+                    Box(Modifier.weight(1f)) {
+                        PrimaryButton("下一步", { onConfirm(range.trim()) }, palette.accent, range.isNotBlank())
+                    }
+                }
+            }
         }
     }
 }

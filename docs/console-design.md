@@ -179,6 +179,8 @@
 | `app deps --json` | 已实现 | node/pnpm/dsh 版本 + hooks 模式 + guard 状态 |
 | `app switch <v> --apply` / `app rollback --apply` | 已实现（R3，要求已停止） | 只改宿主侧 `$DSH_RUNTIME_DIR/{current,previous}` 符号链接；不下载、不改 rootfs |
 | `app exec -- <cmd>` | 已实现（R1） | 一次性 guest 命令，超时 15s、输出原样返回 |
+| `app pin <pkg> <range> --apply` | 已实现（R2） | 宿主侧改构建清单 + 备份；不装包 |
+| `app apply --apply` | 已实现（R2） | 进 guest 跑 `pnpm install`，要求运行中 |
 | `app packages --json` | 已实现（R0） | 依赖/全局包/作用域插件目录由 guest 内 node 汇总成一份 JSON，宿主只透传 |
 | `app plugins --json` | 已实现（只读） | 列控制面预设与 phone-mcp 及生效状态；启用/禁用未做 |
 | `app install --from registry|tarball|local`（下载/解包 + sha256 校验 + 原子发布） | 已实现（R3，chroot 需运行；UI 为来源下拉） | guest 取包到 `versions/.staging.*`，宿主校验后 `rename` 成 `versions/<v>`；不自动切换 |
@@ -217,7 +219,8 @@
 | 任务时间线（`#step:` 分步） | 已实现 | 控制台解析并在 sheet 里逐条打勾；`dsh-ctl` 在 `DSH_STEPS=1` 下输出步骤（`start`/`stop`/`snapshot restore`），控制台通过 `ConsoleRepo.ctlRisky` 自动带上该变量；`tests/test_steps.sh` 守住"默认不输出" |
 | 终端全屏页 | 已实现（`app exec`，每次一条命令） | 还没做交互式 PTY；ttyd 仍是独立的 Web 终端 |
 | DSH 版本切换/回滚 | 已实现（`app switch`/`app rollback`，R3，需先停止） | `ConsoleRepo.appInfo()` + 软件页「已安装版本」 |
-| 依赖改版本、插件启停 | 未实现（现在只能读：`app packages` + `app plugins`） | 写路径需要「快照 → 改 → 自检 → 失败回滚」 |
+| 依赖改版本 | 已实现（`app pin`，R2，需已停）：原子改 `package.json`，留 `pin-bak.<epoch>` 只保最近 3 个；装包另用 `app apply`（R2，需运行中，进 guest 跑 `pnpm install`） | 用 rootfs 里的 node 改 JSON（`DSH_APP_NODE` 可覆盖）；格式化会按 2 空格重排整个文件 |
+| 插件启停 | 未实现（`app plugins` 只读；控制面 hooks 用现成的 `hooks` 开关） | 需要先摸清 `@deepseek-ai` 插件是否走 pnpm patch |
 | 快照删除 | 已实现（last-good 行按钮置灰） | — |
 
 未实现入口一律用 banner 明确说明"还没实现"，不假装可用。

@@ -286,5 +286,42 @@ rc=$?
 set -e
 [ "$rc" -eq 2 ] || fail "app packages with an unknown flag returned $rc"
 
+# ---- app pin（改依赖范围，需已停） --------------------------------------
+DSH_TEST_NODE=$(command -v node 2>/dev/null || true)
+if [ -n "$DSH_TEST_NODE" ]; then
+printf 'state=stopped\n' >"$DSH_ROOT/state/ctl/status"
+pindir="$case_dir/pinroot"
+mkdir -p "$pindir/current"
+cat >"$pindir/current/package.json" <<'PKGJSON'
+{"name":"@deepseek-ai/dsh","version":"1.4.2","dependencies":{"commander":"^12.0.0"},"optionalDependencies":{"fsevents":"^2.3.3"}}
+PKGJSON
+out=$(DSH_APP_RUNTIME_DIR="$pindir" DSH_APP_NODE="$DSH_TEST_NODE" "$DSH_CTL" app pin commander '^13.0.0' --apply) || fail "app pin failed: $out"
+assert_contains "$out" "pinned: commander"
+assert_contains "$out" "dependencies ^12.0.0 -> ^13.0.0"
+grep -q '"\^13.0.0"' "$pindir/current/package.json" || fail "app pin did not write the new range"
+ls "$pindir"/current/package.json.pin-bak.* >/dev/null 2>&1 || fail "app pin left no backup"
+
+out=$(DSH_APP_RUNTIME_DIR="$pindir" DSH_APP_NODE="$DSH_TEST_NODE" "$DSH_CTL" app pin fsevents '^2.4.0' --apply) || fail "app pin on optional dependency failed: $out"
+assert_contains "$out" "optionalDependencies ^2.3.3 -> ^2.4.0"
+
+set +e
+out=$(DSH_APP_RUNTIME_DIR="$pindir" DSH_APP_NODE="$DSH_TEST_NODE" "$DSH_CTL" app pin lodash '^4.17.21' --apply 2>&1)
+rc=$?
+[ "$rc" -eq 4 ] || fail "app pin on a non-dependency returned $rc"
+assert_contains "$out" "not a dependency of this build"
+out=$("$DSH_CTL" app pin commander '^13.0.0' 2>&1)
+rc=$?
+[ "$rc" -eq 3 ] || fail "app pin without --apply returned $rc"
+out=$("$DSH_CTL" app pin 'commander; rm -rf /' '^1.0.0' --apply 2>&1)
+rc=$?
+[ "$rc" -eq 2 ] || fail "app pin with an injected name returned $rc"
+out=$("$DSH_CTL" app pin commander '^1.0.0 && reboot' --apply 2>&1)
+rc=$?
+[ "$rc" -eq 2 ] || fail "app pin with an injected range returned $rc"
+set -e
+else
+  printf 'skip: app pin tests need node\n' >&2
+fi
+
 
 printf 'test_app: ok\n'

@@ -142,7 +142,7 @@ chroot 内的 root 是本机 root 的一部分，不是访客：
 | P3-7 ✅ | `system-rw.list`/ttyd 状态持久化去死字段；`image` size 语法严格化 | `module/lib/systemrw.sh`、`image.sh` | 状态可重建；`G`/`1G2M` 被拒 |
 | P3-8 🚧 | 写操作五档落地：R0 无限制、R1 AI 普通、R2 AI 敏感数据、R3 AI 重大、R4 人工 | `module/lib/risk.sh`、`module/bin/dsh-ctl`、`module/lib/systemrw.sh`、`image.sh`、`purge`/`restore` 入口 | R0/R3 dispatcher 门禁 + 单次 token + 审计；R1 可确认、R2 备份+token、R4 无 TTY 拒绝均通过 `test_risk`；实际文件写入口仍待接入 |
 
-| P3-9 ✅ | 软件层落地：`dsh-ctl app version|deps|plugins|list`（只读，需运行中）、`app switch|rollback --apply`（R3，需已停止，只改宿主符号链接）、`app packages`（R0 依赖/全局包/插件目录探测）、`app install --from registry|tarball|local --apply`（R3，guest 取包 → 宿主校验 sha256 → 原子发布版本）、`app exec -- <cmd>`（R1，guest 一次性命令） | `module/lib/app.sh`、`module/bin/dsh-ctl`、`module/lib/risk.sh` | `tests/test_app.sh`：无运行拒绝、JSON 字段、R3 无 token 拒绝、运行中拒绝换版、换版/回滚/未知版本、`--apply` 缺失、安装八项；`tests/test_snapshot.sh` 增删除三件套与 last-good 拒绝、`tests/test_app.sh` 增 `app packages` 透传；`tests/test_ttyd.sh` 增 `status --json` |
+| P3-9 ✅ | 软件层落地：`dsh-ctl app version|deps|plugins|list`（只读，需运行中）、`app switch|rollback --apply`（R3，需已停止，只改宿主符号链接）、`app packages`（R0 依赖/全局包/插件目录探测）、`app pin`（R2 改依赖范围 + 备份）、`app apply`（R2 进 guest 跑 pnpm install）、`app install --from registry|tarball|local --apply`（R3，guest 取包 → 宿主校验 sha256 → 原子发布版本）、`app exec -- <cmd>`（R1，guest 一次性命令） | `module/lib/app.sh`、`module/bin/dsh-ctl`、`module/lib/risk.sh` | `tests/test_app.sh`：无运行拒绝、JSON 字段、R3 无 token 拒绝、运行中拒绝换版、换版/回滚/未知版本、`--apply` 缺失、安装八项；`tests/test_snapshot.sh` 增删除三件套与 last-good 拒绝、`tests/test_app.sh` 增 `app packages` 透传；`tests/test_ttyd.sh` 增 `status --json` |
 
 ### P4 验证与清理
 

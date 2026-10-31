@@ -16,9 +16,10 @@ dsh_risk_level() {
   file:overwrite | sdcard:overwrite) printf 'R1\n' ;;
   app:exec) printf 'R1\n' ;;
   app:switch | app:rollback | app:install) printf 'R3\n' ;;
+  app:pin | app:apply) printf 'R2\n' ;;
   data:write | app-data:write | data:delete) printf 'R2\n' ;;
   block:full | block:write | raw:write) printf 'R4\n' ;;
-  app:version | app:deps | app:plugins | app:list | app:'') printf 'R0\n' ;;
+  app:version | app:deps | app:plugins | app:packages | app:list | app:'') printf 'R0\n' ;;
   fixperm:* | doctor:* | plan:* | status:* | config:* | log:* | logs:* | version:* | help:* | risk:* | boot:*) printf 'R0\n' ;;
   *) printf 'R0\n' ;;
   esac

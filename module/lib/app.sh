@@ -64,6 +64,8 @@ Read-only:
   deps [--json]           node/pnpm/dsh 与 hooks 预设、guard 状态
   plugins [--json]        控制面插件（hooks 预设、phone-mcp）与启用状态
   packages [--json]       DSH 依赖、全局包与 @deepseek-ai 作用域插件目录
+  pin <pkg> <range> --apply  改构建清单里的依赖范围（需已停；不装包）
+  apply --apply            进 guest 跑 pnpm install（需运行中）
   list [--json]           宿主侧已安装的 DSH 版本（versions/）
 
 Write (require --apply, chroot 必须已停止):
@@ -691,6 +693,186 @@ rm -f '$_app_gdir/.install.tgz'" || dsh_app_install_fail "app install: 解包失
   fi
 }
 
+# 改依赖版本范围：只动宿主上的 package.json（原子替换 + 备份），不装包。
+# 用 rootfs 里的 node 做 JSON 读写，避免在 shell 里手改 JSON。
+DSH_APP_PIN_JS='
+const fs = require("fs"), path = require("path");
+const [root, name, range] = process.argv.slice(1);
+const file = path.join(root, "package.json");
+let pkg;
+try { pkg = JSON.parse(fs.readFileSync(file, "utf8")); }
+catch (e) { console.error("cannot read " + file); process.exit(3); }
+const deps = pkg.dependencies || {}, opt = pkg.optionalDependencies || {};
+let bucket = null, old = "";
+if (Object.prototype.hasOwnProperty.call(deps, name)) { bucket = "dependencies"; old = deps[name]; }
+else if (Object.prototype.hasOwnProperty.call(opt, name)) { bucket = "optionalDependencies"; old = opt[name]; }
+else { console.error("not a dependency of this build: " + name); process.exit(4); }
+if (bucket === "dependencies") pkg.dependencies[name] = range; else pkg.optionalDependencies[name] = range;
+fs.writeFileSync(file + ".tmp", JSON.stringify(pkg, null, 2) + "\n");
+fs.renameSync(file + ".tmp", file);
+process.stdout.write(bucket + " " + old + " -> " + range + "\n");
+'
+
+dsh_app_node() {
+  if [ -n "${DSH_APP_NODE:-}" ]; then
+    printf '%s\n' "$DSH_APP_NODE"
+    return 0
+  fi
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return 0
+  fi
+  if [ -x "$DSH_ROOTFS_DIR/opt/node/bin/node" ]; then
+    printf '%s\n' "$DSH_ROOTFS_DIR/opt/node/bin/node"
+    return 0
+  fi
+  dsh_err "app: 找不到 node（宿主 PATH 与 $DSH_ROOTFS_DIR/opt/node/bin 都没有）"
+  return 4
+}
+
+dsh_app_pin() {
+  _apply=0
+  _name=
+  _range=
+  while [ $# -gt 0 ]; do
+    case $1 in
+    --apply) _apply=1 ;;
+    -h | --help)
+      printf 'Usage: dsh-ctl app pin <package> <range> --apply\n'
+      return 0
+      ;;
+    -*)
+      dsh_err "app pin: unexpected option: $1"
+      return 2
+      ;;
+    *)
+      if [ -z "$_name" ]; then _name=$1; elif [ -z "$_range" ]; then _range=$1; else
+        dsh_err "app pin: too many arguments: $1"
+        return 2
+      fi
+      ;;
+    esac
+    shift
+  done
+  [ "$_apply" -eq 1 ] || {
+    dsh_err "app pin: refuses to run without --apply"
+    return 3
+  }
+  [ -n "$_name" ] && [ -n "$_range" ] || {
+    dsh_err "app pin: need <package> <range>"
+    return 2
+  }
+  case $_name in
+  @*/*) _scope=${_name%%/*} _rest=${_name#*/} ;;
+  @*)
+    dsh_err "app pin: malformed scoped name: $_name"
+    return 2
+    ;;
+  *)
+    _scope=''
+    _rest=$_name
+    ;;
+  esac
+  if [ -n "$_scope" ]; then
+    case $_scope in
+    @?*) ;;
+    *)
+      dsh_err "app pin: malformed scope: $_scope"
+      return 2
+      ;;
+    esac
+    case $_scope in
+    *[!A-Za-z0-9@._-]*)
+      dsh_err "app pin: malformed scope: $_scope"
+      return 2
+      ;;
+    esac
+  fi
+  case $_rest in
+  '' | [!A-Za-z0-9]*)
+    dsh_err "app pin: malformed package name: $_name"
+    return 2
+    ;;
+  *[!A-Za-z0-9._-]*)
+    dsh_err "app pin: malformed package name: $_name"
+    return 2
+    ;;
+  esac
+  # 白名单校验，避免把乱字符写进 package.json；不用 case 模式是因为 `<`/`>` 会被
+  # 部分 shell 当成重定向。
+  if [ -n "$(printf '%s' "$_range" | tr -d 'A-Za-z0-9.^~<>=*| +-')" ]; then
+    dsh_err "app pin: malformed version range: $_range"
+    return 2
+  fi
+  _dir=${DSH_APP_RUNTIME_DIR:-$DSH_RUNTIME_DIR}
+  _pkgjson=$_dir/current/package.json
+  [ -f "$_pkgjson" ] || {
+    dsh_err "app pin: 找不到 $_pkgjson（先安装一个版本）"
+    return 4
+  }
+  if [ "$(dsh_state_get state 2>/dev/null || true)" = running ]; then
+    dsh_err "app pin: 请先停止 chroot（改的是 /opt/dsh 里的构建清单）"
+    return 4
+  fi
+  _node=$(dsh_app_node) || return 4
+  _bak=$_pkgjson.pin-bak.$(date +%s)
+  cp "$_pkgjson" "$_bak" || {
+    dsh_err "app pin: 备份失败：$_bak"
+    return 4
+  }
+  dsh_step "改依赖 $_name $_range"
+  if ! _out=$("$_node" -e "$DSH_APP_PIN_JS" "$_dir/current" "$_name" "$_range" 2>&1); then
+    cp "$_bak" "$_pkgjson" 2>/dev/null || true
+    rm -f "$_bak"
+    dsh_err "app pin: ${_out:-node 执行失败}"
+    return 4
+  fi
+  printf 'pinned: %s\n' "$_name"
+  printf 'change: %s\n' "$_out"
+  printf 'backup: %s\n' "$_bak"
+  printf 'next: dsh-ctl app apply --apply（需要 chroot 运行中，进 guest 跑 pnpm install）\n'
+  # 只保留最近 3 个 pin 备份，避免 /data 里堆垃圾。
+  ls -1t "$_pkgjson".pin-bak.* 2>/dev/null | tail -n +4 | while read -r _old; do rm -f "$_old"; done
+  return 0
+}
+
+dsh_app_apply() {
+  _apply=0
+  while [ $# -gt 0 ]; do
+    case $1 in
+    --apply) _apply=1 ;;
+    -h | --help)
+      printf 'Usage: dsh-ctl app apply --apply\n'
+      return 0
+      ;;
+    *)
+      dsh_err "app apply: unexpected argument: $1"
+      return 2
+      ;;
+    esac
+    shift
+  done
+  [ "$_apply" -eq 1 ] || {
+    dsh_err "app apply: refuses to run without --apply"
+    return 3
+  }
+  _pid=$(dsh_app_require_running) || return 4
+  dsh_step "进 guest 跑 pnpm install"
+  if ! _out=$(DSH_GUEST_COMMAND_TIMEOUT=${DSH_APP_APPLY_TIMEOUT:-900} dsh_guest_run "$_pid" /bin/sh -c '
+    cd /opt/dsh/current || exit 4
+    command -v pnpm >/dev/null 2>&1 || { echo "pnpm not found in guest"; exit 5; }
+    pnpm install --reporter=append-only 2>&1 | tail -n 40
+    ' 2>&1); then
+    dsh_err "app apply: pnpm install 失败"
+    [ -n "$_out" ] && printf '%s\n' "$_out" >&2
+    return 4
+  fi
+  printf 'applied: pnpm install\n'
+  [ -n "$_out" ] && printf '%s\n' "$_out"
+  printf 'next: dsh-ctl restart --apply\n'
+  return 0
+}
+
 dsh_app_packages() {
   _json=0
   while [ $# -gt 0 ]; do
@@ -747,6 +929,8 @@ dsh_app_run() {
   exec) dsh_app_exec "$@" ;;
   install) dsh_app_install "$@" ;;
   packages) dsh_app_packages "$@" ;;
+  pin) dsh_app_pin "$@" ;;
+  apply) dsh_app_apply "$@" ;;
   help | -h | --help | '') dsh_app_usage ;;
   *)
     dsh_err "app: unknown subcommand: $_sub"

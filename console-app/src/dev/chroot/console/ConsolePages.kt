@@ -290,6 +290,7 @@ fun SoftwarePage(
     onRefresh: () -> Unit,
     onInstall: (source: String, version: String, target: String, sha256: String) -> Unit,
     onTtyd: (enable: Boolean) -> Unit,
+    onPin: (name: String, current: String) -> Unit,
     onPending: (String) -> Unit,
     busy: Boolean = false,
 ) {
@@ -424,11 +425,18 @@ fun SoftwarePage(
                             Text("pnpm root · " + packages.pnpmRoot, color = palette.faint, fontSize = 11.sp)
                         }
                         packages.deps.take(8).forEach { dep ->
-                            Row(Modifier.padding(top = 6.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                                    .clickable(enabled = !busy && stopped) { onPin(dep.first, dep.second) }
+                                    .padding(vertical = 7.dp),
+                            ) {
                                 Text(dep.first, color = palette.sub, fontSize = 12.sp, modifier = Modifier.weight(1f))
                                 Text(dep.second, color = palette.faint, fontSize = 12.sp)
+                                Spacer(Modifier.width(6.dp))
+                                LineIcon("chevron", palette.faint, 12)
                             }
                         }
+                        Text("点一行改版本范围（需先停止 chroot）", color = palette.faint, fontSize = 11.sp)
                         if (packages.plugins.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
                             Text("作用域插件 · " + packages.plugins.joinToString("、"), color = palette.faint, fontSize = 11.sp)

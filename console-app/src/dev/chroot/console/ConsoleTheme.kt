@@ -178,6 +178,12 @@ fun LineIcon(kind: String, color: Color, size: Int = 22) {
                 drawLine(color, Offset(w * 0.32f, h * 0.42f), Offset(w * 0.46f, h * 0.52f), strokeWidth = stroke.width, cap = StrokeCap.Round)
                 drawLine(color, Offset(w * 0.46f, h * 0.52f), Offset(w * 0.32f, h * 0.62f), strokeWidth = stroke.width, cap = StrokeCap.Round)
             }
+            "chevron" -> {
+                val w = this.size.width
+                val h = this.size.height
+                drawLine(color, Offset(w * 0.38f, h * 0.28f), Offset(w * 0.62f, h * 0.5f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(color, Offset(w * 0.62f, h * 0.5f), Offset(w * 0.38f, h * 0.72f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
             "storage" -> {
                 val w = this.size.width
                 val h = this.size.height

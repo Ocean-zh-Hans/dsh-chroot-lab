@@ -87,6 +87,7 @@ fun ConsoleRoot() {
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     var nextTaskId by remember { mutableIntStateOf(1) }
     var banner by remember { mutableStateOf("") }
+    var pinTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var appInfo by remember { mutableStateOf(AppInfo()) }
     var appPlugins by remember { mutableStateOf<List<AppPlugin>>(emptyList()) }
     var ttyd by remember { mutableStateOf(TtydInfo()) }
@@ -289,7 +290,8 @@ fun ConsoleRoot() {
                         onRollback = { explain = riskAppRollback(appInfo.previous) },
                         onRefresh = { scope.launch { refresh() } },
                         onInstall = { source, version, target, sha -> explain = riskAppInstall(source, version, target, sha) },
-                        onTtyd = { enable -> explain = riskTtyd(enable) },
+                        onPin = { name, current -> pinTarget = name to current },
+                    onTtyd = { enable -> explain = riskTtyd(enable) },
                         onPending = { what -> banner = what + " 还没实现；这一步先只记录在 docs/console-design.md。" },
                         busy = busy,
                     )
@@ -384,6 +386,24 @@ fun ConsoleRoot() {
                 onCopy = { text -> copy(text, "任务输出") },
             )
         }
+    }
+    pinTarget?.let { target ->
+        PinDialog(
+            name = target.first,
+            current = target.second,
+            onDismiss = { pinTarget = null },
+            onConfirm = { range ->
+                pinTarget = null
+                explain = RiskRequest(
+                    op = "app pin",
+                    title = "改依赖 " + target.first + " → " + range,
+                    args = listOf("app", "pin", target.first, range),
+                    reason = "操作者请求调整 " + target.first + " 的版本范围",
+                    impact = "只改 /opt/dsh/current/package.json 并留备份；不装包，下次 pnpm install 生效",
+                    destructive = false,
+                )
+            },
+        )
     }
     if (banner.isNotBlank()) {
         BannerDialog(banner) { banner = "" }
