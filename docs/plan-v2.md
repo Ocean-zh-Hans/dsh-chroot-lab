@@ -138,7 +138,7 @@ chroot 内的 root 是本机 root 的一部分，不是访客：
 | P3-3 ✅ | `config` 校验 `DSH_TMP`、`DSH_IMAGE` 必须在 `DSH_IMAGE_DIR` 下、`DSH_ROOTFS_DIR` realpath 不得是符号链接 | `module/lib/config.sh` | 越界配置在 doctor --for-apply 前失败 |
 | P3-4 ✅ | `customize.sh` 不再覆盖 `control/s6/ttyd/down` 等运行时状态；更新前后保持 ttyd 开关 | `module/customize.sh` | 更新前后 `ttyd status` 一致 |
 | P3-5 ✅ | `service.sh` 日志轮转失败降级为警告，不阻止启动 | `module/service.sh` | 只读/满盘模拟仍进入 boot |
-| P3-6 ✅ | `status` 人类/JSON 输出默认对 URL token 脱敏；Console 用 `--with-token` 显式取完整 URL；`plan.sh` 修正 1A/9A 过期文案 | `module/lib/status.sh`、`module/lib/plan.sh`、Console `ConsoleRepo.status` | 默认输出无原始 token；`--with-token` 仅 Console 显式使用；`test_status.sh` 覆盖两条路径 |
+| P3-6 ✅ | `status` 默认输出完整 URL（loopback 入口不是秘密），`--redact` 供贴公开日志时脱敏；`plan.sh` 修正 1A/9A 过期文案 | `module/lib/status.sh`、`module/lib/plan.sh` | 默认可直接点开；`--redact` 路径有测试；plan 与当前策略一致 |
 | P3-7 ✅ | `system-rw.list`/ttyd 状态持久化去死字段；`image` size 语法严格化 | `module/lib/systemrw.sh`、`image.sh` | 状态可重建；`G`/`1G2M` 被拒 |
 | P3-8 🚧 | 写操作五档落地：R0 无限制、R1 AI 普通、R2 AI 敏感数据、R3 AI 重大、R4 人工 | `module/lib/risk.sh`、`module/bin/dsh-ctl`、`module/lib/systemrw.sh`、`image.sh`、`purge`/`restore` 入口 | R0/R3 dispatcher 门禁 + 单次 token + 审计；R1 可确认、R2 备份+token、R4 无 TTY 拒绝均通过 `test_risk`；实际文件写入口仍待接入 |
 

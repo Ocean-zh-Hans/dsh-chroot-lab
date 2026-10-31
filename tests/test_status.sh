@@ -32,10 +32,13 @@ assert_contains "$out" "state        : running"
 assert_contains "$out" "pid valid    : yes"
 
 json=$(DSH_PROC=/proc "$DSH_CTL" status --json)
-python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["state"]=="running"; assert d["pid_valid"] is True; assert d["note"]=="degraded-test"; assert d["url"]=="http://127.0.0.1:1234/?token=REDACTED"' "$json"
+python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["state"]=="running"; assert d["pid_valid"] is True; assert d["note"]=="degraded-test"; assert d["url"]=="http://127.0.0.1:1234/?token=test"' "$json"
+# The loopback URL is the operator entry point, so it is printed as-is; masking
+# is the opt-in used when pasting status into public logs.
 out=$(DSH_PROC=/proc "$DSH_CTL" status)
 case "$out" in
-*"token=test"*) fail "status exposed the raw token" ;;
+*"token=test"*) ;;
+*) fail "status hid the URL token by default" ;;
 esac
 
 printf 'ok:1\n' >"$DSH_ROOT/state/runtime/health"
@@ -95,13 +98,13 @@ assert_contains "$out" "pid valid    : no"
 
 printf 'test_status: ok\n'
 
-# The Console needs the full URL, so --with-token must opt out of masking.
-raw=$("$DSH_CTL" status --json --with-token)
-python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["url"].endswith("token=test"), d["url"]' "$raw"
-raw=$("$DSH_CTL" status --with-token)
-case $raw in
-*"token=test"*) ;;
-*) fail "--with-token did not print the full URL" ;;
-esac
+# --redact is the opt-in for logs; --with-token stays accepted as a no-op.
 masked=$("$DSH_CTL" status --json --redact)
 python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["url"].endswith("token=REDACTED"), d["url"]' "$masked"
+masked=$("$DSH_CTL" status --redact)
+case $masked in
+*"token=test"*) fail "--redact still printed the raw token" ;;
+*) ;;
+esac
+raw=$("$DSH_CTL" status --json --with-token)
+python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["url"].endswith("token=test"), d["url"]' "$raw"

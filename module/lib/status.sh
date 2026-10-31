@@ -60,10 +60,10 @@ dsh_status_health_fresh() {
 
 dsh_status_run() {
   _json=0
-  # Redacting is the default: status output is routinely pasted into logs and
-  # handoff files. The Console is the one consumer that needs the full URL, so
-  # it opts in explicitly with --with-token.
-  _redact=1
+  # The URL token is not treated as a secret here: it is a loopback entry point
+  # the operator needs, and hiding it only produced "why can't I open this".
+  # --redact stays for pasting status into public logs.
+  _redact=0
   for _arg in "$@"; do
     case $_arg in
     --json) _json=1 ;;
@@ -252,8 +252,8 @@ Usage: dsh-ctl status [--json] [--with-token] [--redact]
 
 Read-only status. Validates holder PID/starttime/mount-namespace and a fresh
 DSH health heartbeat if present. Never signals, unmounts, or detaches anything.
-The URL token is masked by default; --with-token prints the full URL for the
-Console, --redact keeps the default for logs.
+The URL is printed as-is by default (the loopback entry point is not a secret);
+pass --redact to mask the token when pasting into public logs.
 EOF
 }
 

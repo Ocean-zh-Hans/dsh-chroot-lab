@@ -95,7 +95,7 @@ object ConsoleRepo {
     }
 
     fun status(): ConsoleStatus {
-        val result = ctl("status", "--json", "--with-token", timeout = 20)
+        val result = ctl("status", "--json", timeout = 20)
         if (!result.success()) return ConsoleStatus(note = result.output.take(200))
         return try {
             val json = JSONObject(result.output)
