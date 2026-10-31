@@ -94,3 +94,14 @@ assert_contains "$out" "state        : stale"
 assert_contains "$out" "pid valid    : no"
 
 printf 'test_status: ok\n'
+
+# The Console needs the full URL, so --with-token must opt out of masking.
+raw=$("$DSH_CTL" status --json --with-token)
+python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["url"].endswith("token=test"), d["url"]' "$raw"
+raw=$("$DSH_CTL" status --with-token)
+case $raw in
+*"token=test"*) ;;
+*) fail "--with-token did not print the full URL" ;;
+esac
+masked=$("$DSH_CTL" status --json --redact)
+python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["url"].endswith("token=REDACTED"), d["url"]' "$masked"

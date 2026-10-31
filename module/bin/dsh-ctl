@@ -180,7 +180,7 @@ snapshot)
   if [ "$#" -gt 0 ]; then shift; fi
   case $_sub in
   create) dsh_snapshot_create "$@" ;;
-  list) shift; dsh_snapshot_list "$@" ;;
+  list) dsh_snapshot_list "$@" ;;
   restore) dsh_snapshot_restore "$@" ;;
   restore-last-good) dsh_snapshot_restore_last_good "$@" ;;
   promote) dsh_snapshot_promote "$@" ;;

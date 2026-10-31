@@ -10,10 +10,19 @@ dsh_status_file_value() {
 dsh_status_health_age() {
   _h=$(dsh_read_line "$DSH_HEALTH_FILE" 2>/dev/null || true)
   _ts=${_h#ok:}
-  [ "$_ts" != "$_h" ] || { printf '%s\n' -1; return 0; }
-  dsh_is_uint "$_ts" || { printf '%s\n' -1; return 0; }
+  [ "$_ts" != "$_h" ] || {
+    printf '%s\n' -1
+    return 0
+  }
+  dsh_is_uint "$_ts" || {
+    printf '%s\n' -1
+    return 0
+  }
   _now=$(date +%s 2>/dev/null || true)
-  dsh_is_uint "$_now" || { printf '%s\n' -1; return 0; }
+  dsh_is_uint "$_now" || {
+    printf '%s\n' -1
+    return 0
+  }
   printf '%s\n' "$((_now - _ts))"
 }
 
@@ -51,11 +60,15 @@ dsh_status_health_fresh() {
 
 dsh_status_run() {
   _json=0
-  _redact=0
+  # Redacting is the default: status output is routinely pasted into logs and
+  # handoff files. The Console is the one consumer that needs the full URL, so
+  # it opts in explicitly with --with-token.
+  _redact=1
   for _arg in "$@"; do
     case $_arg in
     --json) _json=1 ;;
     --redact) _redact=1 ;;
+    --with-token) _redact=0 ;;
     -h | --help)
       dsh_status_help
       return 0
@@ -76,8 +89,6 @@ dsh_status_run() {
   _last_good=$(dsh_read_line "$DSH_LAST_GOOD_FILE" 2>/dev/null || true)
   _url=$(dsh_read_line "$DSH_URL_FILE" 2>/dev/null || true)
   [ -n "$_url" ] || _url=$(dsh_status_file_value url 2>/dev/null || true)
-  # The URL is the only supported entry point for the Console/browser, so the
-  # token stays intact by default; --redact is for pasting into logs.
   [ "$_redact" -eq 0 ] ||
     _url=$(printf '%s\n' "$_url" | sed -E 's/([?&](token|access_token|password)=)[^& ]*/\1REDACTED/g')
   _started=$(dsh_status_file_value started 2>/dev/null || true)
@@ -237,10 +248,12 @@ dsh_status_run() {
 
 dsh_status_help() {
   cat <<'EOF'
-Usage: dsh-ctl status [--json]
+Usage: dsh-ctl status [--json] [--with-token] [--redact]
 
 Read-only status. Validates holder PID/starttime/mount-namespace and a fresh
 DSH health heartbeat if present. Never signals, unmounts, or detaches anything.
+The URL token is masked by default; --with-token prints the full URL for the
+Console, --redact keeps the default for logs.
 EOF
 }
 

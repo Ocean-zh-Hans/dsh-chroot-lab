@@ -45,6 +45,13 @@ out=$("$DSH_CTL" snapshot list)
 assert_contains "$out" "rootfs-s1.img"
 assert_contains "$out" "state-s1.tar.gz"
 assert_contains "$out" "last-good: s1"
+json=$("$DSH_CTL" snapshot list --json)
+python3 - <<'PYJSON' "$json"
+import json, sys
+data = json.loads(sys.argv[1])
+names = [item["name"] for item in data["snapshots"]]
+assert "s1" in names, names
+PYJSON
 out=$("$DSH_CTL" snapshot promote s1)
 assert_contains "$out" "last-good: s1"
 
