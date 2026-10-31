@@ -1,6 +1,6 @@
 # Console 设计稿 v2（层模型，2026-10-31）
 
-状态：**设计模式，未实现**。v2 按用户提出的"设备/系统/软件"三层重排信息架构；v1 的四 tab（机器/数据/日志/设置）作废。本文是控制台重做的唯一依据；与代码冲突时以本文为准，实现落回之后再把本文标为"已实现"。
+状态：**C0 已实现，C1–C4 未实现**（实现状态见 §12.1）。v2 按用户提出的"设备/系统/软件"三层重排信息架构；v1 的四 tab（机器/数据/日志/设置）作废。本文是控制台重做的唯一依据；与代码冲突时以本文为准，实现落回之后再把本文标为"已实现"。
 范围：`console-app`（Compose，`dev.chroot.console`）。Agent APK 不在本文范围。
 前置：`plan-v2.md` 的读写模型（R0–R4）、`dsh-ctl` 的只读 JSON 接口。
 静态原型：`docs/design/console-mockup.html`（单文件、无依赖，手机浏览器可直接打开；右上角可切深浅色）。
@@ -179,7 +179,9 @@
 | `app deps --json` | 无 | 列出 `dsh-*` 依赖与当前/可用版本 |
 | `app upgrade/rollback --apply` | 无 | 升降级 DSH 或单个依赖，先自动导出 lockfile 备份 |
 | `app plugins --json` | 无 | 列出已装插件与启用状态（来自 profile/patch） |
-| `ttyd status --json` | 仅文本 | 控制台开终端前需要端口/进程状态 |
+| `ttyd status --json` | 仅文本 | 控制台开终端前需要端口/进程状态（软件页现在只能显示"状态待上报"） |
+| `status --json` 的抽稀 | 字段偏多 | 控制台只需要 `state/pid/loop/image/url/rootfs_mounted/loop_query/residual_resources/watchdog_running/autostart/health_age/image_bytes`，其余字段可留给 `--verbose` |
+| `log --follow` / `log --json` | 无 | C1 任务条要边跑边看到日志 |
 
 注意：`app *` 系列必须在 guest 内执行（node/pnpm 在 rootfs 里），实现上是 `dsh-ctl` 进入 chroot 跑一个小的 guest 侧脚本，控制台只消费 JSON，不自己跑 pnpm。
 
@@ -193,9 +195,34 @@
 | C3 | 快照动作与二级页、全部日志页、风险 sheet 文案与滑动确认 | R0/R1 无 sheet；R3 一次 sheet |
 | C4 | 视觉收敛（去玻璃、字阶、圆角、动效） | 深浅色都过 1.3× 字体检查 |
 
-## 13. 待拍板
+### 12.1 实现状态（C0 已完成，落地于 `console-app/src/dev/chroot/console/`）
 
-1. **快照归属**：操作放系统页、占用放设备页（我倾向），还是全部塞设备页？
-2. **日志形态**：每层页内嵌 + 一个"全部日志"二级页（我倾向），还是保留一个独立日志 tab？
-3. **设置入口**：第 4 个 tab（我倾向，好点）还是右上角齿轮（省一个 tab 但难够）？
-4. **设备页要不要放机型/内核/KSU 这些排障信息**？我倾向要——出问题第一条就是"你什么机器什么内核"，让用户长按复制比让他去翻 `dsh-ctl doctor` 强。
+| 项 | 状态 | 位置 |
+|---|---|---|
+| 四 tab 导航（设备/系统/软件/设置），删除"更多" | 已实现 | `ConsoleApp.kt` 的 `tabs` + `ConsoleBottomBar` |
+| 系统页状态卡（起停 + 运行时一行） | 已实现 | `ConsolePages.kt` `StateCard` / `statusLine` |
+| 系统页建议（最多 2 条） | 已实现 | 复用 `ConsoleScreens.kt` 的 `recommendations` / `RecommendationCard` |
+| 系统页快照（最近 3 个 + 全部） | 已实现 | `ConsolePages.kt` `SystemPage` |
+| 系统页运行时事实四格（镜像/loop/rootfs/看门狗） | 已实现 | `ConsolePages.kt` `factsOf`，异常项转橙 |
+| 系统页诊断（体检 + 复制诊断包） | 已实现 | `diagnosticsText`（纯函数，有单测 `console-app/test-src/.../DiagnosticsTest.kt`） |
+| 软件页依赖条 + 终端/DSH/依赖/插件/服务入口 | 已实现（入口未实现，点开提示） | `ConsolePages.kt` `SoftwarePage` |
+| 设备页机器事实（getprop/uname）+ 空间 + 路径 + 模块 | 已实现 | `ConsolePages.kt` `DevicePage`，`ConsoleRepo.device()` |
+| 设置页（自启/确认模式/能力/复制诊断包/关于） | 已实现 | `ConsoleScreens.kt` `SettingsScreen` |
+| 快照页新建 + 恢复 | 已实现 | `SnapshotsScreen(onCreate=...)`，`riskSnapshotCreate` |
+| 任务条 / 时间线（start 期间不冻结） | 未实现（C1） | — |
+| 终端全屏页 | 未实现（依赖 `ttyd status --json`） | — |
+| DSH 版本升降级、依赖改版本、插件管理 | 未实现（依赖 `app * --json`） | — |
+| 快照删除 | 未实现（依赖 `snapshot delete`） | — |
+
+未实现入口一律用 banner 明确说明"还没实现"，不假装可用。
+
+## 13. 已定（2026-10-31）
+
+用户确认"全部按建议来"，以下不再讨论：
+
+1. **快照**：操作在系统页，占用大小同时显示在设备页。
+2. **设置**：第 4 个 tab。
+3. **设备页**：包含机型/内核/KSU/模块版本等排障信息，长按可复制。
+4. **终端**：全屏页（顶部"命令/输出"分栏），不做页内折叠面板。
+
+待实现的顺序按 §12 分期执行，C0 先落地。

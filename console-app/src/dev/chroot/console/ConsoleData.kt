@@ -23,6 +23,9 @@ data class ConsoleStatus(
     val moduleVersion: String = "",
     val bootId: String = "",
     val pidValid: Boolean = false,
+    val rootfsMounted: Boolean = false,
+    val loopQuery: String = "",
+    val residual: String = "",
 )
 
 data class DoctorCheck(val level: String, val message: String)
@@ -118,6 +121,9 @@ object ConsoleRepo {
                 moduleVersion = json.optString("module_version"),
                 bootId = json.optString("boot_id"),
                 pidValid = json.optBoolean("pid_valid"),
+                rootfsMounted = json.optBoolean("rootfs_mounted"),
+                loopQuery = json.optString("loop_query"),
+                residual = json.optString("residual_resources"),
             )
         } catch (error: Exception) {
             ConsoleStatus(note = "状态解析失败：" + error.message)
@@ -202,6 +208,20 @@ object ConsoleRepo {
             list
         } catch (error: Exception) {
             emptyList()
+        }
+    }
+
+    /** Read-only device facts for the device tab: no writes, no root commands beyond getprop. */
+    fun device(): List<Pair<String, String>> {
+        val command = "getprop ro.product.model; getprop ro.build.version.release; " +
+            "getprop ro.build.version.sdk; getprop ro.build.type; uname -r; getprop ro.boot.verifiedbootstate"
+        val result = ConsoleSupport.runCommand(20, "su", "-c", command)
+        if (!result.success()) return emptyList()
+        val lines = result.output.trim().lines().map { it.trim() }
+        val labels = listOf("机型", "Android", "API", "构建", "内核", "verifyboot")
+        return labels.mapIndexedNotNull { index, label ->
+            val value = lines.getOrNull(index).orEmpty()
+            if (value.isEmpty()) null else label to value
         }
     }
 

@@ -98,14 +98,14 @@ private fun LifecycleStrip(state: String) {
 
 // ------------------------------------------------------------ recommendations
 
-private data class Recommendation(
+internal data class Recommendation(
     val title: String,
     val detail: String,
     val request: RiskRequest? = null,
     val actionLabel: String = "去处理",
 )
 
-private fun recommendations(status: ConsoleStatus, doctor: DoctorReport?): List<Recommendation> {
+internal fun recommendations(status: ConsoleStatus, doctor: DoctorReport?): List<Recommendation> {
     val list = ArrayList<Recommendation>()
     when (status.state) {
         "recovery-required", "stale" -> list += Recommendation(
@@ -176,7 +176,7 @@ private fun recommendations(status: ConsoleStatus, doctor: DoctorReport?): List<
 }
 
 @Composable
-private fun RecommendationCard(item: Recommendation, onAction: (RiskRequest) -> Unit, onLogs: () -> Unit) {
+internal fun RecommendationCard(item: Recommendation, onAction: (RiskRequest) -> Unit, onLogs: () -> Unit) {
     val palette = consolePalette()
     GlassCard {
         Column(Modifier.padding(16.dp)) {
@@ -193,290 +193,6 @@ private fun RecommendationCard(item: Recommendation, onAction: (RiskRequest) -> 
                     Box(Modifier.weight(1f)) { PrimaryButton(item.actionLabel, { onAction(item.request) }, tint = palette.warning) }
                 }
                 Box(Modifier.weight(1f)) { GhostButton("查看日志", onLogs) }
-            }
-        }
-    }
-}
-
-// -------------------------------------------------------------------- chroot
-
-@Composable
-fun ChrootScreen(
-    status: ConsoleStatus,
-    doctor: DoctorReport?,
-    onOpenDsh: () -> Unit,
-    onHealth: () -> Unit,
-    onAction: (RiskRequest) -> Unit,
-    onLogs: () -> Unit,
-) {
-    val palette = consolePalette()
-    val recs = recommendations(status, doctor)
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-        item {
-            GlassCard {
-                Column(Modifier.padding(20.dp)) {
-                    LifecycleStrip(status.state)
-                    Spacer(Modifier.height(14.dp))
-                    Text(
-                        text = ConsoleSupport.stateLabel(status.state),
-                        color = palette.text,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = formatStart(status.started),
-                        color = palette.faint,
-                        fontSize = 12.sp,
-                    )
-                    Text(
-                        text = "holder " + status.pid.ifBlank { "—" } + " · loop " + status.loop.ifBlank { "未挂载" },
-                        color = palette.faint,
-                        fontSize = 12.sp,
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (status.state == "running") {
-                            Box(Modifier.weight(1f)) { PrimaryButton("打开 DSH", onOpenDsh) }
-                            Box(Modifier.weight(1f)) {
-                                GhostButton("停止") {
-                                    onAction(
-                                        RiskRequest(
-                                            op = "stop",
-                                            title = "停止 Chroot",
-                                            args = listOf("stop"),
-                                            reason = "控制台停止 Chroot",
-                                            impact = "结束 holder 与 DSH，短时不可用",
-                                            sections = listOf(
-                                                "是什么" to "停止 holder、s6 与 DSH，并按逆序卸载本次启动的挂载。",
-                                                "什么时候用" to "维护、升级模块、创建或恢复快照之前。",
-                                                "会有什么后果" to "DSH 页面与会话中断；镜像、快照和用户数据保留。",
-                                                "怎么恢复" to "重新启动即可；如果清理失败，状态会停在需要恢复。",
-                                            ),
-                                        ),
-                                    )
-                                }
-                            }
-                        } else if (status.state == "stopped" || status.state == "failed") {
-                            Box(Modifier.weight(1f)) {
-                                PrimaryButton("启动", onClick = {
-                                    onAction(
-                                        RiskRequest(
-                                            op = "start",
-                                            title = "启动 Chroot",
-                                            args = listOf("start", "--apply"),
-                                            reason = "控制台启动 Chroot",
-                                            impact = "挂载镜像并启动 DSH，占用 loop 与本地端口",
-                                            sections = listOf(
-                                                "是什么" to "挂载 rootfs 镜像，建立 private namespace，启动 s6 与 DSH。",
-                                                "什么时候用" to "需要 DSH、或重启后没有自动启动时。",
-                                                "会有什么后果" to "占用一个 loop 与本地端口；不会修改 Android 系统分区。",
-                                                "怎么恢复" to "随时可以停止；异常时本页会出现清理入口。",
-                                            ),
-                                        ),
-                                    )
-                                })
-                            }
-                            Box(Modifier.weight(1f)) { GhostButton("环境检查", onHealth) }
-                        } else {
-                            Box(Modifier.weight(1f)) { GhostButton("刷新状态", onHealth) }
-                        }
-                    }
-                }
-            }
-        }
-        if (recs.isNotEmpty()) {
-            item { SectionTitle("建议处理") }
-            items(recs) { item -> RecommendationCard(item, onAction, onLogs) }
-        }
-        item {
-            SectionTitle("运行环境")
-            Spacer(Modifier.height(8.dp))
-            GlassCard {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                    InfoRow("镜像（表观）", ConsoleRepo.humanBytes(status.imageBytes))
-                    InfoRow("loop", status.loop.ifBlank { "未挂载" })
-                    InfoRow("看门狗", if (status.watchdogRunning) "运行中" else "未运行")
-                    InfoRow("last-good", status.lastGood.ifBlank { "无" })
-                }
-            }
-        }
-        item {
-            SectionTitle("健康")
-            Spacer(Modifier.height(8.dp))
-            GlassCard(onClick = onHealth) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(
-                        when {
-                            doctor == null -> palette.faint
-                            doctor.fail > 0 -> palette.danger
-                            doctor.warn > 0 -> palette.warning
-                            else -> palette.success
-                        },
-                    ))
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            doctor?.let { it.pass.toString() + " 通过 · " + it.warn + " 注意 · " + it.fail + " 失败" } ?: "尚未运行体检",
-                            color = palette.text, fontSize = 14.sp,
-                        )
-                        Text("点按查看明细与建议", color = palette.faint, fontSize = 11.sp)
-                    }
-                    Text("›", color = palette.faint, fontSize = 20.sp)
-                }
-            }
-        }
-    }
-}
-
-// ----------------------------------------------------------------------- dsh
-
-@Composable
-fun DshScreen(
-    status: ConsoleStatus,
-    runtime: RuntimeInfo,
-    onOpenDsh: () -> Unit,
-    onCopy: () -> Unit,
-    onAction: (RiskRequest) -> Unit,
-    onCapability: () -> Unit,
-) {
-    val palette = consolePalette()
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-        item {
-            GlassCard {
-                Column(Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(runtime.dshRuntime, color = palette.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.width(10.dp))
-                        StatusPill(if (status.state == "running") "在线" else "未运行", if (status.state == "running") palette.success else palette.warning)
-                    }
-                    Text(
-                        text = if (status.healthAge >= 0) "心跳 " + status.healthAge + " 秒前" else "没有心跳",
-                        color = palette.faint, fontSize = 12.sp,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        ConsoleSupport.redactToken(status.url).ifBlank { "未分配地址" },
-                        color = palette.sub, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f)) { PrimaryButton("打开 DSH", onOpenDsh) }
-                        Box(Modifier.weight(1f)) { GhostButton("复制地址", onCopy) }
-                    }
-                }
-            }
-        }
-        item {
-            GlassCard(onClick = onCapability) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("能力与 hooks", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text(
-                            hooksLabel(runtime) + if (runtime.hooksReason.isNotBlank()) " · " + reasonLabel(runtime.hooksReason) else "",
-                            color = palette.faint, fontSize = 12.sp,
-                        )
-                    }
-                    Text("›", color = palette.faint, fontSize = 20.sp)
-                }
-            }
-        }
-        item {
-            GlassCard {
-                Column(Modifier.padding(16.dp)) {
-                    Text("DSH 服务", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Text("重启只影响 DSH 服务，不会卸载镜像。", color = palette.faint, fontSize = 12.sp)
-                    Spacer(Modifier.height(10.dp))
-                    GhostButton("重启 DSH 服务") {
-                        onAction(
-                            RiskRequest(
-                                op = "restart",
-                                title = "重启 DSH 服务",
-                                args = listOf("restart", "--apply"),
-                                reason = "控制台重启 DSH 服务",
-                                impact = "短暂中断 DSH，重新挂载并启动服务",
-                                sections = listOf(
-                                    "是什么" to "停止当前实例并按同样配置重新启动。",
-                                    "什么时候用" to "DSH 打不开或健康检查连续失败时。",
-                                    "会有什么后果" to "当前会话中断，镜像与 state 保留。",
-                                    "怎么恢复" to "失败会停在 degraded，可继续查看日志或清理。",
-                                ),
-                            ),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun hooksLabel(runtime: RuntimeInfo): String = when (runtime.hooksMode) {
-    "full" -> "完整（权限预设 + 审计）"
-    "audit-only" -> "仅审计"
-    "disabled" -> "已禁用"
-    "" -> "未知"
-    else -> runtime.hooksMode
-}
-
-// ------------------------------------------------------------------- storage
-
-@Composable
-fun StorageScreen(
-    status: ConsoleStatus,
-    paths: List<PathEntry>,
-    onLoad: () -> Unit,
-    onOpenPath: (PathEntry) -> Unit,
-) {
-    val palette = consolePalette()
-    LaunchedEffect(Unit) { onLoad() }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-        item {
-            GlassCard {
-                Column(Modifier.padding(18.dp)) {
-                    Text("磁盘", color = palette.faint, fontSize = 11.sp)
-                    Text(ConsoleRepo.humanBytes(status.diskFreeMb * 1024 * 1024) + " 可用", color = palette.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
-        item { SectionTitle("关键路径", "点按复制") }
-        if (paths.isEmpty()) {
-            item { GlassCard { Text("正在读取路径…", color = palette.faint, fontSize = 12.sp, modifier = Modifier.padding(16.dp)) } }
-        }
-        items(paths) { entry ->
-            GlassCard(onClick = { onOpenPath(entry) }) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(pathLabel(entry.name), color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text(entry.path, color = palette.faint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Text(ConsoleRepo.humanBytes(entry.bytes), color = palette.sub, fontSize = 12.sp)
-                }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------- more
-
-@Composable
-fun MoreScreen(onOpen: (String) -> Unit) {
-    val palette = consolePalette()
-    val rows = listOf(
-        Triple("doctor", "系统体检", "环境检查与修复建议"),
-        Triple("logs", "日志", "nsinit / DSH / boot / watchdog"),
-        Triple("snapshots", "快照", "查看与恢复"),
-        Triple("settings", "设置与能力", "自启、确认模式、hooks、ttyd"),
-        Triple("about", "关于", "版本与构建信息"),
-    )
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-        items(rows) { (route, title, detail) ->
-            GlassCard(onClick = { onOpen(route) }) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(title, color = palette.text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                        Text(detail, color = palette.faint, fontSize = 12.sp)
-                    }
-                    Text("›", color = palette.faint, fontSize = 20.sp)
-                }
             }
         }
     }
@@ -558,10 +274,26 @@ fun LogsScreen(logs: String, kind: String, onKind: (String) -> Unit, onRefresh: 
 // ----------------------------------------------------------------- snapshots
 
 @Composable
-fun SnapshotsScreen(snaps: List<SnapshotEntry>, onLoad: () -> Unit, onRestore: (String) -> Unit) {
+fun SnapshotsScreen(
+    snaps: List<SnapshotEntry>,
+    onLoad: () -> Unit,
+    onRestore: (String) -> Unit,
+    onCreate: () -> Unit,
+) {
     val palette = consolePalette()
     LaunchedEffect(Unit) { onLoad() }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+        item {
+            GlassCard {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("快照", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text("镜像 + state 的一份副本；恢复前自动保留上一份", color = palette.faint, fontSize = 11.sp)
+                    }
+                    PrimaryButton("新建快照", onCreate)
+                }
+            }
+        }
         if (snaps.isEmpty()) {
             item { GlassCard { Text("还没有快照", color = palette.faint, fontSize = 12.sp, modifier = Modifier.padding(16.dp)) } }
         }
@@ -584,7 +316,13 @@ fun SnapshotsScreen(snaps: List<SnapshotEntry>, onLoad: () -> Unit, onRestore: (
 // ------------------------------------------------------------------ settings
 
 @Composable
-fun SettingsScreen(status: ConsoleStatus, runtime: RuntimeInfo, onAction: (RiskRequest) -> Unit) {
+fun SettingsScreen(
+    status: ConsoleStatus,
+    runtime: RuntimeInfo,
+    onAction: (RiskRequest) -> Unit,
+    onAbout: () -> Unit,
+    onCopyDiagnostics: () -> Unit,
+) {
     val palette = consolePalette()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
         item {
@@ -635,6 +373,31 @@ fun SettingsScreen(status: ConsoleStatus, runtime: RuntimeInfo, onAction: (RiskR
                     Text("hooks：" + hooksLabel(runtime), color = palette.sub, fontSize = 12.sp)
                     Text("原因：" + runtime.hooksReason.ifBlank { "—" }, color = palette.faint, fontSize = 11.sp)
                     Text("DSH：不读取、不修改 SELinux；块设备默认只读视图。", color = palette.faint, fontSize = 11.sp)
+                }
+            }
+        }
+        item {
+            GlassCard {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable(onClick = onCopyDiagnostics)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("复制诊断包", color = palette.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("机型 / 内核 / 模块 / loop / 挂载 / 体检，贴 issue 用", color = palette.faint, fontSize = 11.sp)
+                        }
+                        Text("复制", color = palette.accent, fontSize = 12.sp)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable(onClick = onAbout)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("关于", color = palette.text, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Text("›", color = palette.faint, fontSize = 16.sp)
+                    }
                 }
             }
         }
@@ -755,14 +518,22 @@ fun OutputDialog(title: String, text: String, onDismiss: () -> Unit) {
     }
 }
 
-private fun formatStart(value: String): String {
+/** hooks 状态是"DSH 能不能用"的直接指标，措辞要能一眼分辨。 */
+internal fun hooksLabel(runtime: RuntimeInfo): String = when (runtime.hooksMode) {
+    "full" -> "已加载（完整）"
+    "partial" -> "部分加载（功能可能缺）"
+    "none", "off", "" -> "未加载（插件不生效）"
+    else -> runtime.hooksMode
+}
+
+internal fun formatStart(value: String): String {
     if (value.isBlank()) return "没有启动记录"
     val date = value.substringBefore('T')
     val time = value.substringAfter('T', "").take(5)
     return if (date.length >= 10) "启动于 " + date.substring(5) + " " + time else "启动于 " + value
 }
 
-private fun pathLabel(name: String): String = when (name) {
+internal fun pathLabel(name: String): String = when (name) {
     "image" -> "镜像"
     "snapshots" -> "快照目录"
     "state" -> "状态目录"

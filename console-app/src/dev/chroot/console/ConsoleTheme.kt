@@ -25,6 +25,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextOverflow
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.suqi8.coui.kmp.basic.Text
@@ -210,6 +212,22 @@ fun LineIcon(kind: String, color: Color, size: Int = 22) {
                 )
                 drawLine(color, Offset(w * 0.15f, h * 0.46f), Offset(w * 0.85f, h * 0.46f), strokeWidth = stroke.width, cap = StrokeCap.Round)
                 drawCircle(color, radius = w * 0.05f, center = Offset(w * 0.34f, h * 0.66f))
+            }
+            "gear" -> {
+                val r = this.size.minDimension * 0.20f
+                drawCircle(color, radius = r, center = center, style = stroke)
+                for (index in 0 until 8) {
+                    val angle = index * (Math.PI / 4).toFloat()
+                    val inner = this.size.minDimension * 0.30f
+                    val outer = this.size.minDimension * 0.42f
+                    drawLine(
+                        color,
+                        center + Offset(cos(angle) * inner, sin(angle) * inner),
+                        center + Offset(cos(angle) * outer, sin(angle) * outer),
+                        strokeWidth = stroke.width,
+                        cap = StrokeCap.Round,
+                    )
+                }
             }
             else -> {
                 val w = this.size.width

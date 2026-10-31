@@ -24,7 +24,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,17 +53,19 @@ data class RiskRequest(
     val sections: List<Pair<String, String>> = emptyList(),
 )
 
+private val tabs = listOf("device", "system", "software", "settings")
+
 @Composable
 fun ConsoleRoot() {
-    val palette = consolePalette()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val stack = remember { mutableStateListOf("chroot") }
+    val stack = remember { mutableStateListOf("system") }
     var status by remember { mutableStateOf(ConsoleStatus()) }
     var runtime by remember { mutableStateOf(RuntimeInfo()) }
     var doctor by remember { mutableStateOf<DoctorReport?>(null) }
     var snaps by remember { mutableStateOf<List<SnapshotEntry>>(emptyList()) }
     var paths by remember { mutableStateOf<List<PathEntry>>(emptyList()) }
+    var device by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var logs by remember { mutableStateOf("") }
     var logKind by remember { mutableStateOf("all") }
     var loading by remember { mutableStateOf(true) }
@@ -87,11 +88,26 @@ fun ConsoleRoot() {
         loading = false
     }
 
+    suspend fun loadSnapshots() {
+        snaps = withContext(Dispatchers.IO) { ConsoleRepo.snapshots() }
+    }
+
+    suspend fun loadPaths() {
+        paths = withContext(Dispatchers.IO) { ConsoleRepo.paths() }
+    }
+
+    fun diagnostics(): String = diagnosticsText(status, doctor, paths, device)
+
     LaunchedEffect(Unit) {
         while (true) {
             refresh()
+            if (snaps.isEmpty()) loadSnapshots()
             delay(5000)
         }
+    }
+    LaunchedEffect(Unit) {
+        device = withContext(Dispatchers.IO) { ConsoleRepo.device() }
+        loadPaths()
     }
 
     fun runRisk(request: RiskRequest) {
@@ -103,6 +119,7 @@ fun ConsoleRoot() {
             loading = false
             output = request.title to result.output.ifBlank { "完成（退出码 " + result.exitCode + "）" }
             refresh()
+            loadSnapshots()
         }
     }
 
@@ -132,41 +149,49 @@ fun ConsoleRoot() {
                 status = status,
                 loading = loading,
                 onBack = { back() },
-                onMore = { route("more") },
             )
             Box(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                 when (current) {
-                    "chroot" -> ChrootScreen(
+                    "system" -> SystemPage(
                         status = status,
                         doctor = doctor,
+                        snaps = snaps,
+                        onStart = { explain = riskStart() },
+                        onStop = { explain = riskStop() },
                         onOpenDsh = ::openDsh,
-                        onHealth = {
+                        onSnapshots = { route("snapshots") },
+                        onRestore = { name -> explain = riskSnapshotRestore(name) },
+                        onLogs = { route("logs") },
+                        onDoctor = {
                             scope.launch {
                                 doctor = withContext(Dispatchers.IO) { ConsoleRepo.doctor() }
                                 route("doctor")
                             }
                         },
+                        onCopyDiagnostics = { copy(diagnostics(), "诊断包") },
                         onAction = { request -> explain = request },
-                        onLogs = { route("logs") },
                     )
-                    "dsh" -> DshScreen(
+                    "software" -> SoftwarePage(
                         status = status,
                         runtime = runtime,
                         onOpenDsh = ::openDsh,
-                        onCopy = { copy(status.url, "DSH 地址") },
                         onAction = { request -> explain = request },
-                        onCapability = { route("settings") },
+                        onLogs = { route("logs") },
+                        onPending = { what -> banner = what + " 还没实现；这一步先只记录在 docs/console-design.md。" },
                     )
-                    "storage" -> StorageScreen(
+                    "device" -> DevicePage(
                         status = status,
                         paths = paths,
-                        onLoad = {
-                            scope.launch { paths = withContext(Dispatchers.IO) { ConsoleRepo.paths() } }
-                        },
-                        onOpenPath = { entry -> copy(entry.path, entry.name) },
+                        device = device,
+                        onLoad = { scope.launch { loadPaths() } },
+                        onCopy = ::copy,
                     )
-                    "more" -> MoreScreen(
-                        onOpen = { route(it) },
+                    "settings" -> SettingsScreen(
+                        status = status,
+                        runtime = runtime,
+                        onAction = { request -> explain = request },
+                        onAbout = { route("about") },
+                        onCopyDiagnostics = { copy(diagnostics(), "诊断包") },
                     )
                     "doctor" -> DoctorScreen(doctor) { onReload ->
                         scope.launch {
@@ -186,17 +211,30 @@ fun ConsoleRoot() {
                     )
                     "snapshots" -> SnapshotsScreen(
                         snaps = snaps,
-                        onLoad = { scope.launch { snaps = withContext(Dispatchers.IO) { ConsoleRepo.snapshots() } } },
-                        onRestore = { name ->
-                            explain = riskSnapshotRestore(name)
+                        onLoad = { scope.launch { loadSnapshots() } },
+                        onRestore = { name -> explain = riskSnapshotRestore(name) },
+                        onCreate = {
+                            explain = riskSnapshotCreate("snap-" + java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date()))
                         },
                     )
-                    "settings" -> SettingsScreen(status, runtime) { request -> explain = request }
                     "about" -> AboutScreen(status, runtime)
-                    else -> ChrootScreen(status, doctor, ::openDsh, {}, { request -> explain = request }, { route("logs") })
+                    else -> SystemPage(
+                        status = status,
+                        doctor = doctor,
+                        snaps = snaps,
+                        onStart = { explain = riskStart() },
+                        onStop = { explain = riskStop() },
+                        onOpenDsh = ::openDsh,
+                        onSnapshots = { route("snapshots") },
+                        onRestore = { name -> explain = riskSnapshotRestore(name) },
+                        onLogs = { route("logs") },
+                        onDoctor = { route("doctor") },
+                        onCopyDiagnostics = { copy(diagnostics(), "诊断包") },
+                        onAction = { request -> explain = request },
+                    )
                 }
             }
-            if (current == "chroot" || current == "dsh" || current == "storage") {
+            if (current in tabs) {
                 ConsoleBottomBar(current) { route(it) }
             }
         }
@@ -206,10 +244,9 @@ fun ConsoleRoot() {
         RiskExplainScreen(
             request = request,
             onBack = { explain = null },
-            onConfirm = {
-                val request2 = it
+            onConfirm = { confirmed ->
                 explain = null
-                runRisk(request2)
+                runRisk(confirmed)
             },
         )
     }
@@ -220,6 +257,49 @@ fun ConsoleRoot() {
         BannerDialog(banner) { banner = "" }
     }
 }
+
+private fun riskStart(): RiskRequest = RiskRequest(
+    op = "start",
+    title = "启动 chroot",
+    args = listOf("start", "--apply"),
+    reason = "控制台启动 chroot",
+    impact = "占用 loop 设备、挂载 rootfs 并启动 DSH 服务",
+    sections = listOf(
+        "是什么" to "挂载镜像为 rootfs，启动 nsinit 与 DSH 服务。",
+        "什么时候用" to "开机后没有自动启动、或手动停止后需要重新进入时。",
+        "会有什么后果" to "占用一个 loop 设备与本地端口；已运行的实例不会被重复启动。",
+        "怎么恢复" to "随时停止；启动失败会留下 recovery 记录，可在本页恢复。",
+    ),
+)
+
+private fun riskStop(): RiskRequest = RiskRequest(
+    op = "stop",
+    title = "停止 chroot",
+    args = listOf("stop", "--apply"),
+    reason = "控制台停止 chroot",
+    impact = "结束 chroot 内所有进程并卸载 rootfs",
+    destructive = true,
+    sections = listOf(
+        "是什么" to "停止 s6 服务、结束 namespace 内进程，然后卸载并释放 loop。",
+        "什么时候用" to "需要更换镜像、排查占用、或长时间不用时。",
+        "会有什么后果" to "chroot 内所有进程被结束；镜像与 state 保留。",
+        "怎么恢复" to "重新启动即可；异常残留可用 recover 清理。",
+    ),
+)
+
+private fun riskSnapshotCreate(name: String): RiskRequest = RiskRequest(
+    op = "snapshot-create",
+    title = "新建快照 " + name,
+    args = listOf("snapshot", "create", name, "--apply"),
+    reason = "控制台新建快照",
+    impact = "复制当前镜像与 state，占用与镜像同等大小的空间",
+    sections = listOf(
+        "是什么" to "把当前镜像与 state 复制成快照 " + name + "，之后可以随时恢复。",
+        "什么时候用" to "升级 DSH、改动插件、调系统文件之前。",
+        "会有什么后果" to "占用一份镜像大小的空间；不会改动正在运行的实例。",
+        "怎么恢复" to "在快照页随时恢复或删除。",
+    ),
+)
 
 private fun riskSnapshotRestore(name: String): RiskRequest = RiskRequest(
     op = "snapshot-restore",
@@ -242,26 +322,31 @@ private fun ConsoleHeader(
     status: ConsoleStatus,
     loading: Boolean,
     onBack: () -> Unit,
-    onMore: () -> Unit,
 ) {
     val palette = consolePalette()
     val title = when (route) {
-        "chroot" -> "Chroot"
-        "dsh" -> "DSH"
-        "storage" -> "存储"
-        "more" -> "更多"
-        "doctor" -> "系统体检"
+        "device" -> "设备"
+        "system" -> "系统"
+        "software" -> "软件"
+        "settings" -> "设置"
+        "doctor" -> "体检"
         "logs" -> "日志"
         "snapshots" -> "快照"
-        "settings" -> "设置与能力"
         "about" -> "关于"
         else -> route
+    }
+    val subtitle = when (route) {
+        "system" -> "起停 · 物资 · 地盘 · 体检"
+        "software" -> "终端 · DSH · 依赖 · 插件"
+        "device" -> "机器事实与路径"
+        "settings" -> "自启 · 确认模式 · 诊断"
+        else -> ""
     }
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (route != "chroot" && route != "dsh" && route != "storage") {
+        if (route !in tabs) {
             Box(
                 modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50))
                     .background(palette.text.copy(alpha = 0.06f)).clickable(onClick = onBack),
@@ -271,17 +356,12 @@ private fun ConsoleHeader(
         }
         Column(Modifier.weight(1f)) {
             Text(title, color = palette.text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+            if (subtitle.isNotBlank()) {
+                Text(subtitle, color = palette.faint, fontSize = 11.sp)
+            }
         }
-        if (route == "chroot") {
+        if (route == "system") {
             StatusPill(ConsoleSupport.stateLabel(status.state), stateTint(status.state, palette))
-        }
-        if (route == "chroot" || route == "dsh" || route == "storage") {
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50))
-                    .background(palette.text.copy(alpha = 0.06f)).clickable(onClick = onMore),
-                contentAlignment = Alignment.Center,
-            ) { Text("⋯", color = palette.text, fontSize = 18.sp) }
         }
         if (loading) {
             Spacer(Modifier.width(6.dp))
@@ -294,9 +374,10 @@ private fun ConsoleHeader(
 private fun ConsoleBottomBar(selected: String, onSelect: (String) -> Unit) {
     val palette = consolePalette()
     val items = listOf(
-        Triple("chroot", "Chroot", "chroot"),
-        Triple("dsh", "DSH", "dsh"),
-        Triple("storage", "存储", "storage"),
+        Triple("device", "设备", "storage"),
+        Triple("system", "系统", "chroot"),
+        Triple("software", "软件", "dsh"),
+        Triple("settings", "设置", "gear"),
     )
     Row(
         modifier = Modifier
@@ -304,7 +385,7 @@ private fun ConsoleBottomBar(selected: String, onSelect: (String) -> Unit) {
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(26.dp))
             .background(palette.card)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(horizontal = 6.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {

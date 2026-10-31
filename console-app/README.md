@@ -2,13 +2,15 @@
 
 它是 chroot 的低频控制台；DSH Web 只是其中一个入口。控制台不是隐藏性组件，不需要时可以不安装。
 
-控制台按钮、状态和提示使用中文，命令输出保留原文以便排错，但 URL 中的 token 会隐藏；打开 DSH 页面仍使用内部完整地址。主界面使用 Kotlin `ComponentActivity` + Compose，WebActivity 用 Compose `AndroidView` 承载受限 WebView，旧 Java Views 已移除。控制台和 WebView 使用 `safeDrawingPadding` 处理系统栏，固定为竖屏，不修改系统自动旋转设置。结束 Console 不会停止 holder 或 chroot。状态地址优先读取 `status --json`，备用文件读取兼容 `/data/adb/chroot/state/runtime/url` 与旧 `/data/adb/chroot/state/guest/url`。
+界面按"设备 / 系统 / 软件 / 设置"四层组织（设计见 `docs/console-design.md`）：系统层管起停、物资、地盘、体检，软件层管终端、DSH 本体与依赖、插件、服务；分层判据是"它坏的时候整机起不来→系统层，chroot 停止时仍需可用→系统层"。控制台按钮、状态和提示使用中文，命令输出保留原文以便排错，URL 默认完整显示（它只是本机回环地址+token，不属于敏感信息），需要时可加 `--redact`；打开 DSH 页面仍使用内部完整地址。主界面使用 Kotlin `ComponentActivity` + Compose，WebActivity 用 Compose `AndroidView` 承载受限 WebView，旧 Java Views 已移除。控制台和 WebView 使用 `safeDrawingPadding` 处理系统栏，固定为竖屏，不修改系统自动旋转设置。结束 Console 不会停止 holder 或 chroot。状态地址优先读取 `status --json`，备用文件读取兼容 `/data/adb/chroot/state/runtime/url` 与旧 `/data/adb/chroot/state/guest/url`。
 
 ## 功能
 
-- 状态：running/stopped/degraded/recovery-required、PID、URL、loop、镜像路径和失败原因。
-- 生命周期：启动（`--apply`）、停止、重启、刷新、启动计划、环境检查、清理残留（recover）。
-- 日志、快照创建/列表、带确认的清除数据。
+- 系统页：状态卡（启停 + loop/pid/运行时长一行）、最多两条建议、快照（最近 3 个 + 全部/新建/恢复）、运行时事实四格（镜像 / loop / rootfs 挂载 / 看门狗，不一致项转橙）、诊断（体检 + 复制纯文本诊断包）、最近日志入口。
+- 软件页：依赖条（下层是否就绪）+ 终端、打开 DSH、DSH 版本、依赖版本、插件、服务与日志入口。终端、版本升降级、依赖改版本、插件管理尚未实现，点开会明确提示"还没实现"，不假装可用。
+- 设备页：机型/Android/API/内核/verifyboot（只读 getprop + uname）、空间、路径（点按复制）、模块事实。
+- 设置页：开机自启、新会话逐项确认、（只读）运行时能力、复制诊断包、关于。
+- 日志、快照创建/列表/恢复。
 - DSH Web：严格解析 URI，只允许 `127.0.0.1` 或 `localhost` 的 HTTP loopback 地址。可打开内置 WebView，也可用“外部浏览器”通过 `ACTION_VIEW` 打开；内置页主框架加载失败或渲染进程退出时显示浏览器回退，不把白屏当作加载成功。
 - 设置：autostart、critical path protection、guard、private namespace 内的 System-RW。
 
