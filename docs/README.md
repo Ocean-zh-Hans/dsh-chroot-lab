@@ -30,6 +30,7 @@
 | 文档 | 作用 |
 |---|---|
 | [plan-v2.md](plan-v2.md) | **当前执行计划**：读全开、写粗心好人、SELinux 不参与 |
+| [console-design.md](console-design.md) | **Console 重做设计稿**：信息架构、交互、视觉、分期（设计模式，未实现） |
 | [baseline-v2.md](baseline-v2.md) | **2026-10-31 当前基线**：范围、验证结果、已知缺口 |
 | [requirements.md](requirements.md) | 目标、非目标、硬需求、验收定义 |
 | [design-v1.5.md](design-v1.5.md) | **技术设计**：架构、挂载、生命周期、快照；冲突处按 `plan-v2.md` |
