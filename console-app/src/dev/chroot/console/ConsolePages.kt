@@ -280,6 +280,7 @@ fun SoftwarePage(
     app: AppInfo,
     plugins: List<AppPlugin>,
     ttyd: TtydInfo,
+    packages: AppPackages,
     onOpenDsh: () -> Unit,
     onAction: (RiskRequest) -> Unit,
     onLogs: () -> Unit,
@@ -407,6 +408,36 @@ fun SoftwarePage(
                         else -> "Web 终端 · 已关闭"
                     }
                     LinkRow("ttyd", ttydNote, live) { onTtyd(!ttydOn) }
+                }
+            }
+        }
+        item { SectionTitle("依赖与插件") }
+        item {
+            GlassCard {
+                Column(Modifier.padding(16.dp)) {
+                    if (packages.name.isBlank() && packages.deps.isEmpty()) {
+                        Text("还没有读到依赖信息", color = palette.faint, fontSize = 12.sp)
+                    } else {
+                        val title = packages.name.ifBlank { "dsh" } + " " + packages.version
+                        Text(title, color = palette.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        if (packages.pnpmRoot.isNotBlank()) {
+                            Text("pnpm root · " + packages.pnpmRoot, color = palette.faint, fontSize = 11.sp)
+                        }
+                        packages.deps.take(8).forEach { dep ->
+                            Row(Modifier.padding(top = 6.dp)) {
+                                Text(dep.first, color = palette.sub, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                Text(dep.second, color = palette.faint, fontSize = 12.sp)
+                            }
+                        }
+                        if (packages.plugins.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text("作用域插件 · " + packages.plugins.joinToString("、"), color = palette.faint, fontSize = 11.sp)
+                        }
+                        if (!live) {
+                            Spacer(Modifier.height(6.dp))
+                            Text("依赖信息需要 chroot 运行；改版本还没实现。", color = palette.warning, fontSize = 11.sp)
+                        }
+                    }
                 }
             }
         }

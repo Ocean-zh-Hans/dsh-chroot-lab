@@ -64,6 +64,14 @@ data class TtydInfo(
     val state: String = "",
 )
 
+data class AppPackages(
+    val name: String = "",
+    val version: String = "",
+    val pnpmRoot: String = "",
+    val deps: List<Pair<String, String>> = emptyList(),
+    val plugins: List<String> = emptyList(),
+)
+
 data class AppInfo(
     val dsh: String = "",
     val current: String = "",
@@ -247,6 +255,34 @@ object ConsoleRepo {
             )
         } catch (error: Exception) {
             TtydInfo()
+        }
+    }
+
+    fun appPackages(): AppPackages {
+        val result = ctl("app", "packages", "--json", timeout = 45)
+        if (!result.success()) return AppPackages()
+        return try {
+            val json = JSONObject(result.output)
+            val deps = json.optJSONArray("deps")
+            val plugins = json.optJSONArray("plugins")
+            AppPackages(
+                name = json.optString("dsh_name"),
+                version = json.optString("dsh_version"),
+                pnpmRoot = json.optString("pnpm_root"),
+                deps = buildList {
+                    for (index in 0 until (deps?.length() ?: 0)) {
+                        val item = deps?.optJSONObject(index) ?: continue
+                        add(item.optString("name") to item.optString("range"))
+                    }
+                },
+                plugins = buildList {
+                    for (index in 0 until (plugins?.length() ?: 0)) {
+                        add(plugins?.optString(index).orEmpty())
+                    }
+                },
+            )
+        } catch (error: Exception) {
+            AppPackages()
         }
     }
 

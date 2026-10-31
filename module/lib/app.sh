@@ -22,6 +22,39 @@ printf "pnpm_version=%s\n" "$(pnpm -v 2>/dev/null)"
 printf "hooks_status=%s\n" "$(head -n 1 /run/dsh/hooks.status 2>/dev/null)"
 '
 
+# 只读探测：DSH 的依赖、全局包、插件目录。全部由 guest 内的 node 汇总成一份 JSON，
+# 宿主只做透传——避免在 shell 里解析 JSON，也避免为了探测去装 jq。
+DSH_APP_PACKAGES_JS='
+const fs = require("fs"), cp = require("child_process");
+function run(cmd) {
+  try { return cp.execSync(cmd, {stdio: ["ignore", "pipe", "ignore"], timeout: 20000}).toString().trim(); }
+  catch (e) { return ""; }
+}
+const out = {root: "/opt/dsh/current", pnpm_root: run("pnpm root -g"), npm_root: run("npm root -g"),
+             dsh_name: "", dsh_version: "", deps: [], global: [], plugins: [], hooks: ""};
+try {
+  const pkg = JSON.parse(fs.readFileSync("/opt/dsh/current/package.json", "utf8"));
+  out.dsh_name = pkg.name || "";
+  out.dsh_version = pkg.version || "";
+  const all = Object.assign({}, pkg.dependencies || {}, pkg.optionalDependencies || {});
+  for (const name of Object.keys(all).sort()) out.deps.push({name: name, range: String(all[name])});
+} catch (e) {}
+try {
+  const list = JSON.parse(run("pnpm list -g --depth 0 --json") || "[]");
+  for (const item of list) {
+    const deps = (item && item.dependencies) || {};
+    for (const name of Object.keys(deps).sort()) {
+      out.global.push({name: name, version: String((deps[name] || {}).version || "")});
+    }
+  }
+} catch (e) {}
+try {
+  for (const entry of fs.readdirSync("/opt/dsh/current/node_modules/@deepseek-ai").sort()) out.plugins.push(entry);
+} catch (e) {}
+try { out.hooks = fs.readFileSync("/run/dsh/hooks.status", "utf8").trim().split("\n")[0]; } catch (e) {}
+process.stdout.write(JSON.stringify(out) + "\n");
+'
+
 dsh_app_usage() {
   cat <<'EOF'
 Usage: dsh-ctl app <subcommand>
@@ -30,6 +63,7 @@ Read-only:
   version [--json]        DSH/node/pnpm/hooks 版本与安装来源
   deps [--json]           node/pnpm/dsh 与 hooks 预设、guard 状态
   plugins [--json]        控制面插件（hooks 预设、phone-mcp）与启用状态
+  packages [--json]       DSH 依赖、全局包与 @deepseek-ai 作用域插件目录
   list [--json]           宿主侧已安装的 DSH 版本（versions/）
 
 Write (require --apply, chroot 必须已停止):
@@ -657,6 +691,49 @@ rm -f '$_app_gdir/.install.tgz'" || dsh_app_install_fail "app install: 解包失
   fi
 }
 
+dsh_app_packages() {
+  _json=0
+  while [ $# -gt 0 ]; do
+    case $1 in
+    --json) _json=1 ;;
+    -h | --help)
+      printf 'Usage: dsh-ctl app packages [--json]\n'
+      return 0
+      ;;
+    *)
+      dsh_err "app packages: unexpected argument: $1"
+      return 2
+      ;;
+    esac
+    shift
+  done
+  if [ -n "${DSH_APP_PACKAGES_FILE:-}" ]; then
+    # 仅测试用：用静态 JSON 代替进 guest 探测。
+    cat "$DSH_APP_PACKAGES_FILE" || return 4
+    return 0
+  fi
+  _pid=$(dsh_app_require_running) || return 4
+  _raw=$(DSH_GUEST_COMMAND_TIMEOUT=${DSH_APP_PACKAGES_TIMEOUT:-40} \
+    dsh_guest_run "$_pid" /bin/sh -c "command -v node >/dev/null 2>&1 || exit 3; node -e '$DSH_APP_PACKAGES_JS'" 2>/dev/null)
+  _rc=$?
+  if [ "$_rc" -ne 0 ] || [ -z "$_raw" ]; then
+    dsh_err "app packages: guest 里没有可用的 node（state=$(dsh_state_get state 2>/dev/null || true)）"
+    return 4
+  fi
+  case $_raw in
+  '{'*) ;;
+  *)
+    dsh_err "app packages: guest 返回的不是 JSON"
+    return 4
+    ;;
+  esac
+  if [ "$_json" -eq 1 ]; then
+    printf '%s\n' "$_raw"
+    return 0
+  fi
+  printf '%s\n' "$_raw" | sed 's/,/,\n/g; s/{/{\n/; s/}/\n}/'
+}
+
 dsh_app_run() {
   _sub=${1:-}
   [ $# -gt 0 ] && shift
@@ -669,6 +746,7 @@ dsh_app_run() {
   rollback) dsh_app_rollback "$@" ;;
   exec) dsh_app_exec "$@" ;;
   install) dsh_app_install "$@" ;;
+  packages) dsh_app_packages "$@" ;;
   help | -h | --help | '') dsh_app_usage ;;
   *)
     dsh_err "app: unknown subcommand: $_sub"

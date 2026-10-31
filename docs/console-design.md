@@ -104,7 +104,7 @@
 ### 页面结构
 
 1. **依赖条**：`chroot 运行中 · 健康` / `已停止 → 去启动`。
-2. **DSH 卡**：版本、运行时长、地址（复制/打开）、`hooks: full`、`ttyd: 关`、权限预设；主按钮 `打开 DSH`，次按钮 `重启`。
+2. **DSH 卡**：版本、运行时长、地址（复制/打开）、`hooks: full`、`ttyd: 关`、权限预设；主按钮 `打开 DSH`，次按钮 `重启`。`打开 DSH` 必须交给系统浏览器（`Intent.ACTION_VIEW`），不在应用内嵌 WebView——多标签、下载、密码管理器、长按选择都是内嵌一定会退化的能力；没有浏览器时复制地址并提示。
 3. **终端**：`打开终端`（全屏，等宽字体，粘性软键盘工具条：`Tab / Ctrl / ↑ / ↓ / 粘贴`）；可从这里带着命令进（如 `dsh --version`）。
 4. **版本**：DSH 版本行 + `升级/降到…`；依赖列表（名称、当前、可升到），单行操作；`回滚到上一版`。
 5. **插件**：列表（名称、版本、启用状态），行内 `禁用/卸载`；底部 `安装插件`（输入源或从内置列表）。
@@ -179,6 +179,7 @@
 | `app deps --json` | 已实现 | node/pnpm/dsh 版本 + hooks 模式 + guard 状态 |
 | `app switch <v> --apply` / `app rollback --apply` | 已实现（R3，要求已停止） | 只改宿主侧 `$DSH_RUNTIME_DIR/{current,previous}` 符号链接；不下载、不改 rootfs |
 | `app exec -- <cmd>` | 已实现（R1） | 一次性 guest 命令，超时 15s、输出原样返回 |
+| `app packages --json` | 已实现（R0） | 依赖/全局包/作用域插件目录由 guest 内 node 汇总成一份 JSON，宿主只透传 |
 | `app plugins --json` | 已实现（只读） | 列控制面预设与 phone-mcp 及生效状态；启用/禁用未做 |
 | `app install --from registry|tarball|local`（下载/解包 + sha256 校验 + 原子发布） | 已实现（R3，chroot 需运行；UI 为来源下拉） | guest 取包到 `versions/.staging.*`，宿主校验后 `rename` 成 `versions/<v>`；不自动切换 |
 | `ttyd status --json` | 已实现 | `configured / credentials / running / state`，软件页据此显示"运行中 / 已配置未运行 / 已关闭" |
@@ -216,7 +217,7 @@
 | 任务时间线（`#step:` 分步） | 已实现 | 控制台解析并在 sheet 里逐条打勾；`dsh-ctl` 在 `DSH_STEPS=1` 下输出步骤（`start`/`stop`/`snapshot restore`），控制台通过 `ConsoleRepo.ctlRisky` 自动带上该变量；`tests/test_steps.sh` 守住"默认不输出" |
 | 终端全屏页 | 已实现（`app exec`，每次一条命令） | 还没做交互式 PTY；ttyd 仍是独立的 Web 终端 |
 | DSH 版本切换/回滚 | 已实现（`app switch`/`app rollback`，R3，需先停止） | `ConsoleRepo.appInfo()` + 软件页「已安装版本」 |
-| 依赖改版本、插件启停 | 未实现（`app exec` 可临时绕过，但不算产品能力） | — |
+| 依赖改版本、插件启停 | 未实现（现在只能读：`app packages` + `app plugins`） | 写路径需要「快照 → 改 → 自检 → 失败回滚」 |
 | 快照删除 | 已实现（last-good 行按钮置灰） | — |
 
 未实现入口一律用 banner 明确说明"还没实现"，不假装可用。

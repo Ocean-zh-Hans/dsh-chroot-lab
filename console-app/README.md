@@ -2,7 +2,7 @@
 
 它是 chroot 的低频控制台；DSH Web 只是其中一个入口。控制台不是隐藏性组件，不需要时可以不安装。
 
-界面按"设备 / 系统 / 软件 / 设置"四层组织（设计见 `docs/console-design.md`）：系统层管起停、物资、地盘、体检，软件层管终端、DSH 本体与依赖、插件、服务；分层判据是"它坏的时候整机起不来→系统层，chroot 停止时仍需可用→系统层"。控制台按钮、状态和提示使用中文，命令输出保留原文以便排错，URL 默认完整显示（它只是本机回环地址+token，不属于敏感信息），需要时可加 `--redact`；打开 DSH 页面仍使用内部完整地址。主界面使用 Kotlin `ComponentActivity` + Compose，WebActivity 用 Compose `AndroidView` 承载受限 WebView，旧 Java Views 已移除。控制台和 WebView 使用 `safeDrawingPadding` 处理系统栏，固定为竖屏，不修改系统自动旋转设置。结束 Console 不会停止 holder 或 chroot。状态地址优先读取 `status --json`，备用文件读取兼容 `/data/adb/chroot/state/runtime/url` 与旧 `/data/adb/chroot/state/guest/url`。
+界面按"设备 / 系统 / 软件 / 设置"四层组织（设计见 `docs/console-design.md`）：系统层管起停、物资、地盘、体检，软件层管终端、DSH 本体与依赖、插件、服务；分层判据是"它坏的时候整机起不来→系统层，chroot 停止时仍需可用→系统层"。控制台按钮、状态和提示使用中文，命令输出保留原文以便排错，URL 默认完整显示（它只是本机回环地址+token，不属于敏感信息），需要时可加 `--redact`；打开 DSH 时把内部完整地址交给系统浏览器（`Intent.ACTION_VIEW`），不再在应用内嵌 WebView：DSH 是完整 Web 应用，多标签、下载、密码管理器、长按选择都依赖浏览器，内嵌只会退化功能；没有可用浏览器时会自动把地址复制到剪贴板并提示手动粘贴。主界面使用 Kotlin `ComponentActivity` + Compose，旧 Java Views 已移除。主界面使用 `safeDrawingPadding` 处理系统栏，固定为竖屏，不修改系统自动旋转设置。结束 Console 不会停止 holder 或 chroot。状态地址优先读取 `status --json`，备用文件读取兼容 `/data/adb/chroot/state/runtime/url` 与旧 `/data/adb/chroot/state/guest/url`。
 
 ## 功能
 

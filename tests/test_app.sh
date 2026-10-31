@@ -267,5 +267,24 @@ set -e
 [ "$rc" -eq 4 ] || fail "app install of a package without bin/dsh returned $rc"
 assert_contains "$out" "包内没有 bin/dsh"
 [ ! -e "$DSH_ROOT/dsh/versions/9.9.8" ] || fail "failed app install published a version"
+# ---- app packages（只读探测） -------------------------------------------
+pkgs="$case_dir/packages.json"
+cat >"$pkgs" <<'PKGJSON'
+{"root":"/opt/dsh/current","pnpm_root":"/opt/dsh/current/node_modules","npm_root":"","dsh_name":"@deepseek-ai/dsh","dsh_version":"1.4.2","deps":[{"name":"commander","range":"^12.0.0"},{"name":"@deepseek-ai/dsh-hooks-claude-code","range":"0.8.1"}],"global":[{"name":"@deepseek-ai/dsh","version":"1.4.2"}],"plugins":["dsh-hooks-claude-code","dsh-permission-presets"],"hooks":"{\"mode\":\"full\"}"}
+PKGJSON
+out=$(DSH_APP_PACKAGES_FILE="$pkgs" "$DSH_CTL" app packages --json) || fail "app packages --json failed: $out"
+python3 - <<'PYJSON' "$out"
+import json, sys
+data = json.loads(sys.argv[1])
+assert data["dsh_version"] == "1.4.2", data
+assert [d["name"] for d in data["deps"]] == ["commander", "@deepseek-ai/dsh-hooks-claude-code"], data
+assert "dsh-hooks-claude-code" in data["plugins"], data
+PYJSON
+set +e
+out=$("$DSH_CTL" app packages --bogus 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 2 ] || fail "app packages with an unknown flag returned $rc"
+
 
 printf 'test_app: ok\n'

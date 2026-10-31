@@ -105,15 +105,15 @@ name = "{http://schemas.android.com/apk/res/android}name"
 assert any(node.get(name) == "android.permission.INTERNET" for node in root.findall("uses-permission")), "agent INTERNET permission missing"
 console = ET.parse("console-app/AndroidManifest.xml").getroot()
 for activity in console.find("application").findall("activity"):
-    assert activity.get(name) in (".MainActivity", ".WebActivity"), "unexpected console activity"
+    assert activity.get(name) == ".MainActivity", "console must expose only MainActivity (DSH opens in the system browser)"
     assert activity.get(name.replace("name", "screenOrientation")) == "portrait", "console activity must stay portrait"
 print("Android manifest checks: ok")'
 [ -f console-app/src/dev/chroot/console/MainActivity.kt ] || {
   printf 'Console MainActivity.kt is missing\n' >&2
   exit 1
 }
-[ -f console-app/src/dev/chroot/console/WebActivity.kt ] || {
-  printf 'Console WebActivity.kt is missing\n' >&2
+[ ! -e console-app/src/dev/chroot/console/WebActivity.kt ] || {
+  printf 'Console must not embed a WebView: WebActivity.kt is back\n' >&2
   exit 1
 }
 [ ! -e console-app/src/dev/chroot/console/MainActivity.java ] || {

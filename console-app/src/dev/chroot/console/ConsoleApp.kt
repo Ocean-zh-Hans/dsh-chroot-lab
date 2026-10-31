@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -89,6 +90,7 @@ fun ConsoleRoot() {
     var appInfo by remember { mutableStateOf(AppInfo()) }
     var appPlugins by remember { mutableStateOf<List<AppPlugin>>(emptyList()) }
     var ttyd by remember { mutableStateOf(TtydInfo()) }
+    var packages by remember { mutableStateOf(AppPackages()) }
 
     // 同一时刻只允许一个写任务：其余会写盘的按钮全部置灰。
     val busy = task?.state == "running"
@@ -108,11 +110,17 @@ fun ConsoleRoot() {
         loading = false
         if (status.state == "running") {
             val app = withContext(Dispatchers.IO) {
-                Triple(ConsoleRepo.appInfo(), ConsoleRepo.appPlugins(), ConsoleRepo.ttyd())
+                AppRefresh(
+                    info = ConsoleRepo.appInfo(),
+                    plugins = ConsoleRepo.appPlugins(),
+                    ttyd = ConsoleRepo.ttyd(),
+                    packages = ConsoleRepo.appPackages(),
+                )
             }
-            appInfo = app.first
-            appPlugins = app.second
-            ttyd = app.third
+            appInfo = app.info
+            appPlugins = app.plugins
+            ttyd = app.ttyd
+            packages = app.packages
         }
     }
 
@@ -210,18 +218,22 @@ fun ConsoleRoot() {
         }
     }
 
+    fun copy(text: String, label: String) {
+        val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        manager.setPrimaryClip(ClipData.newPlainText(label, text))
+        banner = "已复制到剪贴板：" + label
+    }
+
+    // DSH 是完整的 Web 应用，塞进 WebView 会丢掉浏览器能力（多标签、下载、密码管理器、
+    // 长按选择、桌面模式）。这里只负责把地址交给系统浏览器。
     fun openDsh() {
         if (!ConsoleSupport.isLoopbackHttpUrl(status.url)) {
             banner = "当前没有可用的 DSH 地址，先启动 chroot。"
             return
         }
-        context.startActivity(Intent(context, WebActivity::class.java).putExtra("url", status.url))
-    }
-
-    fun copy(text: String, label: String) {
-        val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        manager.setPrimaryClip(ClipData.newPlainText(label, text))
-        banner = "已复制到剪贴板：" + label
+        val view = Intent(Intent.ACTION_VIEW, Uri.parse(status.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(view) }
+            .onFailure { banner = "没有可打开网页的浏览器：已复制地址，可手动粘贴。" ; copy(status.url, "DSH 地址") }
     }
 
     val current = stack.last()
@@ -268,6 +280,7 @@ fun ConsoleRoot() {
                         app = appInfo,
                         plugins = appPlugins,
                         ttyd = ttyd,
+                        packages = packages,
                         onOpenDsh = ::openDsh,
                         onAction = { request -> explain = request },
                         onLogs = { route("logs") },
@@ -579,6 +592,13 @@ private fun riskAppSwitch(version: String): RiskRequest = RiskRequest(
         "会有什么后果" to "下一次启动的 DSH 换成该版本；旧版本保留，可回滚。",
         "怎么恢复" to "用「回滚上一版」切回当前版本。",
     ),
+)
+
+private data class AppRefresh(
+    val info: AppInfo = AppInfo(),
+    val plugins: List<AppPlugin> = emptyList(),
+    val ttyd: TtydInfo = TtydInfo(),
+    val packages: AppPackages = AppPackages(),
 )
 
 private fun riskTtyd(enable: Boolean): RiskRequest = RiskRequest(
