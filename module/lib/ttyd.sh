@@ -71,30 +71,52 @@ dsh_ttyd_off() {
 }
 
 dsh_ttyd_status() {
-  local _pid
+  local _json=0 _configured _creds _running=0 _svstat=
+  case ${1:-} in
+  --json) _json=1 ;;
+  esac
   if [ -f "$DSH_TTYD_DOWN_FILE" ]; then
-    printf 'ttyd: configured off\n'
+    _configured=off
   else
-    printf 'ttyd: configured on\n'
+    _configured=on
   fi
   if [ -s "$DSH_TTYD_PASS_FILE" ]; then
-    printf 'credentials: present (password is not displayed)\n'
+    _creds=present
   else
-    printf 'credentials: missing\n'
+    _creds=missing
   fi
   _pid=$(dsh_read_line "$DSH_PID_FILE" 2>/dev/null || true)
-  if [ ! -f "$DSH_TTYD_DOWN_FILE" ] && dsh_ttyd_holder "$_pid"; then
-    dsh_guest_run "$_pid" /usr/bin/s6-svstat /run/s6/ttyd || true
+  if [ "$_configured" = on ] && dsh_ttyd_holder "$_pid"; then
+    _svstat=$(dsh_guest_run "$_pid" /usr/bin/s6-svstat /run/s6/ttyd 2>/dev/null || true)
+    case $_svstat in
+    up*) _running=1 ;;
+    esac
+  fi
+  if [ "$_json" -eq 1 ]; then
+    printf '{"configured":"%s","credentials":"%s","running":%s,"state":"%s"}\n' \
+      "$_configured" "$_creds" "$([ "$_running" -eq 1 ] && printf true || printf false)" \
+      "$(dsh_json_escape "$_svstat")"
+    return 0
+  fi
+  printf 'ttyd: configured %s\n' "$_configured"
+  printf 'credentials: %s%s\n' "$_creds" \
+    "$([ "$_creds" = present ] && printf ' (password is not displayed)' || printf ' (run ttyd on to create)')"
+  if [ "$_running" -eq 1 ]; then
+    printf 'service: %s\n' "$_svstat"
+  elif [ "$_configured" = off ]; then
+    printf 'service: disabled by configuration\n'
+  else
+    printf 'service: not reported (chroot not running?)\n'
   fi
   return 0
 }
 
 dsh_ttyd() {
   case ${1:-status} in
-  status) dsh_ttyd_status ;;
+  status) dsh_ttyd_status "${2:-}" ;;
   on) dsh_ttyd_on ;;
   off) dsh_ttyd_off ;;
-  -h | --help) printf 'Usage: dsh-ctl ttyd status|on|off\n' ;;
+  -h | --help) printf 'Usage: dsh-ctl ttyd status [--json]|on|off\n' ;;
   *)
     dsh_err "unknown ttyd operation: ${1:-}"
     return 2

@@ -55,6 +55,25 @@ PYJSON
 out=$("$DSH_CTL" snapshot promote s1)
 assert_contains "$out" "last-good: s1"
 
+set +e
+out=$("$DSH_CTL" snapshot delete s1 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 3 ] || fail "snapshot delete without --apply returned $rc"
+assert_contains "$out" "use --apply"
+set +e
+out=$("$DSH_CTL" snapshot delete s1 --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 1 ] || fail "deleting the last-good snapshot returned $rc"
+assert_contains "$out" "last-good"
+set +e
+out=$("$DSH_CTL" snapshot delete nosuch --apply 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 1 ] || fail "deleting an unknown snapshot returned $rc"
+assert_contains "$out" "snapshot not found"
+
 printf 'changed' >"$DSH_IMAGE"
 printf 'after' >"$DSH_ROOT/state/dsh-home/setting"
 mkdir -p "$DSH_TMP/dsh-recovery"
@@ -325,5 +344,17 @@ rc=$?
 set -e
 assert_eq "$rc" 1
 [ -e "$DSH_WATCHDOG_DISABLED" ] || fail "failed watchdog enable cleared the disabled marker"
+
+# A snapshot that is not last-good can be deleted, and only its three files go.
+mkdir -p "$DSH_IMAGE_SNAPSHOT_DIR" "$DSH_SNAPSHOT_DIR"
+printf 'img' >"$DSH_IMAGE_SNAPSHOT_DIR/rootfs-s2.img"
+printf 'state' >"$DSH_SNAPSHOT_DIR/state-s2.tar.gz"
+printf 'manifest' >"$DSH_SNAPSHOT_DIR/rootfs-s2.manifest"
+out=$("$DSH_CTL" snapshot delete s2 --apply) || fail "snapshot delete failed: $out"
+assert_contains "$out" "deleted: s2"
+[ ! -e "$DSH_IMAGE_SNAPSHOT_DIR/rootfs-s2.img" ] || fail "snapshot delete kept the image"
+[ ! -e "$DSH_SNAPSHOT_DIR/state-s2.tar.gz" ] || fail "snapshot delete kept the state archive"
+[ ! -e "$DSH_SNAPSHOT_DIR/rootfs-s2.manifest" ] || fail "snapshot delete kept the manifest"
+[ -f "$DSH_IMAGE_SNAPSHOT_DIR/rootfs-s1.img" ] || fail "snapshot delete touched another snapshot"
 
 printf 'test_snapshot: ok\n'

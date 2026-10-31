@@ -169,7 +169,7 @@
 
 | 能力 | 现状 | 需求 |
 |---|---|---|
-| `snapshot delete <name> --apply` | 无 | 系统页删除快照；R2/R3 确认 |
+| `snapshot delete <name> --apply` | 已实现（R3，要求已冷） | 删三件套；last-good 指向的快照拒绝删除，需先 promote 别的 |
 | `snapshot list --json` | 有 | 补 `state_bytes`、`last_good_bytes` |
 | `status --json` | 有 | 补 `uptime_s`（省得客户端算） |
 | 结构化日志 | 无（拼文本后客户端过滤） | `dsh-ctl log --json --kind X --lines N` |
@@ -181,7 +181,7 @@
 | `app exec -- <cmd>` | 已实现（R1） | 一次性 guest 命令，超时 15s、输出原样返回 |
 | `app plugins --json` | 已实现（只读） | 列控制面预设与 phone-mcp 及生效状态；启用/禁用未做 |
 | `app install --from registry|tarball|local`（下载/解包 + sha256 校验 + 原子发布） | 已实现（R3，chroot 需运行；UI 为来源下拉） | guest 取包到 `versions/.staging.*`，宿主校验后 `rename` 成 `versions/<v>`；不自动切换 |
-| `ttyd status --json` | 仅文本 | 控制台开终端前需要端口/进程状态（软件页现在只能显示"状态待上报"） |
+| `ttyd status --json` | 已实现 | `configured / credentials / running / state`，软件页据此显示"运行中 / 已配置未运行 / 已关闭" |
 | `status --json` 的抽稀 | 字段偏多 | 控制台只需要 `state/pid/loop/image/url/rootfs_mounted/loop_query/residual_resources/watchdog_running/autostart/health_age/image_bytes`，其余字段可留给 `--verbose` |
 | `log --follow` / `log --json` | 无 | C1 任务条要边跑边看到日志 |
 | `#step: <name>` 步骤行 | **已实现**（`DSH_STEPS=1` 时输出，默认关闭）：`dsh_step` 在 `module/lib/common.sh`，`start` 8 步、`stop` 1 步、`snapshot restore` 4 步 | 任务时间线；后续给 `image install`、`purge` 补 |
@@ -214,10 +214,10 @@
 | 快照页新建 + 恢复 | 已实现 | `SnapshotsScreen(onCreate=...)`，`riskSnapshotCreate` |
 | 任务条 + 流式输出（start 期间不冻结、可离开、可复制输出） | 已实现 | `ConsoleTask.kt`（`TaskBar` / `TaskSheet`），`ConsoleSupport.runCommandStreaming`、`ConsoleRepo.ctlRisky(onLine=)`；结果不再用"完成"弹窗 |
 | 任务时间线（`#step:` 分步） | 已实现 | 控制台解析并在 sheet 里逐条打勾；`dsh-ctl` 在 `DSH_STEPS=1` 下输出步骤（`start`/`stop`/`snapshot restore`），控制台通过 `ConsoleRepo.ctlRisky` 自动带上该变量；`tests/test_steps.sh` 守住"默认不输出" |
-| 终端全屏页 | 未实现（依赖 `ttyd status --json`） | — |
+| 终端全屏页 | 已实现（`app exec`，每次一条命令） | 还没做交互式 PTY；ttyd 仍是独立的 Web 终端 |
 | DSH 版本切换/回滚 | 已实现（`app switch`/`app rollback`，R3，需先停止） | `ConsoleRepo.appInfo()` + 软件页「已安装版本」 |
 | 依赖改版本、插件启停 | 未实现（`app exec` 可临时绕过，但不算产品能力） | — |
-| 快照删除 | 未实现（依赖 `snapshot delete`） | — |
+| 快照删除 | 已实现（last-good 行按钮置灰） | — |
 
 未实现入口一律用 banner 明确说明"还没实现"，不假装可用。
 

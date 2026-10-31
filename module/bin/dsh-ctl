@@ -50,6 +50,7 @@ Data:
   image create --source DIR [--size 128G] --apply
   image install --source FILE [--sha256 FILE] [--replace] --apply
   snapshot [create [name] [--last-good] | list | restore <name> --apply | promote <name>]
+  snapshot delete <name> --apply
   restore <name> --apply | purge --yes [--keep-image]
 
 Software layer (apply is explicit, chroot must be stopped):
@@ -200,6 +201,7 @@ snapshot)
   restore) dsh_snapshot_restore "$@" ;;
   restore-last-good) dsh_snapshot_restore_last_good "$@" ;;
   promote) dsh_snapshot_promote "$@" ;;
+  delete) dsh_snapshot_delete "$@" ;;
   -h | --help) printf 'Usage: dsh-ctl snapshot [create [name] [--last-good]|list|restore <name> --apply|restore-last-good|promote <name>]\n' ;;
   *)
     dsh_err "unknown snapshot operation: $_sub"

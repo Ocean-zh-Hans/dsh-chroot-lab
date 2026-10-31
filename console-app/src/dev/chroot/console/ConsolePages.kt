@@ -279,6 +279,7 @@ fun SoftwarePage(
     runtime: RuntimeInfo,
     app: AppInfo,
     plugins: List<AppPlugin>,
+    ttyd: TtydInfo,
     onOpenDsh: () -> Unit,
     onAction: (RiskRequest) -> Unit,
     onLogs: () -> Unit,
@@ -287,6 +288,7 @@ fun SoftwarePage(
     onRollback: () -> Unit,
     onRefresh: () -> Unit,
     onInstall: (source: String, version: String, target: String, sha256: String) -> Unit,
+    onTtyd: (enable: Boolean) -> Unit,
     onPending: (String) -> Unit,
     busy: Boolean = false,
 ) {
@@ -397,7 +399,14 @@ fun SoftwarePage(
                             )
                         }
                     }
-                    LinkRow("ttyd", "Web 终端 · 状态待上报", live) { onPending("ttyd 开关") }
+                    val ttydOn = ttyd.configured == "on"
+                    val ttydNote = when {
+                        ttyd.configured.isBlank() -> "状态未知"
+                        ttyd.running -> "Web 终端 · 运行中 127.0.0.1:7681"
+                        ttydOn -> "Web 终端 · 已配置未运行"
+                        else -> "Web 终端 · 已关闭"
+                    }
+                    LinkRow("ttyd", ttydNote, live) { onTtyd(!ttydOn) }
                 }
             }
         }

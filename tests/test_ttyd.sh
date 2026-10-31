@@ -9,6 +9,13 @@ fixture_env "$case_dir"
 
 out=$("$DSH_CTL" ttyd status)
 assert_contains "$out" "configured off"
+json=$("$DSH_CTL" ttyd status --json)
+python3 - <<'PYJSON' "$json"
+import json, sys
+data = json.loads(sys.argv[1])
+assert data["configured"] == "off", data
+assert data["running"] is False, data
+PYJSON
 export DSH_TEST_ROOT="$CASE"
 pid=$$
 mkdir -p "$DSH_PROC/$pid"
@@ -40,6 +47,13 @@ pass=$DSH_ROOT/state/runtime/ttyd.pass
 assert_eq "$(stat -c %a "$pass")" "600"
 assert_eq "$(wc -c <"$pass" | tr -d ' ')" "65"
 grep -q -- '-c "dsh:$_pass"' "$MODULE/control/s6/ttyd/run" || fail "ttyd authentication missing"
+json=$("$DSH_CTL" ttyd status --json)
+python3 - <<'PYJSON' "$json"
+import json, sys
+data = json.loads(sys.argv[1])
+assert data["configured"] == "on", data
+assert data["credentials"] == "present", data
+PYJSON
 out=$("$DSH_CTL" ttyd off)
 assert_contains "$out" "disabled"
 [ -f "$DSH_ROOT/control/s6/ttyd/down" ] || fail "ttyd was not disabled"

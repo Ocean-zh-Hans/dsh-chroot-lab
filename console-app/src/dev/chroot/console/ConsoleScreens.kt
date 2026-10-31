@@ -277,6 +277,7 @@ fun SnapshotsScreen(
     snaps: List<SnapshotEntry>,
     onLoad: () -> Unit,
     onRestore: (String) -> Unit,
+    onDelete: (String) -> Unit,
     onCreate: () -> Unit,
     busy: Boolean = false,
 ) {
@@ -306,7 +307,10 @@ fun SnapshotsScreen(
                     }
                     Text(snap.created.ifBlank { "—" } + " · " + ConsoleRepo.humanBytes(snap.bytes), color = palette.faint, fontSize = 11.sp)
                     Spacer(Modifier.height(8.dp))
-                    GhostButton("恢复此快照", enabled = !busy) { onRestore(snap.name) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GhostButton("恢复", enabled = !busy) { onRestore(snap.name) }
+                        GhostButton("删除", enabled = !busy && !snap.lastGood) { onDelete(snap.name) }
+                    }
                 }
             }
         }

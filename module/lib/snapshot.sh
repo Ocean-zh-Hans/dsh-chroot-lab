@@ -656,6 +656,61 @@ dsh_snapshot_restore() {
   fi
 }
 
+# 删除单个快照：只删三件套（镜像、state、manifest），不碰 current 与 last-good。
+# last-good 指向的快照必须显式换掉（promote 别的），否则"恢复上一版"会突然失效。
+dsh_snapshot_delete_locked() {
+  local _name="$1" _good
+  dsh_snapshot_paths "$_name"
+  dsh_snapshot_require_cold || return 1
+  if [ ! -e "$SNAP_IMAGE" ] && [ ! -e "$SNAP_STATE" ] && [ ! -e "$SNAP_MANIFEST" ]; then
+    dsh_err "snapshot not found: $_name"
+    return 1
+  fi
+  _good=$(dsh_read_line "$DSH_LAST_GOOD_FILE" 2>/dev/null || true)
+  if [ "$_name" = "$_good" ]; then
+    dsh_err "snapshot $_name is last-good; promote another snapshot or use prune"
+    return 1
+  fi
+  dsh_step "删除快照 $_name"
+  rm -f "$SNAP_IMAGE" "$SNAP_STATE" "$SNAP_MANIFEST" || {
+    dsh_err "cannot remove snapshot files: $_name"
+    return 1
+  }
+  dsh_log "snapshot: deleted $_name"
+}
+
+dsh_snapshot_delete() {
+  local _name='' _apply=0 _arg _rc
+  for _arg in "$@"; do
+    case $_arg in
+    --apply) _apply=1 ;;
+    -h | --help)
+      printf 'Usage: dsh-ctl snapshot delete NAME --apply\n'
+      return 0
+      ;;
+    -*) return 2 ;;
+    *)
+      [ -z "$_name" ] || return 2
+      _name=$_arg
+      ;;
+    esac
+  done
+  dsh_snapshot_name_valid "$_name" || {
+    dsh_err "snapshot delete requires a valid snapshot name"
+    return 2
+  }
+  [ "$_apply" -eq 1 ] || {
+    dsh_err "snapshot delete removes a rollback point; use --apply"
+    return 3
+  }
+  dsh_lock_acquire || return 1
+  dsh_snapshot_delete_locked "$_name"
+  _rc=$?
+  dsh_lock_release
+  [ "$_rc" -eq 0 ] && printf 'deleted: %s\n' "$_name"
+  return "$_rc"
+}
+
 dsh_snapshot_restore_last_good() {
   local _name
   _name=$(dsh_read_line "$DSH_LAST_GOOD_FILE" 2>/dev/null || true)

@@ -88,6 +88,7 @@ fun ConsoleRoot() {
     var banner by remember { mutableStateOf("") }
     var appInfo by remember { mutableStateOf(AppInfo()) }
     var appPlugins by remember { mutableStateOf<List<AppPlugin>>(emptyList()) }
+    var ttyd by remember { mutableStateOf(TtydInfo()) }
 
     // 同一时刻只允许一个写任务：其余会写盘的按钮全部置灰。
     val busy = task?.state == "running"
@@ -106,9 +107,12 @@ fun ConsoleRoot() {
         runtime = loaded.second
         loading = false
         if (status.state == "running") {
-            val app = withContext(Dispatchers.IO) { ConsoleRepo.appInfo() to ConsoleRepo.appPlugins() }
+            val app = withContext(Dispatchers.IO) {
+                Triple(ConsoleRepo.appInfo(), ConsoleRepo.appPlugins(), ConsoleRepo.ttyd())
+            }
             appInfo = app.first
             appPlugins = app.second
+            ttyd = app.third
         }
     }
 
@@ -263,6 +267,7 @@ fun ConsoleRoot() {
                         runtime = runtime,
                         app = appInfo,
                         plugins = appPlugins,
+                        ttyd = ttyd,
                         onOpenDsh = ::openDsh,
                         onAction = { request -> explain = request },
                         onLogs = { route("logs") },
@@ -271,6 +276,7 @@ fun ConsoleRoot() {
                         onRollback = { explain = riskAppRollback(appInfo.previous) },
                         onRefresh = { scope.launch { refresh() } },
                         onInstall = { source, version, target, sha -> explain = riskAppInstall(source, version, target, sha) },
+                        onTtyd = { enable -> explain = riskTtyd(enable) },
                         onPending = { what -> banner = what + " 还没实现；这一步先只记录在 docs/console-design.md。" },
                         busy = busy,
                     )
@@ -314,6 +320,7 @@ fun ConsoleRoot() {
                         snaps = snaps,
                         onLoad = { scope.launch { loadSnapshots() } },
                         onRestore = { name -> explain = riskSnapshotRestore(name) },
+                        onDelete = { name -> explain = riskSnapshotDelete(name) },
                         busy = busy,
                         onCreate = {
                             explain = riskSnapshotCreate("snap-" + java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date()))
@@ -410,6 +417,20 @@ private fun riskSnapshotCreate(name: String): RiskRequest = RiskRequest(
         "什么时候用" to "升级 DSH、改动插件、调系统文件之前。",
         "会有什么后果" to "占用一份镜像大小的空间；不会改动正在运行的实例。",
         "怎么恢复" to "在快照页随时恢复或删除。",
+    ),
+)
+
+private fun riskSnapshotDelete(name: String): RiskRequest = RiskRequest(
+    op = "snapshot-delete",
+    title = "删除快照 " + name,
+    args = listOf("snapshot", "delete", name, "--apply"),
+    reason = "控制台删除快照",
+    impact = "删除该快照的镜像、state 与 manifest；不可恢复",
+    sections = listOf(
+        "是什么" to "删掉快照 " + name + " 的三份文件（镜像、state、manifest）。",
+        "什么时候用" to "占空间了，或这个回滚点已经不需要。",
+        "会有什么后果" to "这个快照不能再用；last-good 指向的快照不能删除。",
+        "怎么恢复" to "只能重新拍一个快照，旧内容无法找回。",
     ),
 )
 
@@ -557,6 +578,21 @@ private fun riskAppSwitch(version: String): RiskRequest = RiskRequest(
         "什么时候用" to "升级或降级 DSH 本体，需要停在指定版本时。",
         "会有什么后果" to "下一次启动的 DSH 换成该版本；旧版本保留，可回滚。",
         "怎么恢复" to "用「回滚上一版」切回当前版本。",
+    ),
+)
+
+private fun riskTtyd(enable: Boolean): RiskRequest = RiskRequest(
+    op = "ttyd",
+    title = if (enable) "启用 ttyd" else "禁用 ttyd",
+    args = listOf("ttyd", if (enable) "on" else "off", "--apply"),
+    reason = if (enable) "控制台启用 ttyd" else "控制台禁用 ttyd",
+    impact = if (enable) "在 127.0.0.1:7681 暴露一个需要密码的 Web 终端" else "停止 ttyd 服务并保留凭据文件",
+    destructive = true,
+    sections = listOf(
+        "是什么" to (if (enable) "启动 s6 里的 ttyd 服务，只监听 127.0.0.1，密码从 state 里读取。" else "停掉 ttyd 服务，并把 down 标记写回控制目录。"),
+        "什么时候用" to (if (enable) "想在电脑上开一个浏览器里的 guest shell 时。" else "不再需要 Web 终端，或怀疑凭据泄露时。"),
+        "会有什么后果" to (if (enable) "本机任意能访问 7681 的进程都能看到登录页；密码不显示在控制台。" else "Web 终端立刻断开；凭据文件保留，重新启用还是同一个密码。"),
+        "怎么恢复" to (if (enable) "随时禁用。" else "重新启用即可。"),
     ),
 )
 

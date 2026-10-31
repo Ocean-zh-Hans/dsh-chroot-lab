@@ -8,7 +8,7 @@ dsh_risk_level() {
   case $_risk_op:$_risk_sub in
   stop:* | restart:* | purge:* | recover:* | rescue:* | start:* | restore:*) printf 'R3\n' ;;
   image: | image:create | image:install | image:replace) printf 'R3\n' ;;
-  snapshot: | snapshot:create | snapshot:restore | snapshot:promote | snapshot:restore-last-good) printf 'R3\n' ;;
+  snapshot: | snapshot:create | snapshot:restore | snapshot:promote | snapshot:delete | snapshot:restore-last-good) printf 'R3\n' ;;
   system-rw:on | system-rw:off) printf 'R3\n' ;;
   autostart:on | autostart:off) printf 'R3\n' ;;
   guard:on | guard:off) printf 'R3\n' ;;

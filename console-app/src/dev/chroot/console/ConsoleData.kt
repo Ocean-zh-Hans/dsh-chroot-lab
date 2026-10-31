@@ -57,6 +57,13 @@ data class RuntimeInfo(
     val imageMtime: String = "",
 )
 
+data class TtydInfo(
+    val configured: String = "",
+    val credentials: String = "",
+    val running: Boolean = false,
+    val state: String = "",
+)
+
 data class AppInfo(
     val dsh: String = "",
     val current: String = "",
@@ -224,6 +231,22 @@ object ConsoleRepo {
             )
         } catch (error: Exception) {
             RuntimeInfo()
+        }
+    }
+
+    fun ttyd(): TtydInfo {
+        val result = ctl("ttyd", "status", "--json", timeout = 20)
+        if (!result.success()) return TtydInfo()
+        return try {
+            val json = JSONObject(result.output)
+            TtydInfo(
+                configured = json.optString("configured"),
+                credentials = json.optString("credentials"),
+                running = json.optBoolean("running"),
+                state = json.optString("state"),
+            )
+        } catch (error: Exception) {
+            TtydInfo()
         }
     }
 
