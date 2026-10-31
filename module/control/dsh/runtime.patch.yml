@@ -1,0 +1,11 @@
+# Always-applied runtime overlay: phone MCP is part of the module install,
+# independent of whether audit/permission hook plugins are available.
+- id: mcp-phone
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: phone
+    transport: stdio
+    command: /usr/bin/python3
+    args:
+      - !!js "(process.env.DSH_CONTROL_DIR || '/opt/dsh-control') + '/dsh/phone-mcp/phone_mcp.py'"
+    toolCallTimeoutMs: 180000

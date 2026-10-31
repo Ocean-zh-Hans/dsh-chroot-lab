@@ -76,7 +76,7 @@ Session Page 序列 + ref 表 + 事件缓冲（默认一个 default 会话）
 
 ---
 
-## 4. API（全部，共 16 个）
+## 4. API（全部，共 16 个 + 状态栅栏 `ui.invalidate` + 窗口查询 `ui.windows`）
 
 > 命名原则：读 `ui.*`、写 `ui.*`、运维 `sys/session/events/policy/dev`。
 > 参数一律扁平 JSON；目标一律 `ref` 或 `where` 二选一。
@@ -86,11 +86,14 @@ Session Page 序列 + ref 表 + 事件缓冲（默认一个 default 会话）
 
 | 方法 | 作用 | 参数 |
 |---|---|---|
-| `ui.view` | **主读屏**：文本视图 + @ref，预算内 | `maxChars`(2000) `mode`(auto/all/text) `depth`(3) `where` |
+| `ui.view` | **主读屏**：文本视图 + @ref，预算内；可选同次调用返回窗口/截图 | `maxChars`(2000) `mode`(auto/all/text) `depth`(3) `where` `windows`(false) `screenshot`(false) |
 | `ui.nodes` | 机器可读 JSON | `where` `fields` `limit` `cursor` |
 | `ui.diff` | 自 `since` 起的增量 | `since`(seq) |
-| `ui.wait` | 服务端阻塞等待 | `for`{text|textGone|idle|ref} `timeoutMs`(8000) |
-| `ui.shot` | 截图，可标注 ref 框 | `ref` `region` `annotate` |
+| `ui.wait` | 服务端阻塞等待 | `for`{text|textGone|idle|ref|package|activity|keyboard} `timeoutMs`(8000) |
+| `ui.windows` | 当前窗口栈（弹窗/IME/分屏/遮挡） | 无 |
+| `ui.shot` | 截图，可标注 ref 框 | `ref` `region` `annotate` `maxBoxes` |
+
+设备增强（APK only，不改变 `ui.*` 读写边界）：`notif.list / notif.history / notif.dismiss / notif.reply`；`ui.clipboard` 的 `op` 支持 `get / set / clear / history`。历史只存在进程内，不落盘，重启即清空。
 
 `ui.view` 输出（给人/模型看，不是 XML）：
 
@@ -114,6 +117,8 @@ Session Page 序列 + ref 表 + 事件缓冲（默认一个 default 会话）
 | `ui.ime` | 输入法直通（setText 失败兜底） |
 
 `op` 取值：`tap longClick setText appendText clearText focus scroll swipe drag press`
+
+> 状态栅栏：`ui.invalidate` 不是给模型常规调用的业务方法；它由 DSH facade 在带 `uiEffect` 的 shell 动作后调用，作废 APK 页面缓存与 ref 绑定。
 
 `ui.act` 返回（**设计核心**）：
 

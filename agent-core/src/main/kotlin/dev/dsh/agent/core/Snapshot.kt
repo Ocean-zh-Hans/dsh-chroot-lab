@@ -11,6 +11,8 @@ data class Snapshot(
     val screen: Rect,
     val nodes: List<Node>,
     val roots: List<Int>,
+    /** 当前 active/focused 窗口 id；-1 表示未知。 */
+    val activeWindow: Int = -1,
 ) {
     val size: Int get() = nodes.size
     fun node(id: Int): Node = nodes[id]
@@ -44,7 +46,7 @@ data class Snapshot(
     }
 
     companion object {
-        val EMPTY = Snapshot(0, 0, 0, "", "", false, Rect(0, 0, 0, 0), emptyList(), emptyList())
+        val EMPTY = Snapshot(0, 0, 0, "", "", false, Rect(0, 0, 0, 0), emptyList(), emptyList(), -1)
     }
 }
 
@@ -81,10 +83,12 @@ class SnapshotBuilder(
     private var keyboard = false
     private var pkgName = pkg
     private var actName = activity
+    private var activeWindow = -1
 
     fun keyboard(visible: Boolean): SnapshotBuilder { keyboard = visible; return this }
     fun packageName(value: String): SnapshotBuilder { pkgName = value; return this }
     fun activityName(value: String): SnapshotBuilder { actName = value; return this }
+    fun activeWindow(value: Int): SnapshotBuilder { activeWindow = value; return this }
 
     fun add(
         cls: String,
@@ -99,6 +103,8 @@ class SnapshotBuilder(
         window: Int = 0,
         z: Int = 0,
         nodePkg: String = "",
+        /** 仅测试便捷构建默认可见/可用；真实 Capture 必须传 false，使用节点真实 flags。 */
+        mergeDefaults: Boolean = true,
     ): Int {
         val id = nodes.size
         val depth = if (parent < 0) 0 else nodes[parent].depth + 1
@@ -117,7 +123,7 @@ class SnapshotBuilder(
             desc = desc,
             hint = hint,
             bounds = bounds,
-            flags = flags or Flags.ENABLED or Flags.VISIBLE,
+            flags = if (mergeDefaults) flags or Flags.ENABLED or Flags.VISIBLE else flags,
             nativeId = nativeId,
             path = path,
             index = index,
@@ -131,5 +137,5 @@ class SnapshotBuilder(
         return id
     }
 
-    fun build(): Snapshot = Snapshot(g, seq, at, pkgName, actName, keyboard, screen, nodes.toList(), roots.toList())
+    fun build(): Snapshot = Snapshot(g, seq, at, pkgName, actName, keyboard, screen, nodes.toList(), roots.toList(), activeWindow)
 }

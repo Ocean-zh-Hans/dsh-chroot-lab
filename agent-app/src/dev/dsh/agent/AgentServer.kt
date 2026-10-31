@@ -43,7 +43,8 @@ object AgentServer {
     val events = EventBus()
 
     private val CONNECTIONS = CopyOnWriteArrayList<Connection>()
-    private val HEARTBEAT: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
+    @Volatile
+    private var heartbeat: ScheduledExecutorService? = null
     private val EVENT_WRITERS: ExecutorService = Executors.newCachedThreadPool()
     private val IDEMPOTENT = LinkedHashMap<String, Idempotent>()
 
@@ -80,6 +81,7 @@ object AgentServer {
         service = svc
         Jobs.init(app)
         SystemEvents.init(app)
+        ClipboardHistory.start(app)
         if (!tokenInitialized) {
             if (app.getSharedPreferences("agent", 0).getBoolean("rotateOnStart", false)
                 && tokenFile(app).isFile && rotateToken().isEmpty()
@@ -99,9 +101,13 @@ object AgentServer {
         }
         thread = Thread({ acceptLoop() }, "dsh-agent-server").apply { isDaemon = true }
         thread!!.start()
-        HEARTBEAT.scheduleWithFixedDelay({
-            for (connection in CONNECTIONS) connection.heartbeat()
-        }, 15, 15, TimeUnit.SECONDS)
+        if (heartbeat == null) {
+            heartbeat = Executors.newSingleThreadScheduledExecutor().also { service ->
+                service.scheduleWithFixedDelay({
+                    for (connection in CONNECTIONS) connection.heartbeat()
+                }, 15, 15, TimeUnit.SECONDS)
+            }
+        }
     }
 
     @JvmStatic
@@ -116,6 +122,8 @@ object AgentServer {
         for (connection in CONNECTIONS) connection.close()
         clients?.shutdownNow()
         clients = null
+        heartbeat?.shutdownNow()
+        heartbeat = null
         val old = thread
         if (old != null && old !== Thread.currentThread()) {
             try {
@@ -131,7 +139,11 @@ object AgentServer {
     @JvmStatic
     @Synchronized
     fun detach(svc: AccessibilityService?) {
-        if (service === svc) service = null
+        if (service === svc) {
+            service = null
+            UiEngine.get().serviceDetached()
+            PresenceState.markDisconnected()
+        }
     }
 
     @JvmStatic
@@ -142,6 +154,7 @@ object AgentServer {
 
     @JvmStatic
     fun attachActivity(activity: Activity) {
+        // 打开 App 查看状态不能暂停 AI；只有明确的接管/交接才暂停。
         foregroundActivity = activity
     }
 
@@ -154,11 +167,19 @@ object AgentServer {
     fun activity(): Activity? = foregroundActivity
 
     @JvmStatic
-    fun summary(): String = status() + "\n无障碍：" + (if (service != null) "已连接" else "未连接") +
+    fun requestHandoff(reason: String) {
+        PresenceState.requestHandoff(context, reason)
+    }
+
+    @JvmStatic
+    fun summary(): String = status() + "\n" +
+        (context?.let { PlatformProfile.summary(it) } ?: "平台信息未初始化") +
+        "\n文件面：由 DSH shell 管理（APK 不持有共享存储）" +
+        "\n无障碍：" + (if (service != null) "已连接" else "未连接") +
         "\n通知使用权：" + (if (NotificationRelay.connected()) "已连接" else "未连接") +
-        "\n文件访问：" + (if (FileBridge.storageAvailable()) "已授权" else "未授权") +
         "\nroot helper：" + (if (RootClient.available()) "已连接" else "未连接") +
-        "\n前台保活：" + (if (context != null && AgentRuntimeService.enabled(context!!)) "开启" else "关闭")
+        "\n前台保活：" + (if (context != null && AgentRuntimeService.enabled(context!!)) "开启" else "关闭") +
+        "\nAgent：" + (if (PresenceState.isPaused()) "暂停" else "运行")
 
     @JvmStatic
     fun status(): String = if (server != null) "listening on 127.0.0.1:17321" else lastError ?: "stopped"
@@ -237,9 +258,16 @@ object AgentServer {
     fun dispatch(method: String, params: JSONObject?): Any? {
         val actual = params ?: JSONObject()
         if (context == null) throw AgentError("INTERNAL", "agent is not initialized")
-        if (readonly() && isMutation(method)) throw AgentError("READONLY", "read-only mode rejects device mutation")
+        if (method.startsWith("ui.") || method.startsWith("notif.") || method.startsWith("handoff.")) {
+            PresenceState.noteRequest(method)
+        }
+        if (readonly() && isMutation(method, actual)) throw AgentError("READONLY", "read-only mode rejects device mutation")
+        if (PresenceState.isPaused() && isMutation(method, actual)) {
+            throw AgentError("PAUSED", "agent is paused: resume from the DSH notification or quick settings tile")
+                .detail("hint", "notification action PRESENCE_RESUME or QS tile")
+        }
         val key = actual.optString("idempotencyKey")
-        if (key.isEmpty() || !isMutation(method)) return dispatchInternal(method, actual)
+        if (key.isEmpty() || !isMutation(method, actual)) return dispatchInternal(method, actual)
         if (key.length > 128) throw AgentError("INVALID_PARAMS", "idempotencyKey is too long")
         val digest = digest(method, actual)
         val mapKey = method + "\n" + key
@@ -293,6 +321,9 @@ object AgentServer {
 
     @JvmStatic
     fun isMutation(method: String): Boolean = AgentMethods.isMutation(method)
+
+    @JvmStatic
+    fun isMutation(method: String, params: JSONObject?): Boolean = AgentMethods.isMutation(method, params)
 
     @JvmStatic
     fun isReadonly(): Boolean = readonly()
@@ -351,9 +382,33 @@ object AgentServer {
                     JSONObject().put("ok", true).put("cleared", true)
                 }
                 "dev.selftest" -> selftest()
+                "handoff.request" -> {
+                    PresenceState.requestHandoff(context, params.optString("reason", ""))
+                    JSONObject().put("ok", true).put("via", "app").put("paused", true)
+                }
+                "receipts.append" -> {
+                    val status = params.optString("status", "ok")
+                    val title = params.optString("title", "")
+                    val receipt = ReceiptStore.append(
+                        context!!,
+                        params.optString("taskId", ""),
+                        title,
+                        status,
+                        params.optJSONArray("steps"),
+                        params.optString("error", ""),
+                    )
+                    if (status != "running") {
+                        PresenceState.markDone(title, status)
+                        PresenceNotification.showCompletion(context!!, title, status)
+                        PresenceNotification.update(context)
+                    }
+                    JSONObject().put("ok", true).put("via", "app").put("receipt", receipt)
+                }
+                "receipts.list" -> JSONObject().put("ok", true).put("via", "app")
+                    .put("receipts", ReceiptStore.list(context!!, params.optInt("limit", 20)))
                 else -> throw AgentError("BAD_REQUEST", "unknown method: " + method)
-                    .detail("hint", "v3: ui.view/ui.nodes/ui.diff/ui.wait/ui.shot/ui.act/ui.batch/ui.fill/" +
-                        "ui.scrollUntil/ui.press/ui.ime/sys.status/session.*/events.*/policy.*/dev.*")
+                    .detail("hint", "v3: ui.view/ui.nodes/ui.diff/ui.expect/ui.wait/ui.windows/ui.shot/ui.gesture/ui.act/ui.batch/" +
+                        "ui.fill/ui.scrollUntil/ui.press/ui.ime/ui.clipboard/notif.list|history|dismiss|reply/sys.status/handoff.request/receipts.*/session.*/events.*/policy.*/dev.*")
             }
         } catch (error: AgentError) {
             failure = error.code
@@ -678,6 +733,8 @@ object AgentServer {
                         send(JSONObject().put("id", id).put("ok", false).put("via", error.via)
                             .put("resultState", error.resultState).put("replayed", error.replayed)
                             .put("error", JSONObject().put("code", error.code).put("message", error.message)
+                                .put("retryable", error.retryable)
+                                .put("hint", error.detail.optString("hint", ""))
                                 .put("detail", error.detail)))
                     } catch (error: IllegalArgumentException) {
                         send(JSONObject().put("id", id).put("ok", false).put("error", error("INVALID_PARAMS", error.message ?: "")))

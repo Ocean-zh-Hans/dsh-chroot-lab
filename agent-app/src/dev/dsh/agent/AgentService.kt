@@ -9,6 +9,7 @@ class AgentService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         AgentServer.start(this, this)
+        PresenceOverlay.attach(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -20,12 +21,14 @@ class AgentService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         if (instance === this) instance = null
+        PresenceOverlay.detach()
         AgentServer.detach(this)
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        PresenceOverlay.detach()
         AgentServer.detach(this)
         super.onDestroy()
     }

@@ -54,7 +54,32 @@ internal object Capture {
     private const val MAX_DEPTH = 50
     private const val MAX_NODES = 2000
 
+    /** 密码字段从 Capture 层就脱敏；View/Diff/nodes 任何下游都拿不到明文。 */
+    private const val PASSWORD_MASK = "••••"
+
     fun capture(service: AccessibilityService, g: Long, seq: Long): Captured {
+        // 快路径：只抓当前活动窗口。ColorOS 的 service.windows 在后台线程上
+        // 经常要等 5 秒超时；日常读屏不需要状态栏/导航栏，ui.windows 另走全量窗口。
+        val root = try {
+            service.rootInActiveWindow
+        } catch (t: Throwable) {
+            null
+        } ?: return captureAll(service, g, seq)
+        val metrics = service.resources.displayMetrics
+        val screen = DRect(0, 0, metrics.widthPixels, metrics.heightPixels)
+        val builder = SnapshotBuilder(g = g, seq = seq, at = SystemClock.uptimeMillis(), pkg = "", activity = "", screen = screen)
+        val handles = HashMap<Long, AccessibilityNodeInfo>(256)
+        val budget = intArrayOf(MAX_NODES)
+        val windowPkg = root.packageName?.toString() ?: ""
+        walk(builder, handles, root, -1, 0, -1, 0, windowPkg, false, budget)
+        root.recycle()
+        builder.keyboard(false).packageName(windowPkg).activeWindow(-1)
+            .activityName(if (windowPkg.isNotEmpty() && windowPkg == UiClock.pkg) UiClock.activity else "")
+        return Captured(builder.build(), handles)
+    }
+
+    /** 兜底/显式全量窗口路径。 */
+    fun captureAll(service: AccessibilityService, g: Long, seq: Long): Captured {
         val metrics = service.resources.displayMetrics
         val screen = DRect(0, 0, metrics.widthPixels, metrics.heightPixels)
         val builder = SnapshotBuilder(g = g, seq = seq, at = SystemClock.uptimeMillis(), pkg = "", activity = "", screen = screen)
@@ -62,6 +87,8 @@ internal object Capture {
         val budget = intArrayOf(MAX_NODES)
         var keyboard = false
         var pkg = ""
+        var activePkg = ""
+        var activeWindow = -1
         val windows: List<AccessibilityWindowInfo> = try {
             service.windows ?: emptyList()
         } catch (t: Throwable) {
@@ -69,6 +96,7 @@ internal object Capture {
         }
         val ordered = windows.sortedBy { it.layer }
         for (w in ordered) {
+            if (w.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY) continue
             if (w.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) keyboard = true
             val root = try {
                 w.root
@@ -79,11 +107,17 @@ internal object Capture {
                 root.recycle()
                 continue
             }
-            if (pkg.isEmpty()) pkg = root.packageName?.toString() ?: ""
-            walk(builder, handles, root, -1, 0, w.id, w.layer, false, budget)
+            val windowPkg = root.packageName?.toString() ?: ""
+            if (pkg.isEmpty()) pkg = windowPkg
+            if (w.isActive) {
+                activePkg = windowPkg
+                activeWindow = w.id
+            }
+            walk(builder, handles, root, -1, 0, w.id, w.layer, windowPkg, false, budget)
             root.recycle()
         }
-        builder.keyboard(keyboard).packageName(pkg)
+        if (activePkg.isNotEmpty()) pkg = activePkg
+        builder.keyboard(keyboard).packageName(pkg).activeWindow(activeWindow)
             .activityName(if (pkg.isNotEmpty() && pkg == UiClock.pkg) UiClock.activity else "")
         return Captured(builder.build(), handles)
     }
@@ -96,6 +130,7 @@ internal object Capture {
         depth: Int,
         window: Int,
         layer: Int,
+        windowPkg: String,
         clickableAncestor: Boolean,
         budget: IntArray,
     ) {
@@ -129,12 +164,15 @@ internal object Capture {
         if (node.isPassword) flags = flags or Flags.PASSWORD
         if (clickableAncestor && flags and Flags.CLICKABLE == 0) flags = flags or Flags.CLICKABLE_ANCESTOR
         val nativeId = NodeIds.of(node)
+        val password = node.isPassword
+        val rawText = node.text?.toString() ?: ""
+        val rawDesc = node.contentDescription?.toString() ?: ""
         val id = builder.add(
             cls = node.className?.toString() ?: "",
             bounds = DRect(rect.left, rect.top, rect.right, rect.bottom),
             parent = parent,
-            text = node.text?.toString() ?: "",
-            desc = node.contentDescription?.toString() ?: "",
+            text = if (password && rawText.isNotEmpty()) PASSWORD_MASK else rawText,
+            desc = if (password && rawDesc.isNotEmpty()) PASSWORD_MASK else rawDesc,
             hint = try {
                 node.hintText?.toString() ?: ""
             } catch (t: Throwable) {
@@ -145,6 +183,8 @@ internal object Capture {
             nativeId = nativeId,
             window = window,
             z = layer,
+            nodePkg = windowPkg,
+            mergeDefaults = false,
         )
         if (nativeId >= 0) {
             try {
@@ -160,7 +200,7 @@ internal object Capture {
             } catch (t: Throwable) {
                 null
             } ?: continue
-            walk(builder, handles, child, id, depth + 1, window, layer, nowClickable, budget)
+            walk(builder, handles, child, id, depth + 1, window, layer, windowPkg, nowClickable, budget)
             child.recycle()
         }
     }
@@ -168,10 +208,23 @@ internal object Capture {
 
 /** 手势派发：没有可点节点的兜底路径。 */
 internal object Gestures {
+    data class StrokeSpec(
+        val points: List<Pair<Float, Float>>,
+        val startMs: Long = 0L,
+        val durationMs: Long = 300L,
+    )
+
     fun tap(service: AccessibilityService, x: Int, y: Int, durationMs: Long = 60): Boolean {
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
         val stroke = GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(1))
         return dispatch(service, GestureDescription.Builder().addStroke(stroke).build())
+    }
+
+    fun doubleTap(service: AccessibilityService, x: Int, y: Int, gapMs: Long = 100): Boolean {
+        val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
+        val first = GestureDescription.StrokeDescription(path, 0, 40)
+        val second = GestureDescription.StrokeDescription(Path().apply { moveTo(x.toFloat(), y.toFloat()) }, gapMs.coerceAtLeast(40), 40)
+        return dispatch(service, GestureDescription.Builder().addStroke(first).addStroke(second).build(), gapMs + 1_500)
     }
 
     fun swipe(service: AccessibilityService, x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long = 300): Boolean {
@@ -183,7 +236,52 @@ internal object Gestures {
         return dispatch(service, GestureDescription.Builder().addStroke(stroke).build())
     }
 
-    private fun dispatch(service: AccessibilityService, gesture: GestureDescription): Boolean {
+    fun drag(
+        service: AccessibilityService,
+        x1: Int, y1: Int, x2: Int, y2: Int,
+        holdMs: Long = 500,
+        durationMs: Long = 300,
+    ): Boolean {
+        val first = Path().apply {
+            moveTo(x1.toFloat(), y1.toFloat())
+            lineTo(x1 + 1f, y1.toFloat())
+        }
+        val initial = GestureDescription.StrokeDescription(first, 0, holdMs.coerceAtLeast(50), true)
+        val moved = Path().apply {
+            // 续接 stroke 必须从上一段终点开始，否则会跳到起点重新按下。
+            moveTo(x1 + 1f, y1.toFloat())
+            lineTo(x2.toFloat(), y2.toFloat())
+        }
+        val continuation = initial.continueStroke(moved, 0, durationMs.coerceAtLeast(50), false)
+        return dispatch(service, GestureDescription.Builder().addStroke(initial).addStroke(continuation).build(),
+            holdMs + durationMs + 1_500)
+    }
+
+    /** 通用多指/多路径手势；最多 20 条 stroke（AOSP GestureDescription 上限）。 */
+    fun gesture(service: AccessibilityService, strokes: List<StrokeSpec>): Boolean {
+        if (strokes.isEmpty() || strokes.size > 20) return false
+        val builder = GestureDescription.Builder()
+        var maxEnd = 0L
+        for (spec in strokes) {
+            if (spec.points.size < 2) return false
+            val path = Path()
+            spec.points.forEachIndexed { index, point ->
+                if (index == 0) path.moveTo(point.first, point.second)
+                else path.lineTo(point.first, point.second)
+            }
+            val duration = spec.durationMs.coerceIn(1L, 10_000L)
+            val start = spec.startMs.coerceAtLeast(0L)
+            builder.addStroke(GestureDescription.StrokeDescription(path, start, duration))
+            maxEnd = maxOf(maxEnd, start + duration)
+        }
+        return dispatch(service, builder.build(), maxEnd + 1_500)
+    }
+
+    private fun dispatch(
+        service: AccessibilityService,
+        gesture: GestureDescription,
+        timeoutMs: Long = 2_000,
+    ): Boolean {
         val done = java.util.concurrent.CountDownLatch(1)
         val ok = booleanArrayOf(false)
         val callback = object : AccessibilityService.GestureResultCallback() {
@@ -199,7 +297,7 @@ internal object Gestures {
         }
         val accepted = service.dispatchGesture(gesture, callback, null)
         if (!accepted) return false
-        done.await(2, java.util.concurrent.TimeUnit.SECONDS)
+        if (!done.await(timeoutMs.coerceAtLeast(500), java.util.concurrent.TimeUnit.MILLISECONDS)) return false
         return ok[0]
     }
 }

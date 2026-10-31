@@ -44,6 +44,20 @@ class WhereTest {
     }
 
     @Test
+    fun childOfUsesRealAncestryNotGeometry() {
+        val b = SnapshotBuilder(g = 1, seq = 1, pkg = "com.example.app", activity = ".Main")
+        val root = b.add("android.widget.FrameLayout", Rect(0, 0, 100, 100))
+        val parent = b.add("android.widget.LinearLayout", Rect(0, 0, 100, 100), parent = root, text = "父容器")
+        val child = b.add("android.widget.TextView", Rect(10, 10, 50, 50), parent = parent, text = "目标")
+        // 同尺寸、同文本，但不是 parent 的后代；几何 covers 会误命中。
+        b.add("android.widget.TextView", Rect(10, 10, 50, 50), parent = root, text = "目标")
+
+        val view = RefStore().bind(b.build())
+        val ids = Query.select(view, Where(text = Match("目标"), childOf = Anchor(where = Where.text("父容器"))))
+        assertEquals(listOf(child), ids)
+    }
+
+    @Test
     fun regexSupport() {
         val obj = Json.parseToJsonElement("""{"text":{"value":"已(开启|关闭)","regex":true}}""") as JsonObject
         val ids = Query.select(view, Where.parse(obj))

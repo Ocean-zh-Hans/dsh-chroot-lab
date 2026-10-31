@@ -97,7 +97,7 @@ data class Where(
                     "rightOf", "right_of" -> w.copy(rightOf = anchorOf(v))
                     "childOf", "child_of" -> w.copy(childOf = anchorOf(v))
                     "anyOf" -> w.copy(anyOf = (v as? JsonArray)?.mapNotNull { (it as? JsonObject)?.let { o -> parse(o) } } ?: emptyList())
-                    else -> w
+                    else -> throw IllegalArgumentException("unknown where field: " + k)
                 }
             }
             return w
@@ -135,37 +135,52 @@ object Query {
         if (where == null) return snap.walk()
 
         val anchors = HashMap<String, List<Rect>>()
-        fun anchorRects(anchor: Anchor?): List<Rect>? {
+        val anchorNodes = HashMap<String, List<Int>>()
+        fun anchorIds(anchor: Anchor?): List<Int>? {
             if (anchor == null) return null
             val key = anchor.ref ?: anchor.where?.toString() ?: return null
-            return anchors.getOrPut(key) {
+            return anchorNodes.getOrPut(key) {
                 if (anchor.ref != null) {
                     val id = view.idOf(anchor.ref)
-                    if (id != null) listOf(snap.node(id).bounds) else emptyList()
+                    if (id != null) listOf(id) else emptyList()
                 } else {
-                    snap.walk().filter { anchor.where!!.match(snap.node(it)) }.map { snap.node(it).bounds }
+                    snap.walk().filter { anchor.where!!.match(snap.node(it)) }
                 }
             }
         }
+        fun anchorRects(anchor: Anchor?): List<Rect>? =
+            anchorIds(anchor)?.map { snap.node(it).bounds }
 
         val below = anchorRects(where.below)
         val above = anchorRects(where.above)
         val leftOf = anchorRects(where.leftOf)
         val rightOf = anchorRects(where.rightOf)
-        val childOf = anchorRects(where.childOf)
+        val childOf = anchorIds(where.childOf)
 
         val out = ArrayList<Int>(32)
         for (id in snap.walk()) {
             val n = snap.node(id)
+            if (!n.has(Flags.VISIBLE)) continue
             if (!where.match(n)) continue
             if (below != null && below.none { n.bounds.t >= it.b }) continue
             if (above != null && above.none { n.bounds.b <= it.t }) continue
             if (leftOf != null && leftOf.none { n.bounds.r <= it.l }) continue
             if (rightOf != null && rightOf.none { n.bounds.l >= it.r }) continue
-            if (childOf != null && childOf.none { it.covers(n.bounds) }) continue
+            // childOf 必须是真实祖先链，不能用 bounds.covers：同尺寸的浮层/兄弟节点会误命中。
+            if (childOf != null && childOf.none { isAncestor(snap, it, id) }) continue
             out.add(id)
         }
         return out
+    }
+
+    private fun isAncestor(snap: Snapshot, ancestorId: Int, nodeId: Int): Boolean {
+        var current = snap.node(nodeId).parent
+        var guard = 0
+        while (current >= 0 && guard++ < 256) {
+            if (current == ancestorId) return true
+            current = snap.node(current).parent
+        }
+        return false
     }
 
     /** 视觉顺序：先看行列，再看深度。 */

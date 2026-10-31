@@ -551,7 +551,7 @@ fccd162a950f2a77ba25c6e90028c319208f92080f121b66f270066d6ca39c3f
 
 - Agent 页面采用 Kotlin Compose，系统服务与协议使用 Java。普通 App 不申请 root；独立 `agent-root-helper` 通过 Android SDK `android.jar` 和 D8 生成只含 `classes.dex` 的 JAR，经反射连接 UiAutomation，不打包伪造系统类。root helper 使用 loopback `17322`、共用 token，启动脚本校验 PID/starttime/进程名；没有启用它的开机服务。
 - 会话使用自有 POJO，支持默认会话、3 个 LRU、单调 nodeId、epoch、matchKey 歧义拒绝、受限 DSL 和 patch/全量回退。写操作重新 resolve → verify → act，不使用旧坐标；磁盘恢复快照只读。autosave 默认关闭、默认不保存正文，密码掩码，优先 Keystore AES-GCM；回退 gzip 时明确 `encrypted=false`。
-- 客户端 `agent/dsh_agent.py` 使用同一 socket 读取器并区分事件帧和控制确认。Windows socket 超时转换为 `TIMEOUT`，写请求不盲重试。无副作用自检、prep、录屏与确认 shell 使用各自有界预算，root helper 的 prep 也不再固定 15 秒；较长预算不改变写操作 `UNKNOWN` 语义。每个事件订阅者有独立有界队列，支持 `events.dropped` 和幂等退订。幂等写请求先登记执行中状态，超时结果标为 `UNKNOWN`。
+- v2 客户端（已归档：`docs/archive/agent-v2/dsh_agent.py`）使用同一 socket 读取器并区分事件帧和控制确认。Windows socket 超时转换为 `TIMEOUT`，写请求不盲重试。无副作用自检、prep、录屏与确认 shell 使用各自有界预算，root helper 的 prep 也不再固定 15 秒；较长预算不改变写操作 `UNKNOWN` 语义。每个事件订阅者有独立有界队列，支持 `events.dropped` 和幂等退订。幂等写请求先登记执行中状态，超时结果标为 `UNKNOWN`。
 - `AgentCoreTest: ok` 覆盖 selector、cron、路径安全和无副作用写方法分类；`PYTHONPATH=. python3 -u -m unittest tests.test_agent_client -v` 通过 6 个客户端测试，包括实际客户端 socket 的 prep 超时预算。较早完整主机检查 `out/full-host-final-3.log` 已输出 `all host checks passed`、`BUILD SUCCESSFUL`；后续源码的最终干净索引构建另记交付节，不能用旧日志替代。
 
 ### 29.2 实际设备结果

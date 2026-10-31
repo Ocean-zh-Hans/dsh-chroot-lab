@@ -109,6 +109,7 @@ fi
 export DSH_PERMISSION_PRESET
 DSH_PATCH=${DSH_PATCH:-$DSH_CONTROL_DIR/dsh/hooks.patch.yml}
 DSH_AUDIT_PATCH=${DSH_AUDIT_PATCH:-$DSH_CONTROL_DIR/dsh/hooks-audit-only.patch.yml}
+DSH_RUNTIME_PATCH=${DSH_RUNTIME_PATCH:-$DSH_CONTROL_DIR/dsh/runtime.patch.yml}
 DSH_PROFILE_DIR=${DSH_PROFILE_DIR:-${HOME:-/root}/.dsh/profiles/web}
 if [ -z "${DSH_RUNTIME_DIR:-}" ]; then
   DSH_RUNTIME_DIR=$(CDPATH='' cd -- "$DSH_BIN/.." 2>/dev/null && pwd) || DSH_RUNTIME_DIR=
@@ -162,13 +163,19 @@ dsh_run_hooks_prepare || {
   printf '%s\n' 'dsh-run: hooks status could not be written; disabling patch' >>"$LOG"
   _hooks_selected=
 }
-if [ -n "$_hooks_selected" ]; then
-  "$DSH_BIN" web --patch "$_hooks_selected" \
-    --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open >>"$LOG" 2>&1 &
+# mcp-phone is part of the module install and must not depend on the
+# audit-hook plugins being present. Apply the runtime overlay unconditionally;
+# the audit/permission hook patch is layered on top only when available.
+set -- web --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open
+if [ -f "$DSH_RUNTIME_PATCH" ]; then
+  set -- "$@" --patch "$DSH_RUNTIME_PATCH"
 else
-  "$DSH_BIN" web \
-    --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open >>"$LOG" 2>&1 &
+  printf 'dsh-run: runtime patch missing: %s\n' "$DSH_RUNTIME_PATCH" >>"$LOG"
 fi
+if [ -n "$_hooks_selected" ]; then
+  set -- "$@" --patch "$_hooks_selected"
+fi
+"$DSH_BIN" "$@" >>"$LOG" 2>&1 &
 CHILD=$!
 
 (

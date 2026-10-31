@@ -63,7 +63,31 @@ internal object RootClient {
         }
     }
 
+    /** helper 启动/停止后强制下一次探测，不要被 30s 失败冷却挡住。 */
+    @JvmStatic
+    fun invalidate() {
+        synchronized(this) {
+            lastCheck = 0L
+            cooldownUntil = 0L
+            failures = 0L
+            available = false
+            failureReason = "NO_ROOT"
+            probeQueued = false
+        }
+    }
+
     private fun noRootReason(): String = if (failureReason.isEmpty()) "NO_ROOT" else failureReason
+
+    /** 给 UI 用的短原因；root helper 是独立进程，不是 Android 运行时权限。 */
+    @JvmStatic
+    fun reason(): String {
+        if (available) return ""
+        return when {
+            noRootReason() == "NO_ROOT" -> "root helper 未启动"
+            noRootReason().contains("Connect", ignoreCase = true) -> "root helper 未启动（17322 未监听）"
+            else -> "root helper 不可用（" + noRootReason() + "）"
+        }
+    }
 
     @JvmStatic
     fun status(): JSONObject {

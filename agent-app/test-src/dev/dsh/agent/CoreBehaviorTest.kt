@@ -72,9 +72,12 @@ class CoreBehaviorTest {
             "policy.set", "dev.install", "dev.uninstall"
         )
         for (method in writes) assertTrue(method, AgentMethods.isMutation(method))
-        for (method in listOf("ui.view", "ui.nodes", "ui.diff", "ui.wait", "sys.status", "session.open")) {
+        for (method in listOf("ui.view", "ui.nodes", "ui.diff", "ui.wait", "sys.status", "session.open", "notif.history")) {
             assertFalse(method, AgentMethods.isMutation(method))
         }
+        assertFalse(AgentMethods.isMutation("ui.clipboard", "get"))
+        assertFalse(AgentMethods.isMutation("ui.clipboard", "history"))
+        assertTrue(AgentMethods.isMutation("ui.clipboard", "set"))
         assertEquals(3, AgentMethods.API_VERSION)
     }
 }

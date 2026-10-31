@@ -29,3 +29,4 @@ build/tmp/
 build/outputs/
 build/kotlin/
 agent-core/build/
+agent-app/res/raw/root_helper.jar

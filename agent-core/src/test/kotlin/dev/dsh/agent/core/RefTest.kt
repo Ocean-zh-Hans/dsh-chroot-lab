@@ -45,7 +45,7 @@ class RefTest {
     }
 
     @Test
-    fun reportsCandidatesInsteadOfGuessing() {
+    fun doesNotReportLowScoreCandidates() {
         val store = RefStore()
         val v1 = store.bind(Fixture.settings())
         val target = v1.byRef.entries.first { it.value == 4 }.key
@@ -57,7 +57,7 @@ class RefTest {
 
         val res = store.resolve(v2, target)
         assertFalse(res.ok, "不应在无关页面上命中")
-        assertTrue(res.candidates.isNotEmpty())
+        assertTrue(res.candidates.isEmpty(), "低分候选应视为 NOT_FOUND，而不是 AMBIGUOUS")
     }
 
     @Test

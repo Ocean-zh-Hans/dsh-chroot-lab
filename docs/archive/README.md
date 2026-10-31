@@ -27,12 +27,15 @@
 | `notes/15-decisions-pending.md` | 旧决策单/推荐组合 | `docs/decisions.md`（已锁定） |
 | `notes/16-hiddenness-first.md` | 应用层隐藏性 | `docs/hiddenness.md` |
 | `notes/17-project-overview.md` | 总览 v2 | `docs/README.md`、`docs/design-v1.5.md` |
+| `agent-v2/` | v2 Python 客户端、旧协议与旧模块 README | `docs/agent-plan.md`、`docs/agent-engine-v3.md` |
 | `notes/analysis/` | 第三方项目逐项分析 | 历史参考；不直接复制代码/结论 |
 | `notes/research/` | 早期调研 | 历史参考；部分推荐已过时 |
 
 ## 已知会被归档“覆盖”的旧说法
 
 以下旧说法**不再有效**，不要在新代码/新文档中复活：
+
+- v2 Agent 方法名 `session.analyze` / `ui.query` / `ui.find` / `shot` / `job.*` → v3 的 `ui.view` / `ui.nodes` / `ui.diff` / `ui.act` / `ui.wait` 等；v2 客户端在 `agent-v2/`，不要复活。
 
 - `daily` / `lab` / `rescue` 三档 → 只有 `full` + `rescue`。
 - 目录型 rootfs 主线 → ext4 镜像主线。

@@ -58,6 +58,7 @@ PJE110 已通过真实 128GB 稀疏 ext4、完整 Ubuntu/DSH smoke 和 20 次启
 ## 5. P4：手机控制（PJE110 主要链路已实测）
 
 - `am/pm/settings/input` 已验证实际效果；需要独立 root helper 的 package 操作必须明确授权和确认，普通 App 不伪造系统权限。
+- Agent v3 的 DeviceSession、跨后端连贯性与人类通知接口计划见 `docs/agent-plan.md`。
 - Agent 的 loopback socket、token、T0/T1 会话/DSL、中文输入、双指手势、通知测试标签、剪贴板往返、事件/作业和磁盘快照只读已通过。
 - Console 必须经 SUList 授权并彻底重启；其 root 状态、Start/Stop 和 WebView 已通过。
 - 文件访问仍待用户授权，未内置 OCR，真实验证码和通用厂商 UI 未验证；未实测的危险 root 写操作不写成通过。

@@ -1,11 +1,8 @@
 package dev.dsh.agent
 
-import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Environment
 import org.json.JSONArray
 import org.json.JSONObject
@@ -34,10 +31,7 @@ internal object FileBridge {
     }
 
     @JvmStatic
-    fun storageAvailable(): Boolean {
-        if (Build.VERSION.SDK_INT >= 30) return Environment.isExternalStorageManager()
-        return AgentServer.context()?.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-    }
+    fun storageAvailable(): Boolean = PlatformProfile.storageAvailable(AgentServer.context())
 
     private fun permission() {
         if (!storageAvailable()) throw AgentError("STORAGE_PERMISSION", "grant file access in Android settings")

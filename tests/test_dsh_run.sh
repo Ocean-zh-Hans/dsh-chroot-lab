@@ -64,6 +64,7 @@ done
 assert_contains "$(cat "$case_dir/url")" "http://127.0.0.1:1234/?token=test-token"
 assert_eq "$(cat "$case_dir/preset")" "approval-free"
 stop_runner
+assert_contains "$(cat "$case_dir/args")" 'runtime.patch.yml'
 assert_contains "$(cat "$case_dir/args")" 'hooks.patch.yml'
 assert_contains "$(cat "$case_dir/hooks.status")" '"mode":"full"'
 [ -L "$case_dir/profile/node_modules/@deepseek-ai/dsh-permission-presets" ] || fail 'runtime permission preset was not linked into the profile'
@@ -83,6 +84,7 @@ done
 assert_eq "$(cat "$case_dir/preset")" "approval-guard"
 assert_contains "$(cat "$case_dir/url")" "http://127.0.0.1:1234/?token=test-token"
 stop_runner
+assert_contains "$(cat "$case_dir/args")" 'runtime.patch.yml'
 assert_contains "$(cat "$case_dir/args")" 'hooks-audit-only.patch.yml'
 assert_contains "$(cat "$case_dir/hooks.status")" '"mode":"audit-only"'
 assert_contains "$(cat "$case_dir/dsh.log")" 'hooks mode=audit-only'
@@ -109,8 +111,9 @@ set -e
 [ "$rc" -ne 0 ] || fail "non-loopback runner exited successfully"
 [ ! -s "$case_dir/url" ] || fail "non-loopback URL was published"
 assert_contains "$(cat "$case_dir/hooks.status")" '"mode":"disabled"'
-if grep -q -- '--patch' "$case_dir/args"; then
-  fail 'disabled hooks still passed a patch to DSH'
+assert_contains "$(cat "$case_dir/args")" 'runtime.patch.yml'
+if grep -q -- 'hooks.patch.yml\|hooks-audit-only.patch.yml' "$case_dir/args"; then
+  fail 'disabled hooks still passed a hook patch to DSH'
 fi
 : >"$case_dir/profile/node_modules/@deepseek-ai/dsh-hooks-claude-code/lib/index.js"
 

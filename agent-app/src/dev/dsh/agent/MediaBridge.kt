@@ -22,12 +22,14 @@ internal object MediaBridge {
         val context = AgentServer.context() ?: throw AgentError("INTERNAL", "agent is not initialized")
         return when (method) {
             "notifications.list" -> NotificationRelay.snapshot()
+            "notifications.history" -> NotificationRelay.history(params.optInt("limit", 50))
             "notifications.dismiss" -> JSONObject().put("dismissed", NotificationRelay.dismiss(params.optString("key")))
             "notifications.click" -> notificationClick(params)
             "notifications.reply" -> notificationReply(params)
             "clipboard.get" -> clipboardGet(context)
             "clipboard.set" -> clipboardSet(context, params.optString("text"))
             "clipboard.clear" -> clipboardClear(context)
+            "clipboard.history" -> clipboardHistory(params)
             "media.nowPlaying" -> nowPlaying(context)
             "media.play", "media.pause", "media.next", "media.prev", "media.stop" -> mediaControl(context, method, params)
             "call.dial" -> {
@@ -55,6 +57,11 @@ internal object MediaBridge {
         }
     }
 
+    private fun clipboardHistory(params: JSONObject): JSONObject {
+        val items = ClipboardHistory.history(params.optInt("limit", 30))
+        return JSONObject().put("items", items).put("count", items.length())
+    }
+
     private fun clipboardGet(context: Context): JSONObject {
         val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         return try {
@@ -66,7 +73,9 @@ internal object MediaBridge {
                 for (i in 0 until clip.itemCount) {
                     clip.getItemAt(i).coerceToText(context)?.let { text.append(it) }
                 }
-                JSONObject().put("text", text.toString()).put("hasClip", true).put("available", true)
+                val value = text.toString()
+                ClipboardHistory.recordRead(value)
+                JSONObject().put("text", value).put("hasClip", true).put("available", true)
             }
         } catch (_: SecurityException) {
             JSONObject().put("hasClip", false).put("available", false).put("reason", "clipboard focus required")
@@ -78,6 +87,7 @@ internal object MediaBridge {
             ?: return JSONObject().put("set", false).put("verified", false)
         return try {
             manager.setPrimaryClip(ClipData.newPlainText("DSH", text))
+            ClipboardHistory.record(text, "set")
             val clip = manager.primaryClip
             val verified = clip != null && clip.itemCount == 1 && text.contentEquals(clip.getItemAt(0).coerceToText(context))
             JSONObject().put("set", verified).put("verified", verified)
@@ -91,6 +101,7 @@ internal object MediaBridge {
             ?: return JSONObject().put("cleared", false).put("verified", false)
         return try {
             manager.clearPrimaryClip()
+            ClipboardHistory.clear()
             val verified = !manager.hasPrimaryClip() || manager.primaryClip == null
             JSONObject().put("cleared", verified).put("verified", verified)
         } catch (_: SecurityException) {

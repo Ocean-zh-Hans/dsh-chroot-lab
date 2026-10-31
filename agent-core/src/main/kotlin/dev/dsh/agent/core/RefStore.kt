@@ -174,7 +174,8 @@ class RefStore(private val limit: Int = 8192) {
             }
             return Resolution(-1, ref, false, best.score, scored)
         }
-        return Resolution(-1, ref, false, best?.score ?: 0.0, scored)
+        // 低于阈值不是“多个候选”，而是没找到；不要把 5 个相似节点误报成 AMBIGUOUS。
+        return Resolution(-1, ref, false, best?.score ?: 0.0, emptyList())
     }
 
     /**

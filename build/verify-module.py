@@ -39,6 +39,8 @@ REQUIRED = EXECUTABLES | {
     "control/bin/dsh-android-env",
     "control/dsh/hooks.patch.yml",
     "control/dsh/hooks-audit-only.patch.yml",
+    "control/dsh/runtime.patch.yml",
+    "control/dsh/phone-mcp/phone_mcp.py",
     "control/hooks/hooks.json",
     "control/s6/ttyd/down",
 } | {

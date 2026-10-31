@@ -2,6 +2,10 @@
 
 本目录在 guest 中以只读方式挂载为 `/opt/dsh-control`。模块目录、控制目录和活动镜像仍默认遮蔽；本目录可见不代表宿主模块目录完全开放。
 
+## DSH phone facade
+
+`dsh/phone-mcp/phone_mcp.py` 是 DSH runtime 侧的 MCP server，直接连接 Agent APK 的 v3 JSONL 协议；`dsh/runtime.patch.yml` 通过 `id: mcp-phone` 覆盖旧 `/opt/phone` adb wrapper，并由 `dsh-run` 无条件叠加；`hooks.patch.yml` / `hooks-audit-only.patch.yml` 只负责 audit hook，是否可用不影响 phone 工具。它不修改 rootfs，也不把 APK 的 Activity 带入动作链。配置、工具和连贯性规则见 `dsh/phone-mcp/README.md`。
+
 ## 自检信息
 
 每次 holder 启动时生成：

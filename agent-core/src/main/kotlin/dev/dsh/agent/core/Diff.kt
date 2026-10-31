@@ -39,7 +39,7 @@ object Diff {
             val a = prev.snapshot.node(before)
             val b = next.snapshot.node(id)
             if (a.text != b.text) changed.add(ChangedItem(ref, "text", a.text, b.text))
-            else if (a.desc != b.desc) changed.add(ChangedItem(ref, "desc", a.desc, b.desc))
+            if (a.desc != b.desc) changed.add(ChangedItem(ref, "desc", a.desc, b.desc))
             if (a.checked != b.checked) changed.add(ChangedItem(ref, "checked", a.checked.toString(), b.checked.toString()))
             if (a.enabled != b.enabled) changed.add(ChangedItem(ref, "enabled", a.enabled.toString(), b.enabled.toString()))
             if (a.bounds != b.bounds && a.window == b.window && isMeaningful(b)) {

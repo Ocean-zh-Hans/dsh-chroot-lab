@@ -31,6 +31,8 @@
 | [design-v1.5.md](design-v1.5.md) | **当前设计**：架构、挂载、生命周期、快照、安全门 |
 | [agent-engine-v3.md](agent-engine-v3.md) | **Agent APK 当前设计**：v3 API、后端选择、错误契约、能力边界 §12 |
 | [agent-capability-matrix.md](agent-capability-matrix.md) | **能力矩阵**：什么进 APK（眼+手）、什么留给 Ubuntu shell/root |
+| [agent-plan.md](agent-plan.md) | **Agent 下一阶段计划**：DeviceSession、跨后端连贯性、人类 ambient surface |
+| [chroot-capability-requests.md](chroot-capability-requests.md) | **Chroot/DSH 侧能力申请清单**：有状态 shell、artifact、job、phone facade、lease、凭据隔离 |
 | [kotlin-migration.md](kotlin-migration.md) | Java→Kotlin 全量迁移清单、构建改动与验收状态 |
 | [research/README.md](research/README.md) | 8 组同类项目调研索引、质量规则与进度 |
 | [decisions.md](decisions.md) | **已锁定决策**：`1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A` |
@@ -40,8 +42,7 @@
 | [roadmap.md](roadmap.md) | P0–P5 阶段、代码与验证状态 |
 | [packaging.md](packaging.md) | 模块 zip、payload、工具链、构建门禁 |
 | [handoff.md](handoff.md) | **备用机/PC AI 验收交接手册** |
-| [../agent/README.md](../agent/README.md) | Agent 协议、Python 客户端、持续会话与事件用法 |
-| [../agent-app/README.md](../agent-app/README.md) | 可选 Android 控制面、Compose App、root helper 与实测限制 |
+| [../agent-app/README.md](../agent-app/README.md) | v3 宿主桥接：构建、授权边界与当前状态 |
 | [../console-app/README.md](../console-app/README.md) | Chroot Console 原生控制台 + WebView（可选） |
 | [archive/README.md](archive/README.md) | 旧笔记归档说明；旧文档不再有当前效力 |
 

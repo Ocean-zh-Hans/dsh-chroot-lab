@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.dsh.agent"
-    compileSdk = 35
+    compileSdk = 37
 
     sourceSets {
         getByName("main") {
@@ -22,9 +22,9 @@ android {
     defaultConfig {
         applicationId = "dev.dsh.agent"
         minSdk = 29
-        targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        targetSdk = 29
+        versionCode = 4
+        versionName = "0.4.0"
     }
 
     signingConfigs {
@@ -69,8 +69,15 @@ dependencyLocking {
     lockAllConfigurations()
 }
 
-tasks.named("preBuild") {
+val copyRootHelperJar by tasks.registering(Copy::class) {
     dependsOn(":agent-root-helper:dexJar")
+    from(project(":agent-root-helper").layout.buildDirectory.file("dsh-root-helper.jar"))
+    into(layout.projectDirectory.dir("res/raw"))
+    rename { "root_helper.jar" }
+}
+
+tasks.named("preBuild") {
+    dependsOn(":agent-root-helper:dexJar", copyRootHelperJar)
 }
 
 dependencies {
@@ -80,5 +87,5 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.material3:material3")
+    implementation("io.github.suqi8.coui.kmp:coui-ui-android:1.1.0")
 }
