@@ -16,6 +16,7 @@ data class ConsoleStatus(
     val healthAge: Int = -1,
     val diskFreeMb: Long = -1,
     val imageBytes: Long = -1,
+    val imageUsedBytes: Long = -1,
     val snapshotCount: Int = -1,
     val autostart: Boolean = false,
     val guard: Boolean = false,
@@ -42,6 +43,7 @@ data class DoctorReport(
 data class SnapshotEntry(
     val name: String,
     val bytes: Long,
+    val usedBytes: Long = -1,
     val created: String,
     val lastGood: Boolean,
 )
@@ -162,6 +164,7 @@ object ConsoleRepo {
                 healthAge = json.optInt("health_age", -1),
                 diskFreeMb = json.optLong("disk_free_mb", -1),
                 imageBytes = json.optLong("image_bytes", -1),
+                imageUsedBytes = json.optLong("image_used_bytes", -1),
                 snapshotCount = json.optInt("snapshot_count", -1),
                 autostart = json.optBoolean("autostart"),
                 guard = json.optBoolean("guard"),
@@ -213,6 +216,7 @@ object ConsoleRepo {
                 list += SnapshotEntry(
                     name = item.optString("name"),
                     bytes = item.optLong("bytes", 0),
+                    usedBytes = item.optLong("used_bytes", -1),
                     created = item.optString("created"),
                     lastGood = item.optBoolean("last_good"),
                 )
@@ -361,7 +365,7 @@ object ConsoleRepo {
         val result = ConsoleSupport.runCommand(20, "su", "-c", command)
         if (!result.success()) return emptyList()
         val lines = result.output.trim().lines().map { it.trim() }
-        val labels = listOf("机型", "Android", "API", "构建", "内核", "verifyboot")
+        val labels = listOf("机型", "Android", "API", "构建", "内核", "校验启动")
         return labels.mapIndexedNotNull { index, label ->
             val value = lines.getOrNull(index).orEmpty()
             if (value.isEmpty()) null else label to value

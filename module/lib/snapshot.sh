@@ -392,12 +392,14 @@ dsh_snapshot_list() {
       _name=${_img##*/rootfs-}
       _name=${_name%.img}
       _bytes=$(stat -c %s "$_img" 2>/dev/null || printf 0)
+      _used=$(stat -c %b "$_img" 2>/dev/null | awk '{ printf "%d", $1 * 512 }' || printf 0)
       _mtime=$(date -r "$_img" '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || true)
       [ "$_first" -eq 1 ] || printf ','
       _first=0
-      printf '{"name":"%s","file":"%s","bytes":%s,"created":"%s","last_good":%s}' \
+      printf '{"name":"%s","file":"%s","bytes":%s,"used_bytes":%s,"created":"%s","last_good":%s}' \
         "$(dsh_json_escape "$_name")" "$(dsh_json_escape "$_img")" \
         "$(dsh_is_uint "$_bytes" && printf '%s' "$_bytes" || printf 0)" \
+        "$(dsh_is_uint "$_used" && printf '%s' "$_used" || printf 0)" \
         "$(dsh_json_escape "$_mtime")" \
         "$([ "$_name" = "$_good" ] && printf true || printf false)"
     done

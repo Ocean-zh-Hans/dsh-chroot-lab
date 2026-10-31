@@ -53,6 +53,7 @@ fun SystemPage(
     onCopyDiagnostics: () -> Unit,
     onAction: (RiskRequest) -> Unit,
     busy: Boolean = false,
+    snapsLoading: Boolean = false,
 ) {
     val palette = consolePalette()
     if (loading && status.state.isBlank()) {
@@ -62,7 +63,7 @@ fun SystemPage(
         }
         return
     }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 132.dp)) {
         item {
             StateCard(
                 status = status,
@@ -87,13 +88,20 @@ fun SystemPage(
             item { SectionTitle("建议") }
             items(advice) { RecommendationCard(it, onAction, onLogs) }
         }
-        item { SectionTitle("快照", snaps.size.toString() + " 个") }
+        val snapCount = if (snaps.isNotEmpty()) snaps.size else status.snapshotCount
+        item { SectionTitle("快照", if (snapCount < 0) "—" else snapCount.toString() + " 个") }
         item {
             GlassCard {
                 Column(Modifier.padding(vertical = 4.dp)) {
                     if (snaps.isEmpty()) {
                         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                            Text("还没有快照；升级或改系统文件前先做一个。", color = palette.faint, fontSize = ConsoleType.small)
+                            val empty = when {
+                                // 刚进页面时列表还没回来，别急着报“读不出来”。
+                                snapsLoading && status.snapshotCount > 0 -> "正在读取快照…"
+                                status.snapshotCount > 0 -> "有 " + status.snapshotCount + " 个快照，但列表没读出来；点下面刷新一次。"
+                                else -> "还没有快照；升级或改系统文件前先做一个。"
+                            }
+                            Text(empty, color = palette.faint, fontSize = ConsoleType.small)
                         }
                     }
                     snaps.take(3).forEach { snap ->
@@ -108,7 +116,7 @@ fun SystemPage(
                                     color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium,
                                 )
                                 Text(
-                                    ConsoleRepo.humanBytes(snap.bytes) + " · " + snap.created,
+                                    ConsoleRepo.humanBytes(if (snap.usedBytes >= 0) snap.usedBytes else snap.bytes) + " · " + snap.created,
                                     color = palette.faint, fontSize = ConsoleType.hint,
                                 )
                             }
@@ -214,8 +222,7 @@ private fun statusLine(status: ConsoleStatus): String {
     val parts = ArrayList<String>(4)
     if (status.loop.isNotBlank()) parts += "loop " + status.loop
     if (status.pid.isNotBlank()) parts += "pid " + status.pid
-    val uptime = formatStart(status.started)
-    if (uptime.isNotBlank()) parts += uptime
+    if (status.started.isNotBlank()) parts += formatUptime(status.started)
     if (status.healthAge >= 0) parts += "健康 " + status.healthAge + "s 前"
     if (parts.isEmpty()) parts += "还没有启动过"
     return parts.joinToString(" · ")
@@ -227,7 +234,16 @@ private fun factsOf(status: ConsoleStatus): List<Fact> {
     val facts = ArrayList<Fact>(4)
     facts += Fact(
         "镜像",
-        if (status.image.isBlank()) "未安装" else status.image.substringAfterLast('/') + " · " + ConsoleRepo.humanBytes(status.imageBytes),
+        if (status.image.isBlank()) {
+            "未安装"
+        } else {
+            if (status.imageUsedBytes >= 0) {
+                status.image.substringAfterLast('/') + " · 已用 " + ConsoleRepo.humanBytes(status.imageUsedBytes) +
+                    " / " + ConsoleRepo.humanBytes(status.imageBytes)
+            } else {
+                status.image.substringAfterLast('/') + " · " + ConsoleRepo.humanBytes(status.imageBytes)
+            }
+        },
         warn = status.image.isBlank(),
     )
     facts += Fact(
@@ -237,7 +253,11 @@ private fun factsOf(status: ConsoleStatus): List<Fact> {
     )
     facts += Fact(
         "rootfs",
-        if (status.rootfsMounted) "已挂载 · ro" else "未挂载",
+        when {
+            status.rootfsMounted -> "已挂载 · ro"
+            status.state == "running" -> "挂载在 chroot 命名空间内"
+            else -> "未挂载"
+        },
         warn = status.rootfsMounted != (status.state == "running"),
     )
     facts += Fact(
@@ -317,7 +337,7 @@ fun SoftwarePage(
     val stopped = !live
     val currentName = app.current.substringAfterLast('/')
     val version = app.dsh.ifBlank { runtime.dshRuntime }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 132.dp)) {
         item { DependencyBar(status, runtime) }
         item { SectionTitle("入口") }
         item {
@@ -641,7 +661,7 @@ fun DevicePage(
         }
         return
     }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 132.dp)) {
         item { SectionTitle("这台机器") }
         item {
             GlassCard {
@@ -687,8 +707,18 @@ fun DevicePage(
                             )
                         }
                     }
-                    InfoLine("镜像文件", ConsoleRepo.humanBytes(status.imageBytes))
-                    InfoLine("剩余空间", if (status.diskFreeMb < 0) "—" else status.diskFreeMb.toString() + " MB")
+                    InfoLine(
+                        "镜像文件",
+                        if (status.imageUsedBytes >= 0) {
+                            ConsoleRepo.humanBytes(status.imageUsedBytes) + " / " + ConsoleRepo.humanBytes(status.imageBytes)
+                        } else {
+                            ConsoleRepo.humanBytes(status.imageBytes)
+                        },
+                    )
+                    InfoLine(
+                        "剩余空间",
+                        if (status.diskFreeMb < 0) "—" else ConsoleRepo.humanBytes(status.diskFreeMb * 1024L * 1024L),
+                    )
                     InfoLine("快照", if (status.snapshotCount < 0) "—" else status.snapshotCount.toString() + " 个")
                 }
             }
@@ -726,8 +756,8 @@ fun DevicePage(
                 Column(Modifier.padding(vertical = 4.dp)) {
                     InfoLine("模块版本", status.moduleVersion.ifBlank { "—" })
                     InfoLine("自启", if (status.autostart) "开" else "关")
-                    InfoLine("guarded start", if (status.guard) "开" else "关")
-                    InfoLine("boot_id", status.bootId.ifBlank { "—" })
+                    InfoLine("启动确认", if (status.guard) "开" else "关")
+                    InfoLine("启动标识", status.bootId.ifBlank { "—" })
                 }
             }
         }

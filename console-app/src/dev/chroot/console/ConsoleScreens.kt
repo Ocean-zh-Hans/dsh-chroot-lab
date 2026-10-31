@@ -344,8 +344,16 @@ fun SettingsScreen(
                                 sections = listOf(
                                     "是什么" to "决定手机开机后是否自动启动 chroot 与 DSH。",
                                     "什么时候用" to "希望开机即用时打开；排障期间建议关闭。",
-                                    "会有什么后果" to "打开后每次开机都会占用 loop 与端口。",
-                                    "怎么恢复" to "随时可以关闭，立即生效到下次启动。",
+                                    "会有什么后果" to if (checked) {
+                                        "以后每次开机都会占用 loop 与端口，开机耗时会略增。"
+                                    } else {
+                                        "以后开机不再自动启动；重启后需要手动 start 才有 DSH。"
+                                    },
+                                    "怎么恢复" to if (checked) {
+                                        "随时可以关掉，立即生效到下次启动。"
+                                    } else {
+                                        "随时可以再打开，立即生效到下次启动。"
+                                    },
                                 ),
                             ),
                         )
@@ -489,7 +497,7 @@ fun RiskExplainScreen(request: RiskRequest, onBack: () -> Unit, onConfirm: (Risk
         }
         Spacer(Modifier.height(10.dp))
         if (request.destructive) {
-            SlideToConfirm("滑动确认执行（不可撤销）", palette.danger) { onConfirm(request) }
+            SlideToConfirm(request.confirmHint, palette.danger) { onConfirm(request) }
             Spacer(Modifier.height(8.dp))
             GhostButton("取消", onClick = onBack)
         } else {
@@ -510,6 +518,42 @@ internal fun hooksLabel(runtime: RuntimeInfo): String = when (runtime.hooksMode)
     "partial" -> "部分加载（功能可能缺）"
     "none", "off", "" -> "未加载（插件不生效）"
     else -> runtime.hooksMode
+}
+
+// dsh-ctl prints started as 2026-10-31T12:35:06+0800 (offset without colon),
+// so OffsetDateTime.parse cannot be used as-is. Never throw: an unparsable
+// timestamp must only hide the uptime, not crash the page.
+internal fun parseEpochSeconds(value: String): Long? {
+    val text = value.trim()
+    if (text.isEmpty()) return null
+    val iso = if (text.length > 5 && (text[text.length - 5] == '+' || text[text.length - 5] == '-')) {
+        text.dropLast(2) + ":" + text.takeLast(2)
+    } else {
+        text
+    }
+    return try {
+        java.time.OffsetDateTime.parse(iso).toEpochSecond()
+    } catch (error: Exception) {
+        try {
+            java.time.LocalDateTime.parse(iso.substringBefore('+').substringBeforeLast('-', missingDelimiterValue = iso))
+                .atZone(java.time.ZoneId.systemDefault()).toEpochSecond()
+        } catch (error2: Exception) {
+            null
+        }
+    }
+}
+
+internal fun formatUptime(value: String, now: Long = java.time.Instant.now().epochSecond): String {
+    val epoch = parseEpochSeconds(value) ?: return ""
+    val seconds = now - epoch
+    if (seconds <= 0) return "刚刚启动"
+    val minutes = seconds / 60
+    return when {
+        minutes < 1 -> "已运行 " + seconds + " 秒"
+        minutes < 60 -> "已运行 " + minutes + " 分"
+        minutes < 60 * 24 -> "已运行 " + (minutes / 60) + " 小时 " + (minutes % 60) + " 分"
+        else -> "已运行 " + (minutes / 60 / 24) + " 天 " + (minutes / 60 % 24) + " 小时"
+    }
 }
 
 internal fun formatStart(value: String): String {

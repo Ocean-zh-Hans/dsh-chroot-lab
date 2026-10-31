@@ -39,6 +39,10 @@ dsh_status_image_bytes() {
   stat -c %s "$DSH_IMAGE" 2>/dev/null || printf '0'
 }
 
+dsh_status_image_used_bytes() {
+  stat -c %b "$DSH_IMAGE" 2>/dev/null | awk '{ printf "%d", $1 * 512 }' || printf '0'
+}
+
 dsh_status_snapshot_count() {
   ls -1 "$DSH_IMAGE_SNAPSHOT_DIR"/rootfs-*.img 2>/dev/null | wc -l | tr -d ' '
 }
@@ -98,6 +102,7 @@ dsh_status_run() {
   _health_age=$(dsh_status_health_age)
   _disk_free=$(dsh_status_disk_free_mb)
   _image_bytes=$(dsh_status_image_bytes)
+  _image_used_bytes=$(dsh_status_image_used_bytes)
   _snap_count=$(dsh_status_snapshot_count)
   _watchdog_alive=0
   dsh_status_watchdog_alive && _watchdog_alive=1
@@ -116,9 +121,9 @@ dsh_status_run() {
   if [ "$_loop_check" = ok ]; then
     _unexpected_loops=$(dsh_loop_unexpected_images "$_loop" "$DSH_IMAGE" 2>/dev/null) || _loop_check=error
   fi
-  _rootfs_mounted=0
-  mountpoint -q "$DSH_ROOTFS_DIR" 2>/dev/null && _rootfs_mounted=1
-  if [ -n "$_loop" ] || [ -n "$_attached_loops" ] || [ "$_rootfs_mounted" -eq 1 ]; then
+  _host_rootfs_mounted=0
+  mountpoint -q "$DSH_ROOTFS_DIR" 2>/dev/null && _host_rootfs_mounted=1
+  if [ -n "$_loop" ] || [ -n "$_attached_loops" ] || [ "$_host_rootfs_mounted" -eq 1 ]; then
     _residual_resources=1
   fi
 
@@ -131,6 +136,13 @@ dsh_status_run() {
     if dsh_proc_validate_identity "$_status_pid" "$_recorded_st" "$_recorded_ns"; then
       _pid_valid=1
     fi
+  fi
+
+  # rootfs lives in the holder's private mount namespace, so a host-side
+  # mountpoint check reports "not mounted" while the chroot is perfectly up.
+  _rootfs_mounted=$_host_rootfs_mounted
+  if [ "$_pid_valid" -eq 1 ] && dsh_proc_ns_has_rootfs "$_status_pid" "$DSH_ROOTFS_DIR"; then
+    _rootfs_mounted=1
   fi
 
   _private_mount_check=skipped
@@ -213,6 +225,7 @@ dsh_status_run() {
     printf '"health_age":%s,' "$(dsh_is_uint "$_health_age" && printf '%s' "$_health_age" || printf -- '-1')"
     printf '"disk_free_mb":%s,' "$(dsh_is_uint "$_disk_free" && printf '%s' "$_disk_free" || printf 'null')"
     printf '"image_bytes":%s,' "$(dsh_is_uint "$_image_bytes" && printf '%s' "$_image_bytes" || printf 'null')"
+    printf '"image_used_bytes":%s,' "$(dsh_is_uint "$_image_used_bytes" && printf '%s' "$_image_used_bytes" || printf 'null')"
     printf '"snapshot_count":%s,' "$(dsh_is_uint "$_snap_count" && printf '%s' "$_snap_count" || printf 'null')"
     printf '"watchdog_running":%s,' "$([ "$_watchdog_alive" -eq 1 ] && printf true || printf false)"
     printf '"module_version":"%s",' "$(dsh_json_escape "$(awk -F= '$1 == "version" { print $2; exit }' "$DSH_MODULE_DIR/module.prop" 2>/dev/null || printf '%s' "$DSH_VERSION")")"
@@ -238,7 +251,7 @@ dsh_status_run() {
   printf 'rootfs mount : %s\n' "$([ "$_rootfs_mounted" -eq 1 ] && printf present || printf none)"
   printf 'rootfs ns    : %s\n' "$(case $_private_mount_check in 0) printf '%s' "$_private_mounts" ;; 1) printf none ;; 2) printf unknown ;; *) printf n/a ;; esac)"
   printf 'watchdog     : %s\n' "$_watchdog_label"
-  printf 'image        : %s (%s)\n' "$DSH_IMAGE" "$([ "$_image_present" -eq 1 ] && printf present || printf missing)"
+  printf 'image        : %s (%s, used %s bytes)\n' "$DSH_IMAGE" "$([ "$_image_present" -eq 1 ] && printf present || printf missing)" "$_image_used_bytes"
   printf 'url          : %s\n' "${_url:-none}"
   printf 'started      : %s\n' "${_started:-none}"
   printf 'last-good    : %s\n' "${_last_good:-none}"

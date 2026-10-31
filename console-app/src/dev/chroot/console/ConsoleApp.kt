@@ -62,6 +62,8 @@ data class RiskRequest(
     val reason: String,
     val impact: String,
     val destructive: Boolean = false,
+    /** 滑动确认条上的文案：不同动作的“不可撤销”程度不一样，别一律吓人。 */
+    val confirmHint: String = "滑动确认执行（不可撤销）",
     val sections: List<Pair<String, String>> = emptyList(),
 )
 
@@ -76,6 +78,7 @@ fun ConsoleRoot() {
     var runtime by remember { mutableStateOf(RuntimeInfo()) }
     var doctor by remember { mutableStateOf<DoctorReport?>(null) }
     var snaps by remember { mutableStateOf<List<SnapshotEntry>>(emptyList()) }
+    var snapsLoading by remember { mutableStateOf(true) }
     var paths by remember { mutableStateOf<List<PathEntry>>(emptyList()) }
     var device by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var logs by remember { mutableStateOf("") }
@@ -127,6 +130,7 @@ fun ConsoleRoot() {
 
     suspend fun loadSnapshots() {
         snaps = withContext(Dispatchers.IO) { ConsoleRepo.snapshots() }
+        snapsLoading = false
     }
 
     suspend fun loadPaths() {
@@ -368,6 +372,7 @@ fun ConsoleRoot() {
                         onDoctor = { route("doctor") },
                         onCopyDiagnostics = { copy(diagnostics(), "诊断包") },
                         onAction = { request -> explain = request },
+                        snapsLoading = snapsLoading,
                     )
                 }
             }
@@ -457,11 +462,11 @@ private fun riskSnapshotCreate(name: String): RiskRequest = RiskRequest(
     title = "新建快照 " + name,
     args = listOf("snapshot", "create", name, "--apply"),
     reason = "控制台新建快照",
-    impact = "复制当前镜像与 state，占用与镜像同等大小的空间",
+    impact = "复制当前镜像与 state，多占一份与已用空间相当的容量",
     sections = listOf(
         "是什么" to "把当前镜像与 state 复制成快照 " + name + "，之后可以随时恢复。",
         "什么时候用" to "升级 DSH、改动插件、调系统文件之前。",
-        "会有什么后果" to "占用一份镜像大小的空间；不会改动正在运行的实例。",
+        "会有什么后果" to "多占一份与当前已用空间相当的容量；不会改动正在运行的实例。",
         "怎么恢复" to "在快照页随时恢复或删除。",
     ),
 )
@@ -487,6 +492,7 @@ private fun riskSnapshotRestore(name: String): RiskRequest = RiskRequest(
     reason = "控制台恢复快照",
     impact = "用快照覆盖当前镜像与 state，工作文件可能被替换",
     destructive = true,
+    confirmHint = "滑动确认（会先自动保留上一份）",
     sections = listOf(
         "是什么" to "把当前镜像和 state 替换成快照 " + name + " 的内容。",
         "什么时候用" to "升级失败、误改系统文件、需要回到已知良好状态时。",
@@ -563,7 +569,8 @@ private fun ConsoleBottomBar(selected: String, onSelect: (String) -> Unit) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(ConsoleShape.card))
-            .background(palette.card)
+            // 底栏必须是实心的：卡片色带 0.92 透明度，滚动内容会从底下透出来。
+            .background(if (palette.isDark) Color(0xFF121B24) else Color(0xFFFFFFFF))
             .padding(horizontal = 6.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
