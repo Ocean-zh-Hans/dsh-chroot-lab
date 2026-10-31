@@ -312,6 +312,7 @@ dsh_start_attempt() {
     return 3
   fi
 
+  dsh_step "检查当前状态与残留记录"
   if [ "$(dsh_state_get state 2>/dev/null || true)" = running ]; then
     _old_pid=$(dsh_read_line "$DSH_PID_FILE" 2>/dev/null || true)
     if dsh_is_uint "$_old_pid" && dsh_proc_alive "$_old_pid"; then
@@ -324,11 +325,13 @@ dsh_start_attempt() {
     return 4
   fi
 
+  dsh_step "运行体检（--for-apply）"
   dsh_doctor_run --for-apply || {
     dsh_state_update state=failed note=doctor-failed
     return 4
   }
 
+  dsh_step "确认镜像未被其它 loop 占用"
   dsh_loop_assert_image_free "$DSH_IMAGE" || {
     dsh_state_update state=failed note=image-already-attached
     return 1
@@ -346,6 +349,7 @@ dsh_start_attempt() {
     return 1
   fi
 
+  dsh_step "检查并准备镜像文件系统"
   dsh_e2fsck_prepare "$DSH_IMAGE" || {
     dsh_state_update state=failed note=e2fsck-failed
     return 1
@@ -359,6 +363,7 @@ dsh_start_attempt() {
     dsh_state_update state=failed note=recovery-prepare-failed
     return 1
   }
+  dsh_step "挂载 loop 设备"
   _loop=$(dsh_loop_attach_record "$DSH_IMAGE" "$DSH_LOOP_FILE") || {
     dsh_state_update state=failed note=loop-record-failed
     return 1
@@ -372,6 +377,7 @@ dsh_start_attempt() {
     return 1
   fi
 
+  dsh_step "启动 nsinit（挂载 rootfs 与服务）"
   _log=$DSH_LOG_DIR/nsinit.log
   mkdir -p "$DSH_LOG_DIR" || true
   (
@@ -395,6 +401,7 @@ dsh_start_attempt() {
   _launcher=$!
   dsh_log "launcher pid=$_launcher; waiting for holder pid"
 
+  dsh_step "等待 holder 上报 pid"
   if ! dsh_wait_pid_identity "$DSH_PID_FILE" 20; then
     dsh_err "holder did not publish a valid pid; see $_log"
     dsh_state_update state=failed note=holder-pid-timeout
@@ -422,6 +429,7 @@ dsh_start_attempt() {
   fi
   dsh_state_update "state=starting" "pid=$_pid" "pgid=$_pgid" "starttime=$_st" "ns=$_ns" "loop=$_loop" "image=$DSH_IMAGE" "version=$DSH_VERSION"
 
+  dsh_step "等待 DSH 就绪（最多 ${DSH_START_TIMEOUT:-90}s）"
   _ready_rc=0
   dsh_wait_ready "$_pid" "$DSH_URL_FILE" "${DSH_START_TIMEOUT:-90}" || _ready_rc=$?
   if [ "$_ready_rc" -ne 0 ]; then
@@ -527,6 +535,7 @@ dsh_stop_locked() {
     return 4
   }
 
+  dsh_step "停止 s6 服务并通知 holder 退出"
   if [ -f "$DSH_CLEANUP_FILE" ]; then
     dsh_log "cleanup already in progress; waiting for holder"
     _i=0

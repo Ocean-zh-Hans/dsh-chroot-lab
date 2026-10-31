@@ -16,6 +16,12 @@ dsh_err() {
   printf 'ERROR: %s\n' "$*" >&2
 }
 
+# Console 用的一步一行进度：只有 DSH_STEPS=1 时输出，脚本/测试的现有输出不变。
+dsh_step() {
+  [ "${DSH_STEPS:-0}" = 1 ] || return 0
+  printf '#step: %s\n' "$*"
+}
+
 dsh_die() {
   dsh_err "$*"
   exit 2

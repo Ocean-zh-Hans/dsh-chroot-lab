@@ -545,8 +545,11 @@ dsh_snapshot_restore_state() {
 dsh_snapshot_restore_locked() {
   local _name="$1" _tmp _want _previous _previous_hash='' _state_rc
   dsh_snapshot_name_valid "$_name" || return 2
+  dsh_step "确认 chroot 已停止"
   dsh_snapshot_require_cold || return 1
+  dsh_step "校验快照清单与镜像哈希"
   dsh_snapshot_verify "$_name" || return 1
+  dsh_step "检查剩余空间"
   dsh_snapshot_require_space "$SNAP_IMAGE" "$DSH_STATE_DIR" || return 1
   _want=$(sed -n 's/^sha256=//p' "$SNAP_MANIFEST" | head -n 1)
   _tmp=$DSH_IMAGE.restore.$$.tmp
@@ -560,6 +563,7 @@ dsh_snapshot_restore_locked() {
     return 1
   }
   sync
+  dsh_step "保留当前镜像作为回滚点"
   _previous=$DSH_IMAGE_DIR/rootfs-pre-restore-$(date +%s)-$$.img
   if [ -f "$DSH_IMAGE" ]; then
     _previous_hash=$(dsh_sha256 "$DSH_IMAGE") || {
@@ -582,6 +586,7 @@ dsh_snapshot_restore_locked() {
     rm -f "$_tmp" "$_previous"
     return 1
   fi
+  dsh_step "替换镜像并恢复 state"
   dsh_snapshot_restore_state "$SNAP_STATE"
   _state_rc=$?
   if [ "$_state_rc" -ne 0 ]; then

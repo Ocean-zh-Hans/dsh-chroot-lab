@@ -91,7 +91,7 @@ object ConsoleRepo {
         val token = issue.output.lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() } ?: ""
         if (token.length < 16) return ConsoleSupport.Result("无法获取一次性风险令牌", 1)
         val command = buildString {
-            append("DSH_RISK_REASON=").append(quote(reason)).append(' ')
+            append("DSH_STEPS=1 DSH_RISK_REASON=").append(quote(reason)).append(' ')
             append("DSH_RISK_TOKEN=").append(quote(token)).append(' ')
             append((listOf(CTL) + args).joinToString(" ") { quote(it) })
         }
