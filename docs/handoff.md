@@ -232,6 +232,21 @@ su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl status'
 - `guard on|off` 只改变新会话的默认预设，重启 DSH/chroot 后生效；已有会话使用 `/permission` 切换。
 - `ttyd` 默认关闭。确有需要时在备用机执行 `dsh-ctl ttyd on`，密码只在 root 私有的 `state/runtime/ttyd.pass`；使用后用 `dsh-ctl ttyd off` 关闭。
 
+### 4.1.1 软件层（DSH 本体）
+
+`app` 系列只读探针需要 chroot 正在运行；切版本只改宿主侧 `$DSH_ROOT/dsh/{current,previous}` 符号链接，要求 chroot 已停止，并按 R3 记录原因与一次性 token。
+
+```sh
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl app version'   # dsh/node/pnpm/hooks 与来源
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl app plugins'   # 控制面预设与 phone-mcp 的生效状态
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl app exec -- dsh --version'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl stop'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl app switch <version> --apply'
+su -c '/data/adb/modules/dsh_chroot/bin/dsh-ctl app rollback --apply'
+```
+
+`app exec` 是 R1：执行前需要 `DSH_RISK_CONFIRM=yes`，控制台会替用户带上。`app switch` 只切换已安装版本，不下载新版本；没有 `versions/<v>/bin/dsh` 的目录一律拒绝。
+
 ### 4.2 快照
 
 独立宿主 `state/workspace` 的内容随 state 快照归档并绑定 `/root/workspace`，不写入 rootfs.img；`state/dsh-home` 仅保存 DSH 自己的数据。旧快照中的真实 `.dsh/workspace` 会在恢复暂存区迁移为独立目录，legacy 链接或新旧目录冲突会拒绝恢复。恢复可能覆盖当前工作文件，不能在未确认内容和备份的情况下回滚。

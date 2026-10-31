@@ -86,6 +86,8 @@ fun ConsoleRoot() {
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     var nextTaskId by remember { mutableIntStateOf(1) }
     var banner by remember { mutableStateOf("") }
+    var appInfo by remember { mutableStateOf(AppInfo()) }
+    var appPlugins by remember { mutableStateOf<List<AppPlugin>>(emptyList()) }
 
     // 同一时刻只允许一个写任务：其余会写盘的按钮全部置灰。
     val busy = task?.state == "running"
@@ -103,6 +105,11 @@ fun ConsoleRoot() {
         status = loaded.first
         runtime = loaded.second
         loading = false
+        if (status.state == "running") {
+            val app = withContext(Dispatchers.IO) { ConsoleRepo.appInfo() to ConsoleRepo.appPlugins() }
+            appInfo = app.first
+            appPlugins = app.second
+        }
     }
 
     suspend fun loadSnapshots() {
@@ -153,10 +160,10 @@ fun ConsoleRoot() {
     /**
      * 写操作在后台跑，输出边跑边进任务条；用户离开这一页也不会中断或丢结果。
      */
-    fun runRisk(request: RiskRequest) {
+    fun startTask(title: String, work: suspend ((String) -> Unit) -> ConsoleSupport.Result) {
         val id = nextTaskId++
         val started = System.currentTimeMillis()
-        task = ConsoleTask(id = id, title = request.title, startedAt = started)
+        task = ConsoleTask(id = id, title = title, startedAt = started)
         taskOpen = true
         scope.launch {
             val channel = Channel<String>(Channel.UNLIMITED)
@@ -166,11 +173,7 @@ fun ConsoleRoot() {
                     if (current.id == id) task = current.copy(lines = current.lines + line)
                 }
             }
-            val result = withContext(Dispatchers.IO) {
-                ConsoleRepo.ctlRisky(request.op, request.args, request.reason, request.impact) { line ->
-                    channel.trySend(line)
-                }
-            }
+            val result = work { line -> channel.trySend(line) }
             channel.close()
             sink.join()
             val current = task
@@ -188,6 +191,18 @@ fun ConsoleRoot() {
             }
             refresh()
             loadSnapshots()
+        }
+    }
+
+    fun runRisk(request: RiskRequest) = startTask(request.title) { send ->
+        ConsoleRepo.ctlRisky(request.op, request.args, request.reason, request.impact) { line -> send(line) }
+    }
+
+    /** 终端：一条命令一个后台任务，输出进任务条，不阻塞页面。 */
+    fun runGuestCommand(command: String) {
+        if (command.isBlank()) return
+        startTask("命令: " + command.take(40)) { send ->
+            ConsoleRepo.appExec(command) { line -> send(line) }
         }
     }
 
@@ -246,11 +261,22 @@ fun ConsoleRoot() {
                     "software" -> SoftwarePage(
                         status = status,
                         runtime = runtime,
+                        app = appInfo,
+                        plugins = appPlugins,
                         onOpenDsh = ::openDsh,
                         onAction = { request -> explain = request },
                         onLogs = { route("logs") },
+                        onTerminal = { route("terminal") },
+                        onSwitch = { version -> explain = riskAppSwitch(version) },
+                        onRollback = { explain = riskAppRollback(appInfo.previous) },
                         onPending = { what -> banner = what + " 还没实现；这一步先只记录在 docs/console-design.md。" },
                         busy = busy,
+                    )
+                    "terminal" -> TerminalScreen(
+                        live = status.state == "running",
+                        busy = busy,
+                        onSubmit = ::runGuestCommand,
+                        lastTask = task,
                     )
                     "device" -> DevicePage(
                         status = status,
@@ -516,3 +542,33 @@ private fun BannerDialog(text: String, onDismiss: () -> Unit) {
         }
     }
 }
+
+private fun riskAppSwitch(version: String): RiskRequest = RiskRequest(
+    op = "app",
+    title = "切换 DSH 到 " + version,
+    args = listOf("app", "switch", version, "--apply"),
+    reason = "控制台切换 DSH 版本",
+    impact = "改写 guest 内 /opt/dsh/current，影响之后启动的 DSH",
+    destructive = true,
+    sections = listOf(
+        "是什么" to "把 /opt/dsh/current 指向已安装的 " + version + "。",
+        "什么时候用" to "升级或降级 DSH 本体，需要停在指定版本时。",
+        "会有什么后果" to "下一次启动的 DSH 换成该版本；旧版本保留，可回滚。",
+        "怎么恢复" to "用「回滚上一版」切回当前版本。",
+    ),
+)
+
+private fun riskAppRollback(previous: String): RiskRequest = RiskRequest(
+    op = "app",
+    title = "回滚 DSH 到 " + previous.ifBlank { "上一版" },
+    args = listOf("app", "rollback", "--apply"),
+    reason = "控制台回滚 DSH 版本",
+    impact = "交换 current 与 previous，影响之后启动的 DSH",
+    destructive = true,
+    sections = listOf(
+        "是什么" to "把 current 与 previous 交换，回到上一个版本。",
+        "什么时候用" to "刚切换的版本有问题，或想回到之前的版本时。",
+        "会有什么后果" to "下一次启动的 DSH 换成 previous 记录的版本。",
+        "怎么恢复" to "再点一次回滚即可换回。",
+    ),
+)

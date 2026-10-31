@@ -83,7 +83,7 @@ for f in module.prop customize.sh service.sh boot-completed.sh uninstall.sh acti
   tools/bin/cp tools/libexec/cp tools/bin/debugfs tools/libexec/debugfs tools/TERMUX-SOURCES.json tools/licenses/coreutils/copyright \
   lib/common.sh lib/config.sh lib/log.sh lib/proc.sh lib/state.sh lib/lock.sh \
   lib/loop.sh lib/mount.sh lib/unmount.sh lib/doctor.sh lib/plan.sh lib/status.sh lib/lifecycle.sh \
-  lib/snapshot.sh lib/systemrw.sh lib/guard.sh lib/ttyd.sh lib/image.sh; do
+  lib/snapshot.sh lib/systemrw.sh lib/guard.sh lib/ttyd.sh lib/image.sh lib/risk.sh lib/app.sh; do
   [ -f "module/$f" ] || {
     printf 'missing module file: %s\n' "$f" >&2
     exit 2

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -15,8 +16,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -271,48 +277,82 @@ private fun FactsGrid(facts: List<Fact>) {
 fun SoftwarePage(
     status: ConsoleStatus,
     runtime: RuntimeInfo,
+    app: AppInfo,
+    plugins: List<AppPlugin>,
     onOpenDsh: () -> Unit,
     onAction: (RiskRequest) -> Unit,
     onLogs: () -> Unit,
+    onTerminal: () -> Unit,
+    onSwitch: (String) -> Unit,
+    onRollback: () -> Unit,
     onPending: (String) -> Unit,
     busy: Boolean = false,
 ) {
     val palette = consolePalette()
     val live = status.state == "running"
+    val stopped = !live
+    val currentName = app.current.substringAfterLast('/')
+    val version = app.dsh.ifBlank { runtime.dshRuntime }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
         item { DependencyBar(status, runtime) }
         item { SectionTitle("入口") }
         item {
             GlassCard {
                 Column(Modifier.padding(vertical = 4.dp)) {
-                    LinkRow("终端", if (live) "guest shell · Tab/Ctrl 工具条" else "需要先启动 chroot", live) {
-                        if (live) onPending("终端") else onPending("先启动 chroot")
-                    }
+                    LinkRow("终端", if (live) "guest shell · 一条命令一个任务" else "需要先启动 chroot", live, onTerminal)
                     LinkRow("打开 DSH", if (live) status.url else "需要先启动 chroot", live, onOpenDsh)
                 }
             }
         }
-        item { SectionTitle("DSH") }
+        item { SectionTitle("DSH 本体") }
         item {
             GlassCard {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(
-                                "版本 " + runtime.dshRuntime,
-                                color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                "版本 " + version.ifBlank { "未知" },
+                                color = palette.text, fontSize = 15.sp, fontWeight = FontWeight.Medium,
                             )
                             Text(
-                                "hooks " + runtime.hooksMode.ifBlank { "—" } +
-                                    if (runtime.imageMtime.isBlank()) "" else " · 镜像 " + runtime.imageMtime,
+                                (if (currentName.isBlank()) "未记录 current" else "current → " + currentName) +
+                                    if (app.previous.isBlank()) "" else " · previous → " + app.previous.substringAfterLast('/'),
                                 color = palette.faint, fontSize = 11.sp,
                             )
                         }
+                        StatusPill(
+                            if (app.hooks == "full") "hooks 完整" else "hooks " + app.hooks.ifBlank { "未知" },
+                            if (app.hooks == "full") palette.success else palette.warning,
+                        )
                     }
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f)) { GhostButton("升级 / 降级") { onPending("DSH 版本管理") } }
-                        Box(Modifier.weight(1f)) { GhostButton("回滚上一版") { onPending("DSH 回滚") } }
+                        Box(Modifier.weight(1f)) {
+                            GhostButton("回滚上一版", enabled = stopped && app.previous.isNotBlank() && !busy, onClick = onRollback)
+                        }
+                        Box(Modifier.weight(1f)) {
+                            GhostButton("刷新版本", enabled = live && !busy) { onPending("重新读取版本") }
+                        }
+                    }
+                    if (live) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("切换版本要先停止 chroot：运行中的 DSH 用的是旧 inode。", color = palette.faint, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+        if (app.versions.isNotEmpty()) {
+            item { SectionTitle("已安装版本") }
+            item {
+                GlassCard {
+                    Column(Modifier.padding(vertical = 4.dp)) {
+                        app.versions.forEach { name ->
+                            LinkRow(
+                                title = name,
+                                detail = if (name == currentName) "当前" else if (stopped) "点按切换" else "先停止 chroot",
+                                enabled = stopped && name != currentName && !busy,
+                            ) { onSwitch(name) }
+                        }
                     }
                 }
             }
@@ -321,8 +361,10 @@ fun SoftwarePage(
         item {
             GlassCard {
                 Column(Modifier.padding(vertical = 4.dp)) {
-                    LinkRow("node / pnpm", "在 guest 内读取版本", true) { onPending("依赖版本") }
-                    LinkRow("hooks 插件", runtime.hooksMode.ifBlank { "未安装" }, live) { onPending("依赖版本") }
+                    InfoLine("node", app.node.ifBlank { "—" })
+                    InfoLine("pnpm", app.pnpm.ifBlank { "未安装" })
+                    InfoLine("hooks", app.hooks.ifBlank { "—" })
+                    InfoLine("来源", if (app.current.isBlank()) "镜像烘焙" else "宿主 /data/adb/chroot/dsh")
                 }
             }
         }
@@ -330,8 +372,21 @@ fun SoftwarePage(
         item {
             GlassCard {
                 Column(Modifier.padding(vertical = 4.dp)) {
+                    if (plugins.isEmpty()) {
+                        InfoLine("控制面插件", if (live) "没有读到插件清单" else "需要先启动 chroot")
+                    } else {
+                        plugins.forEach { plugin ->
+                            InfoLine(
+                                label = plugin.name,
+                                value = if (plugin.kind == "preset") {
+                                    if (plugin.active) "生效中" else "未启用"
+                                } else {
+                                    "已安装"
+                                },
+                            )
+                        }
+                    }
                     LinkRow("ttyd", "Web 终端 · 状态待上报", live) { onPending("ttyd 开关") }
-                    LinkRow("已安装插件", "查看 / 卸载 / 权限预设", true) { onPending("插件管理") }
                 }
             }
         }
@@ -347,6 +402,82 @@ fun SoftwarePage(
                         )
                     }
                     Text("全部 ›", color = palette.sub, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TerminalScreen(
+    live: Boolean,
+    busy: Boolean,
+    onSubmit: (String) -> Unit,
+    lastTask: ConsoleTask?,
+) {
+    val palette = consolePalette()
+    var input by remember { mutableStateOf("") }
+    val suggestions = listOf("dsh --version", "node -v", "pnpm -v", "ls /root/workspace", "s6-svstat /run/s6/*")
+    Column(Modifier.fillMaxSize()) {
+        GlassCard {
+            Column(Modifier.padding(16.dp)) {
+                Text(
+                    if (live) "命令在 guest 内执行，输出进顶部任务条" else "需要先启动 chroot",
+                    color = if (live) palette.faint else palette.warning, fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.weight(1f)) {
+                        BasicTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            enabled = live,
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(color = palette.text, fontSize = 13.sp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            decorationBox = { inner ->
+                                if (input.isEmpty()) {
+                                    Text("输入命令…", color = palette.faint, fontSize = 13.sp)
+                                }
+                                inner()
+                            },
+                        )
+                    }
+                    PrimaryButton(
+                        text = "运行",
+                        onClick = {
+                            onSubmit(input)
+                            input = ""
+                        },
+                        enabled = live && !busy && input.isNotBlank(),
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        SectionTitle("常用")
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            suggestions.chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { suggestion ->
+                        GhostButton(suggestion, enabled = live && !busy) {
+                            onSubmit(suggestion)
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        lastTask?.let { task ->
+            SectionTitle("最近一次输出")
+            GlassCard {
+                Column(Modifier.padding(12.dp)) {
+                    task.lines.takeLast(30).forEach { line ->
+                        Text(line, color = if (line.startsWith("#step")) palette.accent else palette.sub, fontSize = 12.sp)
+                    }
+                    if (task.lines.isEmpty()) {
+                        Text("（还没有输出）", color = palette.faint, fontSize = 12.sp)
+                    }
                 }
             }
         }

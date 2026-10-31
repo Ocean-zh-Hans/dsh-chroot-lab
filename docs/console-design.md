@@ -175,10 +175,12 @@
 | 结构化日志 | 无（拼文本后客户端过滤） | `dsh-ctl log --json --kind X --lines N` |
 | 任务步骤 | 无（自由文本） | 约定行前缀 `#step: <name>`，控制台据此渲染步骤 |
 | `diag --json` | `diag` 只有文本 | 输出可复制的诊断包（事实+最近日志+doctor 摘要） |
-| `app version --json` | 无 | 在 guest 内取 DSH 版本、node/pnpm 版本、安装来源 |
-| `app deps --json` | 无 | 列出 `dsh-*` 依赖与当前/可用版本 |
-| `app upgrade/rollback --apply` | 无 | 升降级 DSH 或单个依赖，先自动导出 lockfile 备份 |
-| `app plugins --json` | 无 | 列出已装插件与启用状态（来自 profile/patch） |
+| `app version --json` | 已实现 | 在 guest 内取 DSH 版本、node/pnpm 版本、current/previous 与安装来源 |
+| `app deps --json` | 已实现 | node/pnpm/dsh 版本 + hooks 模式 + guard 状态 |
+| `app switch <v> --apply` / `app rollback --apply` | 已实现（R3，要求已停止） | 只改宿主侧 `$DSH_RUNTIME_DIR/{current,previous}` 符号链接；不下载、不改 rootfs |
+| `app exec -- <cmd>` | 已实现（R1） | 一次性 guest 命令，超时 15s、输出原样返回 |
+| `app plugins --json` | 已实现（只读） | 列控制面预设与 phone-mcp 及生效状态；启用/禁用未做 |
+| `app upgrade`（下载新版本） | 未实现 | 需要下载与校验链路，暂由 `app switch` 承担“已装版本之间切换” |
 | `ttyd status --json` | 仅文本 | 控制台开终端前需要端口/进程状态（软件页现在只能显示"状态待上报"） |
 | `status --json` 的抽稀 | 字段偏多 | 控制台只需要 `state/pid/loop/image/url/rootfs_mounted/loop_query/residual_resources/watchdog_running/autostart/health_age/image_bytes`，其余字段可留给 `--verbose` |
 | `log --follow` / `log --json` | 无 | C1 任务条要边跑边看到日志 |
@@ -213,7 +215,8 @@
 | 任务条 + 流式输出（start 期间不冻结、可离开、可复制输出） | 已实现 | `ConsoleTask.kt`（`TaskBar` / `TaskSheet`），`ConsoleSupport.runCommandStreaming`、`ConsoleRepo.ctlRisky(onLine=)`；结果不再用"完成"弹窗 |
 | 任务时间线（`#step:` 分步） | 已实现 | 控制台解析并在 sheet 里逐条打勾；`dsh-ctl` 在 `DSH_STEPS=1` 下输出步骤（`start`/`stop`/`snapshot restore`），控制台通过 `ConsoleRepo.ctlRisky` 自动带上该变量；`tests/test_steps.sh` 守住"默认不输出" |
 | 终端全屏页 | 未实现（依赖 `ttyd status --json`） | — |
-| DSH 版本升降级、依赖改版本、插件管理 | 未实现（依赖 `app * --json`） | — |
+| DSH 版本切换/回滚 | 已实现（`app switch`/`app rollback`，R3，需先停止） | `ConsoleRepo.appInfo()` + 软件页「已安装版本」 |
+| 依赖改版本、插件启停、下载安装新版本 | 未实现（`app exec` 可临时绕过，但不算产品能力） | — |
 | 快照删除 | 未实现（依赖 `snapshot delete`） | — |
 
 未实现入口一律用 banner 明确说明"还没实现"，不假装可用。

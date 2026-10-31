@@ -13,6 +13,7 @@ tests=(
   "$ROOT/tests/test_doctor.sh"
   "$ROOT/tests/test_status.sh"
   "$ROOT/tests/test_steps.sh"
+  "$ROOT/tests/test_app.sh"
   "$ROOT/tests/test_proc.sh"
   "$ROOT/tests/test_safety.sh"
   "$ROOT/tests/test_loop.sh"

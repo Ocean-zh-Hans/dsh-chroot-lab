@@ -16,7 +16,7 @@ _self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || {
 DSH_MODULE_DIR=${DSH_MODULE_DIR:-$(CDPATH='' cd -- "$_self_dir/.." && pwd)}
 LIB_DIR=$DSH_MODULE_DIR/lib
 
-for _lib in common.sh config.sh log.sh proc.sh state.sh lock.sh loop.sh mount.sh doctor.sh plan.sh status.sh lifecycle.sh snapshot.sh systemrw.sh guard.sh ttyd.sh image.sh risk.sh; do
+for _lib in common.sh config.sh log.sh proc.sh state.sh lock.sh loop.sh mount.sh doctor.sh plan.sh status.sh lifecycle.sh snapshot.sh systemrw.sh guard.sh ttyd.sh image.sh risk.sh app.sh; do
   if [ ! -r "$LIB_DIR/$_lib" ]; then
     printf 'dsh-ctl: missing library: %s\n' "$LIB_DIR/$_lib" >&2
     exit 2
@@ -38,6 +38,8 @@ Read-only:
   paths [--json]         key path locations and sizes
   config                 resolved paths/knobs
   risk issue|check|status issue a one-time R2/R3/R4 token, dry-run gate, or inspect tokens
+  app version|deps|plugins|list [--json]   software layer probes (chroot must be running)
+  app exec [--timeout N] -- <command>      run one command inside the guest
 
 Lifecycle (apply is explicit):
   start --apply [--protect-critical=off]
@@ -48,6 +50,10 @@ Data:
   image install --source FILE [--sha256 FILE] [--replace] --apply
   snapshot [create [name] [--last-good] | list | restore <name> --apply | promote <name>]
   restore <name> --apply | purge --yes [--keep-image]
+
+Software layer (apply is explicit, chroot must be stopped):
+  app switch <version> --apply   point /opt/dsh/current at versions/<version>
+  app rollback --apply           swap current and previous
 
 Optional:
   autostart status|on|off
@@ -78,6 +84,15 @@ if [ "${DSH_LIFECYCLE_CLAIM_ACTIVE:-0}" != 1 ]; then
     _start_rc=$?
     [ "$_start_rc" -ne 0 ] || dsh_watchdog_start_bg || true
     exit "$_start_rc"
+    ;;
+  app)
+    case ${2:-} in
+    switch | rollback | exec)
+      dsh_risk_gate app "${2:-}" "" || exit $?
+      dsh_lifecycle_exec "$0" _lifecycle-claimed "$@"
+      exit $?
+      ;;
+    esac
     ;;
   stop | restart | boot | recover | rescue | purge | autostart | system-rw | guard | ttyd | snapshot | restore | image | fixperm)
     dsh_risk_gate "${1:-}" "${2:-}" "" || exit $?
@@ -211,6 +226,9 @@ ttyd)
   ;;
 rescue)
   dsh_rescue "$@"
+  ;;
+app)
+  dsh_app_run "$@"
   ;;
 *)
   printf '%s: unknown command: %s\n' "$DSH_PROG" "$_cmd" >&2

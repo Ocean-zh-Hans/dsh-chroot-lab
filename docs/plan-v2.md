@@ -142,6 +142,8 @@ chroot 内的 root 是本机 root 的一部分，不是访客：
 | P3-7 ✅ | `system-rw.list`/ttyd 状态持久化去死字段；`image` size 语法严格化 | `module/lib/systemrw.sh`、`image.sh` | 状态可重建；`G`/`1G2M` 被拒 |
 | P3-8 🚧 | 写操作五档落地：R0 无限制、R1 AI 普通、R2 AI 敏感数据、R3 AI 重大、R4 人工 | `module/lib/risk.sh`、`module/bin/dsh-ctl`、`module/lib/systemrw.sh`、`image.sh`、`purge`/`restore` 入口 | R0/R3 dispatcher 门禁 + 单次 token + 审计；R1 可确认、R2 备份+token、R4 无 TTY 拒绝均通过 `test_risk`；实际文件写入口仍待接入 |
 
+| P3-9 ✅ | 软件层落地：`dsh-ctl app version|deps|plugins|list`（只读，需运行中）、`app switch|rollback --apply`（R3，需已停止，只改宿主符号链接）、`app exec -- <cmd>`（R1，guest 一次性命令） | `module/lib/app.sh`、`module/bin/dsh-ctl`、`module/lib/risk.sh` | `tests/test_app.sh`：无运行拒绝、JSON 字段、R3 无 token 拒绝、运行中拒绝换版、换版/回滚/未知版本、`--apply` 缺失 |
+
 ### P4 验证与清理
 
 | ID | 工作 | 验收 |
@@ -159,6 +161,8 @@ chroot 内的 root 是本机 root 的一部分，不是访客：
 - 2026-10-30：完成本轮文档审计；旧模型原文已归档；`plan-v2.md` 建立；P0 文档与策略清理完成。
 - P2-1（移除 SELinux 门禁）、P2-2（rootfs 符号链接）、P2-3（loop 记录失败）、P2-4（快照归档符号链接）均已实现并通过各自测试。下一步进入 P3 粗心操作陷阱。
 - 所有验证仍在 mock/host 层，真实设备操作另行走显式授权流程。
+- 已知遗留：`module/tools/bin/dsh-mount-ro-recursive` 的构建不可复现（换机器/换源码路径都会改变哈希），`module/tools/SHA256SUMS` 只在生成它的机器上自洽；`build/check.sh` 会就地重写该文件，不要把本地重生成结果当成发布基线提交。
+- 已知遗留：`app` 只做“已装版本之间切换”，下载/校验新版本、依赖改版本、插件启停都还没有实现；`app exec` 是临时逃生口，不算产品能力。
 
 ## 5. 验收总则
 

@@ -57,6 +57,18 @@ data class RuntimeInfo(
     val imageMtime: String = "",
 )
 
+data class AppInfo(
+    val dsh: String = "",
+    val current: String = "",
+    val previous: String = "",
+    val node: String = "",
+    val pnpm: String = "",
+    val hooks: String = "",
+    val versions: List<String> = emptyList(),
+)
+
+data class AppPlugin(val name: String, val kind: String, val active: Boolean)
+
 object ConsoleRepo {
     private const val CTL = "/data/adb/modules/dsh_chroot/bin/dsh-ctl"
 
@@ -67,6 +79,23 @@ object ConsoleRepo {
 
     fun ctl(vararg args: String, timeout: Long = 20): ConsoleSupport.Result {
         val command = (listOf(CTL) + args).joinToString(" ") { quote(it) }
+        return ConsoleSupport.runCommand(timeout, suBinary(), "-c", command)
+    }
+
+    /** 需要额外环境变量的只读/低风险命令（例如 app exec 的 R1 确认）。 */
+    fun ctlWithEnv(
+        env: Map<String, String>,
+        args: List<String>,
+        timeout: Long = 20,
+        onLine: ((String) -> Unit)? = null,
+    ): ConsoleSupport.Result {
+        val command = buildString {
+            env.forEach { (key, value) -> append(key).append('=').append(quote(value)).append(' ') }
+            append((listOf(CTL) + args).joinToString(" ") { quote(it) })
+        }
+        if (onLine != null) {
+            return ConsoleSupport.runCommandStreaming(timeout, onLine, suBinary(), "-c", command)
+        }
         return ConsoleSupport.runCommand(timeout, suBinary(), "-c", command)
     }
 
@@ -197,6 +226,56 @@ object ConsoleRepo {
             RuntimeInfo()
         }
     }
+
+    fun appInfo(): AppInfo {
+        val result = ctl("app", "version", "--json", timeout = 30)
+        if (!result.success()) return AppInfo()
+        return try {
+            val json = JSONObject(result.output)
+            val versions = json.optJSONArray("versions")
+            AppInfo(
+                dsh = json.optString("dsh"),
+                current = json.optString("current"),
+                previous = json.optString("previous"),
+                node = json.optString("node"),
+                pnpm = json.optString("pnpm"),
+                hooks = json.optString("hooks"),
+                versions = buildList {
+                    for (index in 0 until (versions?.length() ?: 0)) {
+                        add(versions?.optString(index).orEmpty())
+                    }
+                },
+            )
+        } catch (error: Exception) {
+            AppInfo()
+        }
+    }
+
+    fun appPlugins(): List<AppPlugin> {
+        val result = ctl("app", "plugins", "--json", timeout = 30)
+        if (!result.success()) return emptyList()
+        return try {
+            val items = JSONObject(result.output).optJSONArray("items") ?: return emptyList()
+            buildList {
+                for (index in 0 until items.length()) {
+                    val item = items.optJSONObject(index) ?: continue
+                    add(
+                        AppPlugin(
+                            name = item.optString("name"),
+                            kind = item.optString("kind"),
+                            active = item.optBoolean("active"),
+                        ),
+                    )
+                }
+            }
+        } catch (error: Exception) {
+            emptyList()
+        }
+    }
+
+    /** 一次性 guest 命令：R1，需要显式确认；输出按行回调。 */
+    fun appExec(command: String, onLine: ((String) -> Unit)? = null): ConsoleSupport.Result =
+        ctlWithEnv(mapOf("DSH_RISK_CONFIRM" to "yes"), listOf("app", "exec", "--", command), timeout = 300, onLine = onLine)
 
     fun paths(): List<PathEntry> {
         val result = ctl("paths", "--json", timeout = 30)
