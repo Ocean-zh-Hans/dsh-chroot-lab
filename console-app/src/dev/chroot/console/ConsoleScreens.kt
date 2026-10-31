@@ -499,25 +499,6 @@ fun RiskExplainScreen(request: RiskRequest, onBack: () -> Unit, onConfirm: (Risk
 
 // -------------------------------------------------------------------- output
 
-@Composable
-fun OutputDialog(title: String, text: String, onDismiss: () -> Unit) {
-    val palette = consolePalette()
-    Dialog(onDismissRequest = onDismiss) {
-        GlassCard {
-            Column(Modifier.padding(20.dp).height(420.dp)) {
-                Text(title, color = palette.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text, color = palette.sub, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                )
-                Spacer(Modifier.height(8.dp))
-                PrimaryButton("关闭", onDismiss)
-            }
-        }
-    }
-}
-
 /** hooks 状态是"DSH 能不能用"的直接指标，措辞要能一眼分辨。 */
 internal fun hooksLabel(runtime: RuntimeInfo): String = when (runtime.hooksMode) {
     "full" -> "已加载（完整）"

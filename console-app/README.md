@@ -11,6 +11,7 @@
 - 设备页：机型/Android/API/内核/verifyboot（只读 getprop + uname）、空间、路径（点按复制）、模块事实。
 - 设置页：开机自启、新会话逐项确认、（只读）运行时能力、复制诊断包、关于。
 - 日志、快照创建/列表/恢复。
+- 任务条：所有写操作在后台跑，输出流式进任务条与 sheet（可离开页面、可复制输出）；`#step:` 前缀会渲染成分步时间线（chroot 侧尚未输出）。
 - DSH Web：严格解析 URI，只允许 `127.0.0.1` 或 `localhost` 的 HTTP loopback 地址。可打开内置 WebView，也可用“外部浏览器”通过 `ACTION_VIEW` 打开；内置页主框架加载失败或渲染进程退出时显示浏览器回退，不把白屏当作加载成功。
 - 设置：autostart、critical path protection、guard、private namespace 内的 System-RW。
 

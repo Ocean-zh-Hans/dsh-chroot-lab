@@ -182,6 +182,7 @@
 | `ttyd status --json` | 仅文本 | 控制台开终端前需要端口/进程状态（软件页现在只能显示"状态待上报"） |
 | `status --json` 的抽稀 | 字段偏多 | 控制台只需要 `state/pid/loop/image/url/rootfs_mounted/loop_query/residual_resources/watchdog_running/autostart/health_age/image_bytes`，其余字段可留给 `--verbose` |
 | `log --follow` / `log --json` | 无 | C1 任务条要边跑边看到日志 |
+| `#step: <name>` 步骤行 | 无 | 任务时间线：`start` 的 claim/挂载/nsinit/等待健康/写状态各一行 |
 
 注意：`app *` 系列必须在 guest 内执行（node/pnpm 在 rootfs 里），实现上是 `dsh-ctl` 进入 chroot 跑一个小的 guest 侧脚本，控制台只消费 JSON，不自己跑 pnpm。
 
@@ -209,7 +210,8 @@
 | 设备页机器事实（getprop/uname）+ 空间 + 路径 + 模块 | 已实现 | `ConsolePages.kt` `DevicePage`，`ConsoleRepo.device()` |
 | 设置页（自启/确认模式/能力/复制诊断包/关于） | 已实现 | `ConsoleScreens.kt` `SettingsScreen` |
 | 快照页新建 + 恢复 | 已实现 | `SnapshotsScreen(onCreate=...)`，`riskSnapshotCreate` |
-| 任务条 / 时间线（start 期间不冻结） | 未实现（C1） | — |
+| 任务条 + 流式输出（start 期间不冻结、可离开、可复制输出） | 已实现 | `ConsoleTask.kt`（`TaskBar` / `TaskSheet`），`ConsoleSupport.runCommandStreaming`、`ConsoleRepo.ctlRisky(onLine=)`；结果不再用"完成"弹窗 |
+| 任务时间线（`#step:` 分步） | 一半：控制台已解析 `#step:` 前缀并在 sheet 里逐条打勾，但 chroot 侧还没输出 | 需要 `dsh-ctl` 在 start/stop/restore 里打印步骤行 |
 | 终端全屏页 | 未实现（依赖 `ttyd status --json`） | — |
 | DSH 版本升降级、依赖改版本、插件管理 | 未实现（依赖 `app * --json`） | — |
 | 快照删除 | 未实现（依赖 `snapshot delete`） | — |

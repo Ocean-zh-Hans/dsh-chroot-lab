@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -70,7 +72,10 @@ fun ConsoleRoot() {
     var logKind by remember { mutableStateOf("all") }
     var loading by remember { mutableStateOf(true) }
     var explain by remember { mutableStateOf<RiskRequest?>(null) }
-    var output by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var task by remember { mutableStateOf<ConsoleTask?>(null) }
+    var taskOpen by remember { mutableStateOf(false) }
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var nextTaskId by remember { mutableIntStateOf(1) }
     var banner by remember { mutableStateOf("") }
 
     fun route(value: String) {
@@ -109,15 +114,50 @@ fun ConsoleRoot() {
         device = withContext(Dispatchers.IO) { ConsoleRepo.device() }
         loadPaths()
     }
+    LaunchedEffect(task?.id, task?.state) {
+        while (task?.state == "running") {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+        now = System.currentTimeMillis()
+    }
 
+    /**
+     * 写操作在后台跑，输出边跑边进任务条；用户离开这一页也不会中断或丢结果。
+     */
     fun runRisk(request: RiskRequest) {
+        val id = nextTaskId++
+        val started = System.currentTimeMillis()
+        task = ConsoleTask(id = id, title = request.title, startedAt = started)
+        taskOpen = true
         scope.launch {
-            loading = true
-            val result = withContext(Dispatchers.IO) {
-                ConsoleRepo.ctlRisky(request.op, request.args, request.reason, request.impact)
+            val channel = Channel<String>(Channel.UNLIMITED)
+            val sink = launch {
+                for (line in channel) {
+                    val current = task ?: continue
+                    if (current.id == id) task = current.copy(lines = current.lines + line)
+                }
             }
-            loading = false
-            output = request.title to result.output.ifBlank { "完成（退出码 " + result.exitCode + "）" }
+            val result = withContext(Dispatchers.IO) {
+                ConsoleRepo.ctlRisky(request.op, request.args, request.reason, request.impact) { line ->
+                    channel.trySend(line)
+                }
+            }
+            channel.close()
+            sink.join()
+            val current = task
+            if (current != null && current.id == id) {
+                val merged = if (current.lines.isEmpty() && result.output.isNotBlank()) {
+                    result.output.lines().filter { it.isNotBlank() }
+                } else {
+                    current.lines
+                }
+                task = current.copy(
+                    lines = merged,
+                    state = if (result.exitCode == 0) "ok" else "failed",
+                    exitCode = result.exitCode,
+                )
+            }
             refresh()
             loadSnapshots()
         }
@@ -234,6 +274,9 @@ fun ConsoleRoot() {
                     )
                 }
             }
+            task?.let { running ->
+                TaskBar(running, now, onOpen = { taskOpen = true })
+            }
             if (current in tabs) {
                 ConsoleBottomBar(current) { route(it) }
             }
@@ -250,8 +293,18 @@ fun ConsoleRoot() {
             },
         )
     }
-    output?.let { pair ->
-        OutputDialog(pair.first, pair.second) { output = null }
+    if (taskOpen) {
+        task?.let { running ->
+            TaskSheet(
+                task = running,
+                now = now,
+                onDismiss = {
+                    taskOpen = false
+                    if (running.done) task = null
+                },
+                onCopy = { text -> copy(text, "任务输出") },
+            )
+        }
     }
     if (banner.isNotBlank()) {
         BannerDialog(banner) { banner = "" }

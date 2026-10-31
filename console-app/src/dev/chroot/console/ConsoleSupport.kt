@@ -42,7 +42,13 @@ object ConsoleSupport {
         }
     }
 
-    fun runCommand(timeoutSeconds: Long, vararg command: String): Result {
+    fun runCommand(timeoutSeconds: Long, vararg command: String): Result = run(timeoutSeconds, null, command)
+
+    /** Same as [runCommand], but每读到一行就回调，用于把 start/purge 的进度显示出来。 */
+    fun runCommandStreaming(timeoutSeconds: Long, onLine: (String) -> Unit, vararg command: String): Result =
+        run(timeoutSeconds, onLine, command)
+
+    private fun run(timeoutSeconds: Long, onLine: ((String) -> Unit)?, command: Array<out String>): Result {
         if (timeoutSeconds <= 0) return Result("无效的超时时间", 2)
         val maxOutput = 256 * 1024
         val out = StringBuilder()
@@ -59,6 +65,13 @@ object ConsoleSupport {
                             if (remaining <= 0) continue
                             out.append(line, 0, minOf(line.length, remaining))
                             if (out.length < maxOutput) out.append('\n')
+                            if (onLine != null) {
+                                try {
+                                    onLine(line)
+                                } catch (ignored: Exception) {
+                                    // 回调里的 UI 异常不能影响命令本身
+                                }
+                            }
                         }
                     }
                 } catch (error: Exception) {

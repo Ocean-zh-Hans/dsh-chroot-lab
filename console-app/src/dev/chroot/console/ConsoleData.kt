@@ -80,6 +80,7 @@ object ConsoleRepo {
         reason: String,
         impact: String,
         timeout: Long = 180,
+        onLine: ((String) -> Unit)? = null,
     ): ConsoleSupport.Result {
         val issue = ctl(
             "risk", "issue", "--op", op,
@@ -93,6 +94,9 @@ object ConsoleRepo {
             append("DSH_RISK_REASON=").append(quote(reason)).append(' ')
             append("DSH_RISK_TOKEN=").append(quote(token)).append(' ')
             append((listOf(CTL) + args).joinToString(" ") { quote(it) })
+        }
+        if (onLine != null) {
+            return ConsoleSupport.runCommandStreaming(timeout, onLine, suBinary(), "-c", command)
         }
         return ConsoleSupport.runCommand(timeout, suBinary(), "-c", command)
     }
