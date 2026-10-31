@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.chroot.console"
-    compileSdk = 35
+    compileSdk = 37
 
     sourceSets {
         getByName("main") {
@@ -23,8 +23,8 @@ android {
         applicationId = "dev.chroot.console"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     signingConfigs {
@@ -75,4 +75,5 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    implementation("io.github.suqi8.coui.kmp:coui-ui-android:1.1.0")
 }

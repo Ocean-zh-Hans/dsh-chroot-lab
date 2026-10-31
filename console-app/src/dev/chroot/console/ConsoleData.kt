@@ -1,0 +1,236 @@
+package dev.chroot.console
+
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+
+data class ConsoleStatus(
+    val state: String = "",
+    val pid: String = "",
+    val url: String = "",
+    val started: String = "",
+    val note: String = "",
+    val loop: String = "",
+    val image: String = "",
+    val lastGood: String = "",
+    val healthAge: Int = -1,
+    val diskFreeMb: Long = -1,
+    val imageBytes: Long = -1,
+    val snapshotCount: Int = -1,
+    val autostart: Boolean = false,
+    val guard: Boolean = false,
+    val watchdogRunning: Boolean = false,
+    val moduleVersion: String = "",
+    val bootId: String = "",
+    val pidValid: Boolean = false,
+)
+
+data class DoctorCheck(val level: String, val message: String)
+
+data class DoctorReport(
+    val pass: Int = 0,
+    val warn: Int = 0,
+    val fail: Int = 0,
+    val checks: List<DoctorCheck> = emptyList(),
+) {
+    val total: Int get() = pass + warn + fail
+}
+
+data class SnapshotEntry(
+    val name: String,
+    val bytes: Long,
+    val created: String,
+    val lastGood: Boolean,
+)
+
+data class PathEntry(val name: String, val path: String, val bytes: Long)
+
+data class RuntimeInfo(
+    val module: String = "",
+    val moduleCode: String = "",
+    val dshRuntime: String = "unknown",
+    val hooksMode: String = "",
+    val hooksReason: String = "",
+    val imageMtime: String = "",
+)
+
+object ConsoleRepo {
+    private const val CTL = "/data/adb/modules/dsh_chroot/bin/dsh-ctl"
+
+    private fun suBinary(): String =
+        listOf("/system/bin/su", "/system/xbin/su", "su").firstOrNull { it == "su" || File(it).exists() } ?: "su"
+
+    private fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
+    fun ctl(vararg args: String, timeout: Long = 20): ConsoleSupport.Result {
+        val command = (listOf(CTL) + args).joinToString(" ") { quote(it) }
+        return ConsoleSupport.runCommand(timeout, suBinary(), "-c", command)
+    }
+
+    /**
+     * R3 operations need a one-time token. Issue it, then run the command with the
+     * reason/impact recorded in the environment so the audit log keeps context.
+     */
+    fun ctlRisky(
+        op: String,
+        args: List<String>,
+        reason: String,
+        impact: String,
+        timeout: Long = 180,
+    ): ConsoleSupport.Result {
+        val issue = ctl(
+            "risk", "issue", "--op", op,
+            "--reason", reason,
+            "--impact", impact,
+        )
+        if (!issue.success()) return issue
+        val token = issue.output.lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() } ?: ""
+        if (token.length < 16) return ConsoleSupport.Result("无法获取一次性风险令牌", 1)
+        val command = buildString {
+            append("DSH_RISK_REASON=").append(quote(reason)).append(' ')
+            append("DSH_RISK_TOKEN=").append(quote(token)).append(' ')
+            append((listOf(CTL) + args).joinToString(" ") { quote(it) })
+        }
+        return ConsoleSupport.runCommand(timeout, suBinary(), "-c", command)
+    }
+
+    fun status(): ConsoleStatus {
+        val result = ctl("status", "--json", timeout = 20)
+        if (!result.success()) return ConsoleStatus(note = result.output.take(200))
+        return try {
+            val json = JSONObject(result.output)
+            ConsoleStatus(
+                state = json.optString("state"),
+                pid = if (json.isNull("pid")) "" else json.optString("pid"),
+                url = json.optString("url"),
+                started = json.optString("started"),
+                note = json.optString("note"),
+                loop = json.optString("loop"),
+                image = json.optString("image"),
+                lastGood = json.optString("last_good"),
+                healthAge = json.optInt("health_age", -1),
+                diskFreeMb = json.optLong("disk_free_mb", -1),
+                imageBytes = json.optLong("image_bytes", -1),
+                snapshotCount = json.optInt("snapshot_count", -1),
+                autostart = json.optBoolean("autostart"),
+                guard = json.optBoolean("guard"),
+                watchdogRunning = json.optBoolean("watchdog_running"),
+                moduleVersion = json.optString("module_version"),
+                bootId = json.optString("boot_id"),
+                pidValid = json.optBoolean("pid_valid"),
+            )
+        } catch (error: Exception) {
+            ConsoleStatus(note = "状态解析失败：" + error.message)
+        }
+    }
+
+    fun doctor(): DoctorReport {
+        val result = ctl("doctor", "--json", timeout = 120)
+        if (result.output.isBlank()) return DoctorReport()
+        return try {
+            val json = JSONObject(result.output)
+            val summary = json.optJSONObject("summary") ?: JSONObject()
+            val checks = json.optJSONArray("checks") ?: JSONArray()
+            val list = ArrayList<DoctorCheck>(checks.length())
+            for (index in 0 until checks.length()) {
+                val item = checks.optJSONObject(index) ?: continue
+                list += DoctorCheck(item.optString("level"), item.optString("message"))
+            }
+            DoctorReport(
+                pass = summary.optInt("pass"),
+                warn = summary.optInt("warn"),
+                fail = summary.optInt("fail"),
+                checks = list,
+            )
+        } catch (error: Exception) {
+            DoctorReport(checks = listOf(DoctorCheck("FAIL", "体检结果解析失败：" + error.message)))
+        }
+    }
+
+    fun snapshots(): List<SnapshotEntry> {
+        val result = ctl("snapshot", "list", "--json", timeout = 20)
+        if (!result.success()) return emptyList()
+        return try {
+            val json = JSONObject(result.output)
+            val array = json.optJSONArray("snapshots") ?: JSONArray()
+            val list = ArrayList<SnapshotEntry>(array.length())
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                list += SnapshotEntry(
+                    name = item.optString("name"),
+                    bytes = item.optLong("bytes", 0),
+                    created = item.optString("created"),
+                    lastGood = item.optBoolean("last_good"),
+                )
+            }
+            list.sortedWith(compareByDescending<SnapshotEntry> { it.lastGood }.thenByDescending { it.created })
+        } catch (error: Exception) {
+            emptyList()
+        }
+    }
+
+    fun runtime(): RuntimeInfo {
+        val result = ctl("version", "--json", timeout = 30)
+        if (!result.success()) return RuntimeInfo()
+        return try {
+            val json = JSONObject(result.output)
+            val hooks = json.optJSONObject("hooks_status")
+            RuntimeInfo(
+                module = json.optString("module"),
+                moduleCode = json.optString("module_version_code"),
+                dshRuntime = json.optString("dsh_runtime", "unknown"),
+                hooksMode = hooks?.optString("mode") ?: "",
+                hooksReason = hooks?.optString("reason") ?: "",
+                imageMtime = json.optString("image_mtime"),
+            )
+        } catch (error: Exception) {
+            RuntimeInfo()
+        }
+    }
+
+    fun paths(): List<PathEntry> {
+        val result = ctl("paths", "--json", timeout = 30)
+        if (!result.success()) return emptyList()
+        return try {
+            val json = JSONObject(result.output)
+            val array = json.optJSONArray("paths") ?: JSONArray()
+            val list = ArrayList<PathEntry>(array.length())
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                list += PathEntry(item.optString("name"), item.optString("path"), item.optLong("bytes", 0))
+            }
+            list
+        } catch (error: Exception) {
+            emptyList()
+        }
+    }
+
+    fun logs(kind: String): String {
+        val result = ctl("log", "200", timeout = 30)
+        if (!result.success() && result.output.isBlank()) return result.output
+        if (kind == "all") return result.output
+        val marker = when (kind) {
+            "nsinit" -> "nsinit.log"
+            "dsh" -> "dsh.log"
+            "boot" -> "boot.log"
+            "watchdog" -> "watchdog.log"
+            else -> return result.output
+        }
+        val builder = StringBuilder()
+        var keep = false
+        result.output.lineSequence().forEach { line ->
+            if (line.startsWith("== ")) keep = line.contains(marker)
+            if (keep) builder.append(line).append('\n')
+        }
+        return builder.toString().ifBlank { "（没有匹配的日志）" }
+    }
+
+    fun humanBytes(bytes: Long): String {
+        if (bytes < 0) return "—"
+        val gib = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        if (gib >= 1.0) return String.format("%.1f GB", gib)
+        val mib = bytes.toDouble() / (1024.0 * 1024.0)
+        if (mib >= 1.0) return String.format("%.0f MB", mib)
+        return String.format("%.0f KB", bytes / 1024.0)
+    }
+}
