@@ -3,9 +3,10 @@
 Android 上“真 chroot 的 Ubuntu + DSH + 完整手机控制”的设计与实现工作区。
 
 - 目标设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
-- 当前阶段：**P1（接手审核修正与 PC 构建检查）基线已通过；模块 `0.2.1`、Console/Agent `0.2.0` 已安装到主力机并保留历史数据；运行中直接重启暴露了旧 holder 身份记录导致的恢复缺陷，`0.2.2` 修复候选正在验证，尚不宣称完整交付**
+- 当前阶段：**P1 基线（PC/静态检查）已通过；2026-10-30 读写模型重写中；模块 `0.2.2` 候选与 chroot 核心已有 PC/备用机验收；主力机按用户授权作为正式运行环境。新计划见 `docs/plan-v2.md`**
 - 备用机 PJE110 已完成 128GB chroot/DSH、20 次启停、快照/回滚和核心 App 流程验收。主力机结果不外推为所有 ROM、应用或长期场景的兼容性保证。
-- 当前设计：[docs/design-v1.5.md](docs/design-v1.5.md)
+- 当前计划：[docs/plan-v2.md](docs/plan-v2.md)
+- 技术设计：[docs/design-v1.5.md](docs/design-v1.5.md)（冲突处按 plan-v2）
 - 已锁定决策：[docs/decisions.md](docs/decisions.md)
 - 文档入口：[docs/README.md](docs/README.md)
 - 验收交接：[docs/handoff.md](docs/handoff.md)
@@ -51,4 +52,4 @@ experiments/   隔离环境实验（只在备用机/VM）
 | 模型账号会话 | 未调用账号，未验证完整模型会话 |
 | 银行/游戏/Play Integrity | 未验证，不能承诺通过 |
 
-> 本项目不是安全沙箱。chroot 内是 root，full `/data`/`/dev`/`/sys`；所有 chroot 挂载只在 private mount namespace，不主动修改全局 SELinux/prop/挂载视图。应用层隐藏性边界见 [docs/hiddenness.md](docs/hiddenness.md)。
+> 本项目不是安全沙箱。chroot 内是 root，full `/data`/`/dev`/`/sys`，读权限最大化；所有 chroot 挂载只在 private mount namespace；**不读取、不修改、不判断全局 SELinux**；不主动修改全局 prop/挂载视图。应用层隐藏性边界见 [docs/hiddenness.md](docs/hiddenness.md)。

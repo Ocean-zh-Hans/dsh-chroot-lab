@@ -1,5 +1,7 @@
 # 事故复盘：2026-10-26 SELinux remount 关联的系统崩溃
 
+> 2026-10-30 注：本文是历史事故记录；其中 `--permissive` break-glass 已废弃。当前规则是 DSH 不读取、不修改、不判断全局 SELinux，也不运行 `getenforce`/`setenforce`。
+
 - 设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
 - 时间：2026-10-26 12:07 左右测试；12:18 大面积 native crash / system_server 崩溃；12:24 重启恢复。
 - 结论先行：**在主机上做了多项宿主级危险测试，随后系统崩溃；责任在操作者。**

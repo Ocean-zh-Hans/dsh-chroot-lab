@@ -17,7 +17,7 @@ if [ -x "$MODDIR/bin/dsh-watchdog" ]; then
   fi
 fi
 if [ -x "$MODDIR/bin/dsh-ctl" ]; then
-  if ! "$MODDIR/bin/dsh-ctl" stop >>"$LOG" 2>&1; then
+  if ! DSH_RISK_BYPASS=1 "$MODDIR/bin/dsh-ctl" stop >>"$LOG" 2>&1; then
     if [ "$WATCHDOG_WAS_DISABLED" -eq 0 ] && [ -x "$MODDIR/bin/dsh-watchdog" ]; then
       "$MODDIR/bin/dsh-watchdog" --enable >>"$LOG" 2>&1 || true
     fi

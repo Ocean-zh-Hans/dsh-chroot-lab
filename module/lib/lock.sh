@@ -56,16 +56,20 @@ dsh_lock_is_stale() {
   Z | X | x) return 0 ;;
   '' | *[!A-Za-z]*) return 2 ;;
   esac
-  if [ -n "$_st" ] && [ -n "$_ns" ]; then
-    _actual_st=$(dsh_proc_starttime "$_pid") || return 2
-    _actual_ns=$(dsh_proc_ns "$_pid") || return 2
-    [ "$_actual_st" = "$_st" ] || return 0
-    [ "$_actual_ns" = "$_ns" ] || return 0
+  # A live PID without recorded starttime/ns cannot be trusted: the PID may
+  # have been reused. Treat it as stale rather than deadlocking forever.
+  if [ -z "$_st" ] || [ -z "$_ns" ]; then
+    return 0
   fi
+  _actual_st=$(dsh_proc_starttime "$_pid") || return 2
+  _actual_ns=$(dsh_proc_ns "$_pid") || return 2
+  [ "$_actual_st" = "$_st" ] || return 0
+  [ "$_actual_ns" = "$_ns" ] || return 0
   if [ -f "$DSH_BOOT_ID_FILE" ]; then
     _recorded_boot=$(dsh_read_line "$DSH_BOOT_ID_FILE" 2>/dev/null || true)
     _current_boot=$(dsh_boot_id || true)
-    [ -n "$_recorded_boot" ] && [ -n "$_current_boot" ] || return 2
+    [ -n "$_recorded_boot" ] || return 0
+    [ -n "$_current_boot" ] || return 2
     [ "$_recorded_boot" = "$_current_boot" ] || return 0
   fi
   return 1

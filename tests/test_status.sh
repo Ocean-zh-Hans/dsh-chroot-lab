@@ -32,7 +32,11 @@ assert_contains "$out" "state        : running"
 assert_contains "$out" "pid valid    : yes"
 
 json=$(DSH_PROC=/proc "$DSH_CTL" status --json)
-python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["state"]=="running"; assert d["pid_valid"] is True; assert d["note"]=="degraded-test"' "$json"
+python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["state"]=="running"; assert d["pid_valid"] is True; assert d["note"]=="degraded-test"; assert d["url"]=="http://127.0.0.1:1234/?token=REDACTED"' "$json"
+out=$(DSH_PROC=/proc "$DSH_CTL" status)
+case "$out" in
+*"token=test"*) fail "status exposed the raw token" ;;
+esac
 
 printf 'ok:1\n' >"$DSH_ROOT/state/runtime/health"
 out=$(DSH_PROC=/proc "$DSH_CTL" status)

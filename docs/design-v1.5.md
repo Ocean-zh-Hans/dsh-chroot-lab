@@ -1,24 +1,26 @@
-# 设计 v1.5（当前唯一技术设计）
+# 设计 v1.5（当前唯一技术设计；2026-10-30 修订）
 
 - 日期：2026-10-26
 - 状态：**接手审核修正、PC 构建检查及备用机限定验收通过；未验证项见 `verification.md`**
 - 取代：v1.4、v1.3、v1.0；旧设计全部归档，不再有当前效力
 - 决策依据：`decisions.md`（`1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A`）
 
-> 本文是“怎么做”的唯一来源。需求和硬不变量见 `requirements.md`；应用层隐藏性见 `hiddenness.md`；实测证据见 `verification.md`。
+> **2026-10-30 修订**：§6.1、§6.3 与 selinuxfs/`/dev/block` 的读可见性口径已按 `plan-v2.md` 改写；旧原文见 `archive/notes/18-readmax-writecareless/design-v1.5-before.md`。
+>
+> 本文是“怎么做”的唯一技术设计来源；`plan-v2.md` 是新执行计划。需求和硬不变量见 `requirements.md`；应用层隐藏性见 `hiddenness.md`；实测证据见 `verification.md`。
 
 ---
 
 ## 0. 一句话
 
-在**同一台手机**上，用 KSU 模块持有 private mount namespace，把 Ubuntu 24.04 ext4 镜像 chroot 成完整 Linux；chroot 内 root 保持所选 `/data`、`/sys`、常规 `/dev` 和 Android 能力，`/dev/block` 默认遮罩；所有挂载只在 private ns，全局 SELinux/prop/挂载视图不动；DSH 是 Ubuntu 的第一个应用，不是 Ubuntu 的身份。
+在**同一台手机**上，用 KSU 模块持有 private mount namespace，把 Ubuntu 24.04 ext4 镜像 chroot 成完整 Linux；chroot 内 root 保持所选 `/data`、`/sys`、常规 `/dev` 和 Android 能力，`/dev/block` 默认只读；所有挂载只在 private ns，全局 prop/挂载视图不动，且不读取/不修改/不判断 SELinux；DSH 是 Ubuntu 的第一个应用，不是 Ubuntu 的身份。
 
 ## 1. 当前 P0 状态
 
 | P0 | 设计处理 | 代码状态 |
 |---|---|---|
 | 镜像/控制面自引用 | `1A`：private ns 内 tmpfs 遮罩控制面/镜像及已知别名；接受 `/proc/1/root` 绕过 | 备用机已实测 |
-| `/sys` rw 与提示的边界 | `2B`：`/sys` rw；selinuxfs 默认遮罩，也可在 private ns 新建只读挂载；可见风险提示和审计不是安全边界 | 新增模式，待主力机实测 |
+| `/sys` rw 与提示的边界 | `2B`：`/sys` rw；selinuxfs 默认在 private ns 新建只读挂载，`mask` 仅显式；可见风险提示和审计不是安全边界 | 已按新读模型修订 |
 | stop/namespace 竞态 | 校验 PID/starttime/ns inode；先停止 s6 监督树，再由 holder 逆序清理；失败保留 recovery 信息，不能伪报 stopped | 备用机启停/清理已实测 |
 | 快照一致性 | 冷状态证明 + 镜像/state 双 SHA256 + 临时文件原子替换 + 失败回滚；last-good 只引用已校验快照 | 备用机快照/恢复/回滚已实测 |
 | 手机控制 | 宿主 Agent + 会话/查询 DSL + 可选独立 root helper；未验证项不写“perfect” | PJE110 主要 T0/T1 链路、剪贴板往返已实测；文件访问未授权 |
@@ -131,7 +133,7 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 4. 在 `$ROOT` 下先 `mkdir -p` 所有挂载点，再挂载：`/proc`、`/sys`、`/dev`、`/dev/pts`、`/dev/shm`、`/run`、`/tmp`。
 5. Android 视图：`/data`、`/mnt`、`/data_mirror`、`/storage`、`/sdcard`、`/system`、`/system_ext`、`/product`、`/vendor`、`/odm`、`/apex`、`/linkerconfig`。
 6. 控制面 bind（必须在遮罩之前）：`/opt/dsh`、`/opt/dsh-control`、`/root/.dsh`、`/run/dsh`、`/var/log/dsh`。
-7. 保护/遮罩（控制面 bind 完成之后）：按 `DSH_SELINUXFS_MODE` 选择 tmpfs 或新建只读 selinuxfs；默认遮住 `/dev/block`；`/metadata`、`/mnt/vendor/persist`、`/mnt/vendor/qmcs` 递归 ro；控制面/镜像别名 tmpfs。
+7. 保护/遮罩（控制面 bind 完成之后）：默认新建只读 selinuxfs（`DSH_SELINUXFS_MODE=ro`，`mask` 仅显式）；默认只读 `/dev/block`；`/metadata`、`/mnt/vendor/persist`、`/mnt/vendor/qmcs` 递归 ro；控制面/镜像别名 tmpfs。
 8. 写 `/etc/resolv.conf`、`/etc/hosts`；复制 s6 服务到 `/run/s6`。
 9. 父 holder fork + exec chroot；先加载 `control/bin/dsh-android-env`，再启动 s6。holder 在挂载前写入自己的 PID/starttime/ns inode。
 10. 严格校验 DSH loopback URL 与 holder 身份；未就绪标记 degraded，其他失败进入统一清理事务。
@@ -143,8 +145,8 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 | `/` | `/tmp/dsh-rootfs` | ext4 | 128GB 镜像 |
 | `/proc` | `proc` | `proc,nosuid,noexec,nodev` | 完整进程视图 |
 | `/sys` | `sysfs` | **rw**（2B） | 完整内核/设备视图 |
-| `/sys/fs/selinux` | tmpfs | `size=1m,mode=0555` | **private ns 遮罩**；不 bind/remount 宿主 selinuxfs；防止 chroot 误写全局 SELinux |
-| `/dev` | `/dev` | rbind | 常规设备与 Android IPC 保留；默认额外遮住 `/dev/block`，只有 `DSH_BLOCK_ACCESS=full` 才放开 |
+| `/sys/fs/selinux` | selinuxfs ro（默认） | `ro`；`mask` 仅显式选项 | private ns 内新建只读 selinuxfs，让 root 可读；不 bind/remount 宿主 selinuxfs |
+| `/dev` | `/dev` | rbind | 常规设备与 Android IPC 保留；默认 `/dev/block` 只读可见，只有 `DSH_BLOCK_ACCESS=full` 才可写 |
 | `/dev/pts` | devpts | `newinstance,ptmxmode=0666,mode=620` | 独立 pts |
 | `/dev/shm` | tmpfs | `size=1g,mode=1777` | Chromium/Playwright |
 | `/run` | tmpfs | `size=1g,mode=755` | s6/运行时 |
@@ -223,21 +225,21 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 
 ### 6.1 全局不变量
 
-- `/sys/fs/selinux/enforce` 必须是 `1`；`getenforce` 只作参考，不作唯一判据。
+- DSH **不读取、不修改、不判断**全局 SELinux；不运行 `getenforce`/`setenforce`，不保存/恢复 `selinux.orig`。
+- 不把 SELinux 状态作为 start/stop/doctor/watchdog 的启动门。
 - 不改全局 prop；不重置 `ro.*`/`init.svc.*`/`persist.*`。
-- 不默认 `setenforce 0`；`--permissive` 只允许显式 break-glass，记录并在 stop/watchdog 恢复。
-- 不对宿主 selinuxfs 做任何 bind/remount。
+- 不对宿主 selinuxfs 做任何 bind/remount；guest 内默认新建只读 selinuxfs，`mask` 仅显式选项。
 - KSU 隐藏特性保持：`selinux_hide`/`mount_hide`/`avc_spoof`/`kernel_umount`。
 
 ### 6.2 域事实
 
-`u:r:ksu:s0` 是 KernelSU 的 permissive + allow-all 域；它不受全局 Enforcing 约束。应用看不到其他进程的域，所以这不是 App 检测面；但**不能**说“SELinux 保证 chroot 安全/隐藏”。`SessionStart`/`UserPromptSubmit` 的风险提示与 `PostToolUse` 审计不拦截命令，也不是 root 安全边界；`/dev/block` 默认遮罩只减少粗心路径误写，不能阻止其他宿主入口。
+`u:r:ksu:s0` 是 KernelSU 的 permissive + allow-all 域；它不受全局 Enforcing 约束。应用看不到其他进程的域，所以这不是 App 检测面；但**不能**说“SELinux 保证 chroot 安全/隐藏”。`SessionStart`/`UserPromptSubmit` 的风险提示与 `PostToolUse` 审计不拦截命令，也不是 root 安全边界；`/dev/block` 默认只读，原始写只在显式 `DSH_BLOCK_ACCESS=full` 开放；不能阻止其他宿主入口。
 
 ### 6.3 应用可见面
 
 必须守住：
 
-1. 全局 SELinux Enforcing；
+1. 不读取、不修改、不判断全局 SELinux；
 2. 全局 prop 不变；
 3. 所有 chroot mount 在 private ns；
 4. KSU 隐藏特性不关；
@@ -253,10 +255,10 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 
 ### 7.1 start
 
-- `start --apply` 先通过 doctor，检查 Enforcing、路径、镜像、helper、实际 loop 查询和残留状态。fsck 前、fsck 后及 attach 前都要证明镜像无 loop；查询失败不是空闲，已有附件时不得 fsck。原生 helper 的 `--claim` 让 DSH 自己的 start/rescue/snapshot/image 操作共用协作锁，fd 由 holder 继承；它不能阻止另一个 root 进程无视锁直接 attach 或写块设备，二次检查发现陌生 loop 时保留恢复信息，不能擅自 detach。
+- `start --apply` 先通过 doctor，检查路径、镜像、helper、实际 loop 查询和残留状态；不检查 SELinux。fsck 前、fsck 后及 attach 前都要证明镜像无 loop；查询失败不是空闲，已有附件时不得 fsck。原生 helper 的 `--claim` 让 DSH 自己的 start/rescue/snapshot/image 操作共用协作锁，fd 由 holder 继承；它不能阻止另一个 root 进程无视锁直接 attach 或写块设备，二次检查发现陌生 loop 时保留恢复信息，不能擅自 detach。
 - 启动是带失败清理的事务：任何后续失败都尝试清理；清理不完整则为 `recovery-required`，保留 PID/starttime/ns/loop 和恢复脚本，不能继续 start/snapshot/purge。
-- `--permissive` 是显式 break-glass；失败、degraded、stop 或 recover 都必须恢复并复核 Enforcing。
-- `dsh-nsinit` 立即记录 holder PID/starttime/ns inode；先 `make-rprivate /`，再挂镜像和 Android 视图。rbind 后私有化、SELinux 遮罩和关键目录递归只读不能静默失败。
+- 不读取、不修改、不判断全局 SELinux；没有 `--permissive` 开关，也不在 stop/recover 中恢复 `selinux.orig`。
+- `dsh-nsinit` 立即记录 holder PID/starttime/ns inode；先 `make-rprivate /`，再挂镜像和 Android 视图。rbind 后私有化、selinuxfs 只读视图和关键目录递归只读不能静默失败。
 - holder 长驻并等待 s6 子进程；chroot 和 s6 都加载 `control/bin/dsh-android-env`，统一 Android 环境与 PATH。缺少 Java classpath 时，只从运行中的 `system_server` 环境提取 `BOOTCLASSPATH` 和 `DEX2OATBOOTCLASSPATH`，逐项限制 Android 路径下的 jar 并检查存在，不复制其他进程环境，也不写死某台 ROM 的路径列表。
 - `/tmp/dsh-recovery` 保存受限恢复脚本、mount 记录和结果；正常 stop/recover 在对应 private namespace 内逆序卸载，不在宿主同名路径误卸载。
 - 等待严格 loopback URL 和真实 HTTP 健康检查，复核 holder 身份及新鲜 heartbeat 后才进入 running。DSH 未就绪或健康检查失败是 degraded；其他启动失败进入清理事务。
@@ -299,7 +301,7 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 - `dsh-run` 启动 `web --host 127.0.0.1 --port 0 --no-open`，严格校验 URL、写 0600 `/run/dsh/url`，执行真实 loopback HTTP 健康检查并写带时间戳的 heartbeat。URL 候选提取不依赖固定 `dsh web:` 前缀，但仍是日志回退而非原生机器接口。启动日志保留 5 代，审计按日保留 14 天。启动超时或连续健康失败会先 TERM 对应 web 子进程，等待最多 10 秒后仅 KILL 该登记子进程，由 s6 重启 DSH 服务；watcher 的失败状态不能被正常退出覆盖。健康恢复后可回到 running，status 不接受陈旧 heartbeat。
 - `control/dsh/hooks.patch.yml` 定义 `approval-free`（full sandbox + `approval: never`）和 `approval-guard`（full sandbox + `approval: ask`），显示名分别为 `自动执行（不弹批准）`、`谨慎执行（逐项批准）`，机器 ID 不变。仅在 profile 能解析 permission-presets 时请求；缺少该条目时链接当前 runtime 的同版本包，仍不可用则明确选择 `hooks-audit-only.patch.yml`，审计依赖缺失时禁用 patch。`/run/dsh/hooks.status` 记录请求模式和原因，不证明上游加载成功。启动时由 guard 文件选择默认预设；新会话需要重启，已有会话通过 `/permission` 切换。
 - `CLAUDE_PLUGIN_ROOT` 解析 hooks 路径，生产值为 `/opt/dsh-control`。固定版本的两种配置均已通过 `--dump-config` 并在 PC 隔离环境实际启动；手机端 guard/hook 路径已实测，真实模型会话和模型工具链调用仍未验证。
-- `SessionStart` 和高风险 `UserPromptSubmit` 通过 `additionalContext` 提示块设备、活动镜像和全局 SELinux/prop 风险；`PostToolUse` 审计记录工具元数据，不默认保存完整命令、提示内容或凭据。PreToolUse 硬拦截已移除，提示可能错过首个请求，不能当作安全边界。
+- `SessionStart` 和高风险 `UserPromptSubmit` 通过 `additionalContext` 提示块设备、活动镜像和全局 prop 风险；SELinux 状态不读取、不提示为门禁；`PostToolUse` 审计记录工具元数据，不默认保存完整命令、提示内容或凭据。PreToolUse 硬拦截已移除，提示可能错过首个请求，不能当作安全边界。
 - 工作区固定使用独立宿主 `state/workspace`，默认绑定 `/root/workspace`；`/root/.dsh` 完全交给 DSH。安装在其它步骤全部完成后才原子迁移真实 legacy 目录，前期失败不改变旧路径；旧快照恢复采用同一职责分离，冲突或链接拒绝自动处理。`DSH_WORKSPACE_DIR` 可更改 guest 挂载点但不能覆盖整个 `/root` 或落入 `.dsh`，宿主来源不变。工作区不可用、目标为链接或迁移失败均阻止启动，不回退 sdcard 或 `/root`。保持 full 能力，不称为安全沙箱。
 - guest `TMPDIR` 默认 `/var/tmp`（rootfs 磁盘），由 `DSH_GUEST_TMP` 配置；宿主 `DSH_TMP` 继续服务控制/恢复脚本。既有 `/tmp` 垃圾不自动删除，rescue 仍使用独立可写 tmpfs。配置和恢复入口见 `/opt/dsh-control/README.md`。
 - `ttyd` 默认关闭。启用时必须有随机 0600 `state/runtime/ttyd.pass`、`ttyd -c dsh:...` 和 `127.0.0.1:7681`；缺失凭据不得启动匿名 root shell。
@@ -351,7 +353,7 @@ L3  以后其他应用（如 AstrBot）    同样装进 Ubuntu
 1. chroot 内 `id`=0、`uname -r` 与宿主一致；Go 在 `/sdcard` 编译并运行。
 2. Node 24 + node-pty PTY；`dsh web --port 0 --no-open` URL；`approval-free` 可用。
 3. `/data` rbind：`/data/user/0`、`/data/data`、`/data/system` 可见；`/mnt`、`/data_mirror`、`/storage`、`/sdcard` 完整。
-4. 默认 `DSH_BLOCK_ACCESS=masked` 时 `/dev/block` 不可见；显式 `DSH_BLOCK_ACCESS=full` 时才验收 `/dev/block` 可见。binder/ashmem、`/dev/pts`、`/dev/shm` 可见；`/sys` rw；debugfs/tracefs 可读。
+4. 默认 `DSH_BLOCK_ACCESS=ro` 时 `/dev/block` 只读可见；显式 `DSH_BLOCK_ACCESS=full` 时才验收可写。binder/ashmem、`/dev/pts`、`/dev/shm` 可见；`/sys` rw；debugfs/tracefs 可读。
 5. Android CLI：`am` help、`pm list packages`、`input`、`screencap`、`screenrecord --time-limit 1`、`cmd notification help`；`uiautomator dump` 不可用，只承诺 `runtest`（需 jar）。
 6. `/apex` 子挂载递归 ro；`/linkerconfig` 递归 ro；`/metadata`/persist/qmcs 默认 ro。
 7. stop：无同 ns inode 进程；无 rootfs 进程；无 launcher；loop 真正消失。

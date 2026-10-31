@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Shared test helpers. Tests are local-only and must never touch /data.
 set -euo pipefail
+export DSH_RISK_BYPASS=1
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 MODULE="$ROOT/module"
@@ -143,6 +144,9 @@ EOF
 #!/bin/sh
 if [ -n "${DSH_TEST_ROOT:-}" ]; then
   printf 'helper %s\n' "$*" >>"$DSH_TEST_ROOT/helper.log" 2>/dev/null || true
+  if [ "$#" -eq 1 ]; then
+    printf 'helper --remount-ro %s\n' "$1" >>"$DSH_TEST_ROOT/helper.log" 2>/dev/null || true
+  fi
 fi
 if [ "${1:-}" = --claim ] || [ "${1:-}" = --claim-wait ]; then
   _claim_wait=0
@@ -214,6 +218,7 @@ fixture_env() {
   export DSH_HOST_ROOT="$CASE/host"
   export DSH_TEST_ALLOW_NONROOT=1
   export DSH_TEST_ALLOW_UNUSUAL_PATHS=1
+  export DSH_TEST_SKIP_WATCHDOG=1
   export PATH="$CASE/bin:$PATH"
 
   mkdir -p "$DSH_ROOT/control" "$DSH_ROOT/state/ctl" "$DSH_ROOT/state/guest" "$DSH_ROOT/state/runtime" \

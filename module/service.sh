@@ -10,8 +10,8 @@ LOG=$CHROOT_HOME/logs/boot.log
 WATCHDOG_LOG=$CHROOT_HOME/logs/watchdog.log
 mkdir -p "$CHROOT_HOME/logs" 2>/dev/null || true
 . "$MODDIR/lib/log.sh"
-dsh_log_rotate_file "$LOG" 1048576 5 || exit 1
-dsh_log_rotate_file "$WATCHDOG_LOG" 1048576 3 || exit 1
+dsh_log_rotate_file "$LOG" 1048576 5 || printf '%s\n' 'service.sh: boot log rotation failed; continuing' >&2
+dsh_log_rotate_file "$WATCHDOG_LOG" 1048576 3 || printf '%s\n' 'service.sh: watchdog log rotation failed; continuing' >&2
 
 _auto=$(cat "$CHROOT_HOME/state/ctl/autostart" 2>/dev/null || true)
 printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date)" \

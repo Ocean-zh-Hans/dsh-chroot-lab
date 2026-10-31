@@ -11,14 +11,6 @@ out=$("$DSH_CTL" doctor 2>&1) || {
   printf '%s\n' "$out"
   exit 1
 }
-assert_contains "$out" "global SELinux enforce=1"
-assert_contains "$out" "domain is u:r:ksu:s0"
-printf 'u:r:magisk:s0\n' >"$DSH_PROC/self/attr/current"
-out=$("$DSH_CTL" doctor 2>&1) || {
-  printf '%s\n' "$out"
-  exit 1
-}
-assert_contains "$out" "domain is u:r:magisk:s0 (root-manager domain; not a security boundary)"
 assert_contains "$out" "rootfs image is private"
 assert_contains "$out" "recursive-ro helper present"
 assert_contains "$out" "Summary:"

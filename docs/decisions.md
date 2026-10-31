@@ -10,7 +10,7 @@
 | # | 主题 | 锁定值 | 最终含义 |
 |---|---|---|---|
 | 1 | `/data` 内部路径 | **1A** | full `/data` rbind rw；对**控制面/镜像**做 best-effort 私有 namespace 遮罩：`/data/adb/chroot`、`/data/adb/modules`、`/data/adb/ksu`、`/data/media/0/ubuntu-rootfs` 及已知 storage 别名。遮罩是完整性和防手滑，不是安全边界；`/proc/1/root` 仍可绕过，接受。 |
-| 2 | `/sys` | **2B** | `/sys` 整体 rw；**唯一例外**：`/sys/fs/selinux` 在 chroot 内用 private ns tmpfs 遮罩，禁止 bind/remount 宿主 selinuxfs。理由：防止 chroot 内误写全局 SELinux；其余 sysfs 保持完整。 |
+| 2 | `/sys` | **2B** | `/sys` 整体 rw；`/sys/fs/selinux` 的 SELinux 语义已由 §12 覆盖：默认只读可见，`mask` 仅显式，禁止 bind/remount 宿主 selinuxfs。其余 sysfs 保持完整。 |
 | 3 | `/dev` | **3A** | 完整 rbind `/dev`；`/dev/block`、`/dev/loop*`、binder、ashmem、USB 全见。接受块设备写风险。 |
 | 4 | UI/手机控制 | **4B** | 宿主 thin agent（accessibility/Shizuku/ADB）补 UI 树、通知、剪贴板、包管理；不是隐藏必需，是“完整手机控制”的补全。 |
 | 5 | 架构 | **5A** | 全部在 chroot：DSH、apt、Go、Android CLI、full `/data`/`/dev`/`/sys`；宿主 agent 是可选补全，不是替代。 |
@@ -55,7 +55,7 @@
 ## 5. 用户确认的边界修正（2026-10-27）
 
 - 活动镜像及已知别名继续遮罩，但**路径遮罩不是块设备保护**。full `/dev` 下的 loop/block 可被直接写入，可能破坏正在运行的 rootfs；不得把镜像遮罩声称为防自毁，也不得用真实块设备做破坏性验证。
-- 新增 `DSH_SELINUXFS_MODE=mask|ro|rw`。默认仍为 `mask`；`ro` 只在 private namespace 内以 `mount -t selinuxfs -o ro selinuxfs ...` 新建只读挂载，**不对宿主 selinuxfs 做 bind/remount**。旧的 `DSH_SELINUXFS_MASK=0` 仅作兼容映射，不等于安全的只读模式，也不能成为默认。
+- 新增 `DSH_SELINUXFS_MODE=mask|ro|rw`。默认仍为 `mask`（**已被 §12 覆盖：新默认 `ro`**）；`ro` 只在 private namespace 内以 `mount -t selinuxfs -o ro selinuxfs ...` 新建只读挂载，**不对宿主 selinuxfs 做 bind/remount**。旧的 `DSH_SELINUXFS_MASK=0` 仅作兼容映射，不等于安全的只读模式，也不能成为默认。
 - 删除 `PreToolUse` 的正则拦截、hardguard 和 deny/ask 文件，保留 `PostToolUse` 审计。guard 默认保持 off；显式开启时只选择 `approval-guard` 权限预设，不再启用正则拦截。`--apply`、private namespace、holder 身份、关键路径 ro、反向卸载和清理均不改变。
 - `/sdcard/DSH/workspace` 暂不挪入镜像。当前目录不存在，外置工作区不属于 rootfs 快照；若以后要求快照包含工作区，需另行备份和明确恢复会覆盖工作文件。
 - 后续补充：主力机已在 `state/dsh-home/workspace` 建立工作区/链接。实现优先保留该真实目录或链接目标，不重建旧 sdcard 链接，不每次修改自定义权限；工作区仍不挪进 rootfs.img。真实目录形式的内部工作区随 state 归档；链接只保存链接本身，外部目标不自动备份。恢复可能覆盖工作文件；外置 sdcard 工作区仍需另行备份。
@@ -102,3 +102,19 @@
 
 - `dsh_lock_acquire` 通过原生 `lock.guard` 串行化获取与回收，避免清理者与候选者交错覆盖。进程信息不可读时不得误判 stale；只有进程消失或身份不符才允许回收。
 - 锁的 owner 是调用方，不是执行获取的 helper 子进程。使用原子 `mkdir` 检查锁不存在后写入并复核 owner 元数据，不依赖 `mv` 在目标已存在时的覆盖或嵌套行为；真实 owner 不得因并发清理被覆盖。
+
+## 12. 读权限最大化与“善意粗心”写模型（2026-10-30，覆盖）
+
+本节由用户 2026-10-30 明确要求，覆盖本文件前文中与它冲突的 SELinux、读遮蔽和 `--permissive` 条款；
+前文旧值不删除，只作为历史记录。
+
+- **全局 SELinux 不再是 DSH 的输入或输出**：不读取 `enforce`，不运行 `getenforce`/`setenforce`，
+  不保存/恢复 `selinux.orig`，不把 SELinux 状态作为 start/stop/doctor/watchdog 的条件，也不把
+  `--permissive` 当作功能或 break-glass。
+- **读全开**：chroot 内 root 可读宿主全部内容；不以“可能被 App 看见”为理由遮蔽 `/data`、
+  `/proc`、`/sys`、`/dev` 或内部路径。`/dev/block` 默认只读可见，原始写只在显式
+  `DSH_BLOCK_ACCESS=full` 时开放。`selinuxfs` 默认在 private namespace 新建只读视图
+  （`DSH_SELINUXFS_MODE=ro`），`mask` 仅作为显式隐藏选项。
+- **写按善意但粗心的操作者设计，并分五档**：R0 无限制（读 + 不改变系统的新建写）；R1 AI 普通确认（覆盖已有非系统文件，AI 可直接 yes）；R2 AI 敏感数据确认（`/data/data`、`/data/user/*`、`/data/user_de/*` 的应用私有数据，必须 reason+备份+专用 token，不能裸 yes）；R3 AI 重大确认（生命周期、镜像/快照、purge、system-rw、recover、系统关键数据；AI 自行审批但不能裸 yes）；R4 人工确认（`/dev/block` raw write、`dd`/`mkfs`/`blkdiscard`、分区表、系统分区 raw write，人工审核并要求 AI 提供足够原因）。所有写入预览、原子提交、失败回滚、残留检查；不承诺防御恶意 root。
+- **旧 15 项决策**：`1A 2B 3A 4B 5A 6B 7A 8A 9A 10A 11A 12A 13A 14B 15A` 保留为历史组合，
+  其中与本节冲突的 SELinux/mask 语义以本节为准；实现和验收按 `plan-v2.md` 执行。

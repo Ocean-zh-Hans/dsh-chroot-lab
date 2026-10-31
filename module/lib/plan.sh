@@ -32,7 +32,7 @@ dsh_plan_run() {
   printf 'Mode: DRY RUN ONLY — no commands are executed\n\n'
 
   printf '== Decisions ==\n'
-  printf '1A full /data + best-effort internal masks; no block-device protection\n'
+  printf '1A full /data; /dev/block access per DSH_BLOCK_ACCESS (default ro; care, not security)\n'
   printf '2B /sys rw + selinuxfs %s in private ns; never host bind/remount\n' "$DSH_SELINUXFS_MODE"
   printf '3A /dev with block access %s; masked paths only reduce careless writes\n' "$DSH_BLOCK_ACCESS"
   printf '4B host thin agent (optional)\n'
@@ -40,11 +40,11 @@ dsh_plan_run() {
   printf '6B critical paths recursive ro\n'
   printf '7A system-rw off\n'
   printf '8A %sGB image\n' "$DSH_IMAGE_SIZE_GB"
-  printf '9A image + state + /sdcard/DSH snapshots\n'
+  printf '9A image + state snapshots under DSH_ROOT/DSH_IMAGE_DIR\n'
   printf '10A spare device/VM first\n'
   printf 'approval-free + audit + visible risk context; no hard blocking\n'
   printf '12A boot + last-good rollback\n'
-  printf '13A accept u:r:ksu permissive\n'
+  printf '13A SELinux untouched; no global setenforce\n'
   printf '14B recursive ro /apex + /linkerconfig\n'
   printf '15A full /storage rbind\n\n'
 
@@ -92,7 +92,7 @@ EOF
 /sys                  sysfs rw
 /sys/fs/selinux       DSH_SELINUXFS_MODE (fresh ro mount allowed; no host bind/remount)
 /dev                  rbind /dev
-/dev/block            private tmpfs mask when DSH_BLOCK_ACCESS=masked
+/dev/block            read-only bind when DSH_BLOCK_ACCESS=ro
 /dev/pts              devpts newinstance
 /dev/shm              tmpfs 1g
 /run                  tmpfs 1g
@@ -144,7 +144,7 @@ EOF
 2. validate nsenter capability; nsenter --mount=/proc/PID/ns/mnt -- chroot /tmp/dsh-rootfs ...
 3. s6-svc -d dsh/ttyd; s6-svwait -d; TERM holder only; never kill a cleaning holder
 4. holder cleanup: remount root ro; reverse umount; scan /proc/*/ns/mnt
-5. after holder exits, detach only owned loop identities; restore SELinux; clear runtime state
+5. after holder exits, detach only owned loop identities; clear runtime state
 EOF
   printf '\n'
 

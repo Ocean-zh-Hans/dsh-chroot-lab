@@ -1,10 +1,11 @@
 # DSH Ubuntu Chroot — 文档入口
 
-- 状态：**PC 构建检查通过；备用机正式模块、128GB chroot/DSH、20 次启停、快照/回滚、真实开机自启、Agent/Console 核心流程已实测通过；应用检测、真实模型会话等仍有明确边界**
+- 状态：**2026-10-30 读写模型重写中；新计划见 `plan-v2.md`；chroot 核心已有 PC/备用机验收，主力机按用户授权作为正式运行环境**
 - 目标设备：OnePlus PJZ110 / Android 15 / kernel 6.6.66 / SukiSU 4.2.1-r2
-- 当前代码：模块与 `dsh-ctl doctor/plan/status/start/stop/snapshot/...`；改变镜像或生命周期的操作需显式 `--apply`；主力机已按授权安装激活，后续验证仍须先识别设备
-- 当前设计：`design-v1.5.md`
-- 当前决策：`decisions.md`（已锁定）
+- 当前代码：模块与 `dsh-ctl doctor/plan/status/start/stop/snapshot/...`；改变镜像或生命周期的操作需显式 `--apply`；主力机已按授权安装激活，后续验证仍须先识别设备。运行时代码已切到 `SELINUXFS_MODE=ro`/`BLOCK_ACCESS=ro`；`/dev/block=ro` 保持默认可读，但 ro 只是视图、不能阻止设备节点写，真正写保护靠 R4 人工门禁；`masked` 仅显式可选
+- 当前设计：`design-v1.5.md`（技术设计；冲突处按 `plan-v2.md`）
+- 当前计划：`plan-v2.md`（2026-10-30 新模型）
+- 当前决策：`decisions.md`（旧 15 项 + 2026-10-30 覆盖节）
 
 > 这里描述的是**同一台手机上的 chroot 进程树**，不是虚拟机、不是 proot、不是第二台设备。
 > DSH 在 chroot 内是 **uid 0**；`approval-free` 只表示不弹批准，不表示没有 root。
@@ -14,21 +15,24 @@
 
 如果文档之间出现冲突，按以下顺序执行，不再并列解释：
 
-1. **`decisions.md`**：用户已拍板的 15 项选择，任何设计不得改写。
-2. **`design-v1.5.md`**：当前唯一技术设计；P0 修正和实现边界的权威。
-3. **`requirements.md`**：目标、非目标、硬不变量。
-4. **`hiddenness.md`**：应用层隐藏性模型。
-5. **`verification.md`**：实测证据；只证明“测过什么”，不反推设计。
-6. **`incident.md`**：事故与永久禁止事项。
-7. **`roadmap.md` / `packaging.md`**：执行与打包。
-8. **`archive/`**：历史材料，**没有当前效力**；只用于追溯为什么走到今天。
+1. **`decisions.md`**：用户已拍板的选择；2026-10-26 的 15 项组合保留，2026-10-30 覆盖节优先。
+2. **`plan-v2.md`**：当前执行计划；读写模型、优先级和验收标准以此为准。
+3. **`design-v1.5.md`**：技术设计；与 `plan-v2.md` 冲突时按 `plan-v2.md`。
+4. **`requirements.md`**：目标、非目标、硬不变量。
+5. **`hiddenness.md`**：应用层隐藏性模型（只讨论 App 可见信号，不是 chroot 读权限）。
+6. **`verification.md`**：实测证据；只证明“测过什么”，不反推设计。
+7. **`incident.md`**：事故与永久禁止事项。
+8. **`roadmap.md` / `packaging.md`**：旧路线归档与打包说明；执行以 `plan-v2.md` 为准。
+9. **`archive/`**：历史材料，**没有当前效力**；只用于追溯为什么走到今天。
 
 ## 1. 当前文档
 
 | 文档 | 作用 |
 |---|---|
+| [plan-v2.md](plan-v2.md) | **当前执行计划**：读全开、写粗心好人、SELinux 不参与 |
+| [baseline-v2.md](baseline-v2.md) | **2026-10-31 当前基线**：范围、验证结果、已知缺口 |
 | [requirements.md](requirements.md) | 目标、非目标、硬需求、验收定义 |
-| [design-v1.5.md](design-v1.5.md) | **当前设计**：架构、挂载、生命周期、快照、安全门 |
+| [design-v1.5.md](design-v1.5.md) | **技术设计**：架构、挂载、生命周期、快照；冲突处按 `plan-v2.md` |
 | [agent-engine-v3.md](agent-engine-v3.md) | **Agent APK 当前设计**：v3 API、后端选择、错误契约、能力边界 §12 |
 | [agent-capability-matrix.md](agent-capability-matrix.md) | **能力矩阵**：什么进 APK（眼+手）、什么留给 Ubuntu shell/root |
 | [agent-plan.md](agent-plan.md) | **Agent 下一阶段计划**：DeviceSession、跨后端连贯性、人类 ambient surface |
@@ -39,7 +43,7 @@
 | [hiddenness.md](hiddenness.md) | 应用层隐藏性：App 能看到/看不到什么 |
 | [verification.md](verification.md) | 本机已验证、未验证、能力矩阵 |
 | [incident.md](incident.md) | 2026-10-26 系统崩溃复盘与禁止事项 |
-| [roadmap.md](roadmap.md) | P0–P5 阶段、代码与验证状态 |
+| [roadmap.md](roadmap.md) | 旧 P0–P5 已归档；当前路线指向 [plan-v2.md](plan-v2.md) |
 | [packaging.md](packaging.md) | 模块 zip、payload、工具链、构建门禁 |
 | [handoff.md](handoff.md) | **备用机/PC AI 验收交接手册** |
 | [../agent-app/README.md](../agent-app/README.md) | v3 宿主桥接：构建、授权边界与当前状态 |
@@ -52,7 +56,7 @@
 |---|---|
 | 设备 | OnePlus PJZ110，Android 15，kernel 6.6.66 |
 | Root | SukiSU 4.2.1-r2；`u:r:ksu:s0` 是 permissive allow-all 域 |
-| 全局 SELinux | 必须保持 Enforcing；`getenforce` 不可靠，读 `/sys/fs/selinux/enforce` |
+| 全局 SELinux | **不读取、不修改、不判断**；不为它设置启动门或恢复逻辑 |
 | 命名空间 | mount + UTS 可用；PID/USER/IPC ns 未编译 |
 | chroot | 真 chroot；非 proot；共享内核/网络/硬件 |
 | rootfs | Ubuntu 24.04 glibc；ext4 镜像；128GB 存储容量（非 RAM） |
@@ -75,7 +79,7 @@
 
 ## 4. 一句话
 
-**Ubuntu 是基础系统，DSH 是第一个应用；chroot 内部全开，但所有挂载只在 private mount namespace；全局 SELinux/prop/挂载视图不动；应用层看不到 chroot 的内部。**
+**Ubuntu 是基础系统，DSH 是第一个应用；chroot 内部全开，但所有挂载只在 private mount namespace；全局 prop/挂载视图不动，SELinux 不读取/不修改/不判断；应用层看不到 chroot 的内部。**
 
 ## 5. 文档审计结论（2026-10-26）
 

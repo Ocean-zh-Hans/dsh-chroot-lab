@@ -5,7 +5,7 @@
 - 原 `notes/` 整体移到这里：`archive/notes/`。
 - 旧设计、旧决策单、旧路线、早期研究、逐项目分析都在里面。
 - 保留原因：追溯设计演进、事故证据、第三方项目分析、验证命令。
-- 使用规则：**不要从归档文档直接实现当前功能**。当前实现只以 `docs/decisions.md`、`docs/design-v1.5.md`、`docs/requirements.md` 为准。
+- 使用规则：**不要从归档文档直接实现当前功能**。当前实现只以 `docs/decisions.md`、`docs/plan-v2.md`、`docs/design-v1.5.md`、`docs/requirements.md` 为准。
 
 ## 归档映射
 
@@ -28,6 +28,7 @@
 | `notes/16-hiddenness-first.md` | 应用层隐藏性 | `docs/hiddenness.md` |
 | `notes/17-project-overview.md` | 总览 v2 | `docs/README.md`、`docs/design-v1.5.md` |
 | `agent-v2/` | v2 Python 客户端、旧协议与旧模块 README | `docs/agent-plan.md`、`docs/agent-engine-v3.md` |
+| `notes/18-readmax-writecareless/` | 2026-10-30 前旧读/写/SELinux 模型快照 | `docs/plan-v2.md`、`docs/requirements.md`、`docs/hiddenness.md` |
 | `notes/analysis/` | 第三方项目逐项分析 | 历史参考；不直接复制代码/结论 |
 | `notes/research/` | 早期调研 | 历史参考；部分推荐已过时 |
 
@@ -46,8 +47,8 @@
 - `/storage` 只挂 `/storage/emulated/0` → 完整 rbind `/storage`。
 - `/apex` 顶层 `remount,ro,bind` 等于整树只读 → 必须递归 ro。
 - `u:r:ksu:s0` 受全局 Enforcing 约束 → 它是 permissive allow-all，不受约束。
-- `getenforce` 作为判据 → 读 `/sys/fs/selinux/enforce`。
-- `--permissive` 默认 → 仅显式 break-glass。
+- `getenforce` 作为判据 → **SELinux 状态不读、不修改、不判断**。
+- `--permissive` 默认/break-glass → **整个 `--permissive` 开关删除**。
 - `/data` 三路径遮罩就够 → 已知别名 best-effort 遮罩，且承认 `/proc/1/root` 绕过。
 - “hardguard 能保证隐藏性” → 只是命令级护栏，不是边界。
 

@@ -7,6 +7,24 @@ case_dir=$(new_case)
 fixture_module "$case_dir/module"
 fixture_env "$case_dir"
 
+# P2-4: symlink entries must not escape the state archive root. GNU tar
+# reports "name -> target"; the target must be normalized relative to the
+# entry's directory and remain under state/.
+mkdir -p "$CASE/bad-archive/state/dsh-home"
+ln -s /etc/passwd "$CASE/bad-archive/state/dsh-home/evil"
+tar -czf "$CASE/bad-archive.tar.gz" -C "$CASE/bad-archive" state
+set +e
+out=$(sh -c '. "$DSH_MODULE_DIR/lib/common.sh"; . "$DSH_MODULE_DIR/lib/snapshot.sh"; dsh_snapshot_validate_archive "$1"' sh "$CASE/bad-archive.tar.gz" 2>&1)
+rc=$?
+set -e
+[ "$rc" -ne 0 ] || fail "snapshot accepted an absolute symlink target"
+assert_contains "$out" "unsafe paths"
+
+mkdir -p "$CASE/good-archive/state/dsh-home" "$CASE/good-archive/state/workspace"
+ln -s ../workspace "$CASE/good-archive/state/dsh-home/link"
+tar -czf "$CASE/good-archive.tar.gz" -C "$CASE/good-archive" state
+sh -c '. "$DSH_MODULE_DIR/lib/common.sh"; . "$DSH_MODULE_DIR/lib/snapshot.sh"; dsh_snapshot_validate_archive "$1"' sh "$CASE/good-archive.tar.gz" >/dev/null
+
 printf 'abc' >"$DSH_IMAGE"
 printf 'before' >"$DSH_ROOT/state/dsh-home/setting"
 printf 'workspace-before\n' >"$DSH_ROOT/state/workspace/marker"
@@ -263,12 +281,18 @@ def make(name, members):
 
 make("safe-links", [
     ("state/dsh-home/file", tarfile.REGTYPE, ""),
-    ("state/dsh-home/absolute-link", tarfile.SYMTYPE, "/etc/passwd"),
-    ("state/dsh-home/parent-link", tarfile.SYMTYPE, "../../outside"),
+    ("state/workspace", tarfile.DIRTYPE, ""),
+    ("state/dsh-home/relative-link", tarfile.SYMTYPE, "../workspace"),
     ("state/dsh-home/hard", tarfile.LNKTYPE, "state/dsh-home/file"),
 ])
 make("unsafe-absolute", [("/escape", tarfile.REGTYPE, "")])
 make("unsafe-parent", [("state/../../escape", tarfile.REGTYPE, "")])
+make("unsafe-absolute-link", [
+    ("state/dsh-home/absolute-link", tarfile.SYMTYPE, "/etc/passwd"),
+])
+make("unsafe-parent-link", [
+    ("state/dsh-home/parent-link", tarfile.SYMTYPE, "../../outside"),
+])
 make("unsafe-link-name", [
     ("state/file -> ../../escape", tarfile.REGTYPE, ""),
     ("state/hard link to ../escape", tarfile.REGTYPE, ""),
@@ -277,7 +301,7 @@ PY
 . "$DSH_MODULE_DIR/lib/common.sh"
 . "$DSH_MODULE_DIR/lib/snapshot.sh"
 dsh_snapshot_validate_archive "$CASE/safe-links.tgz"
-for archive in unsafe-absolute unsafe-parent unsafe-link-name; do
+for archive in unsafe-absolute unsafe-parent unsafe-absolute-link unsafe-parent-link unsafe-link-name; do
   if dsh_snapshot_validate_archive "$CASE/$archive.tgz"; then
     fail "$archive was accepted"
   fi

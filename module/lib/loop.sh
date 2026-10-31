@@ -153,6 +153,30 @@ dsh_loop_attach() {
   dsh_loop_attach_explicit_free "$_img" "$_losetup" "$_loop_out"
 }
 
+# Attach, then persist the record atomically. If the record cannot be written,
+# detach immediately; otherwise a later stop has no loop identity to clean up.
+dsh_loop_attach_record() {
+  _img=$1
+  _record=$2
+  [ -n "$_record" ] || {
+    dsh_err "loop record path is empty"
+    return 1
+  }
+  _loop=$(dsh_loop_attach "$_img") || return 1
+  _record_tmp="${_record}.tmp.$$"
+  if ! printf '%s\n' "$_loop" >"$_record_tmp" || ! mv -f "$_record_tmp" "$_record"; then
+    rm -f "$_record_tmp"
+    dsh_err "cannot record loop $_loop; detaching"
+    if dsh_loop_detach "$_loop" "$_img"; then
+      dsh_err "loop record failed; detached $_loop"
+    else
+      dsh_err "loop record failed and detach failed: $_loop"
+    fi
+    return 1
+  fi
+  printf '%s\n' "$_loop"
+}
+
 dsh_loop_detach() {
   local _loop="$1" _img="${2:-}" _losetup _owned _attached _attached_list _detach _i
   [ -n "$_loop" ] || return 0

@@ -70,6 +70,13 @@ if [ "${DSH_TEST_BAKED_DSH:-1}" = 1 ]; then
   chmod 0755 "$DSH_ROOTFS_DIR/opt/dsh/current/bin/dsh"
 fi
 mkdir -p "$DSH_ROOTFS_DIR$DSH_MODULE_DIR"
+for target do :; done
+if [ "${DSH_TEST_ROOTFS_ETC_LINK:-0}" = 1 ] && [ "$target" = "$DSH_ROOTFS_DIR" ]; then
+  mkdir -p "$DSH_TEST_ROOT/host-etc"
+  printf 'host-marker\n' >"$DSH_TEST_ROOT/host-etc/marker"
+  rm -rf "$DSH_ROOTFS_DIR/etc"
+  ln -s "$DSH_TEST_ROOT/host-etc" "$DSH_ROOTFS_DIR/etc"
+fi
 printf 'mount %s\n' "$*" >>"$DSH_TEST_ROOT/mounts.log"
 for target do :; done
 encoded=$(printf '%s' "$target" | awk '{ gsub(/ /, "\\\\040"); print }')
@@ -205,21 +212,16 @@ assert_contains "$out" "recover: ok"
 assert_contains "$("$DSH_CTL" status)" "state        : stopped"
 [ ! -e "$DSH_ROOT/state/guest/loopdev" ] || fail "recovery retained a detached loop record"
 
-cat >"$CASE/bin/setenforce" <<'EOF'
-#!/bin/sh
-printf '%s\n' "$1" >"$DSH_SYS/fs/selinux/enforce"
-EOF
 cat >"$CASE/bin/e2fsck" <<'EOF'
 #!/bin/sh
 exit 2
 EOF
-chmod 0755 "$CASE/bin/setenforce" "$CASE/bin/e2fsck"
+chmod 0755 "$CASE/bin/e2fsck"
 set +e
-out=$("$DSH_CTL" start --apply --permissive 2>&1)
+out=$("$DSH_CTL" start --apply 2>&1)
 rc=$?
 set -e
 [ "$rc" -ne 0 ] || fail "failed start returned success"
-assert_eq "$(cat "$DSH_SYS/fs/selinux/enforce")" "1"
 [ ! -e "$DSH_ROOT/state/ctl/selinux.orig" ] || fail "SELinux restore marker was retained"
 
 cat >"$CASE/bin/getprop" <<'EOF'
@@ -289,13 +291,13 @@ assert metadata['version'] == '0.2.2'
 assert metadata['versionCode'] == 4
 assert metadata['autostart'] is True
 assert metadata['selinuxfsMode'] == 'ro'
-assert metadata['blockAccess'] == 'masked'
+assert metadata['blockAccess'] == 'ro'
 assert metadata['startedAt'] > 0
 PY
 [ -f "$DSH_ROOTFS_DIR/run/dsh/module.json" ] || fail 'read-only module metadata was not published'
 [ -f "$DSH_ROOTFS_DIR/run/dsh/module.sha256" ] || fail 'module script hashes were not published'
 grep -q -- '--remount-ro-bind .*run/dsh/module.json' "$CASE/helper.log" || fail 'module metadata was not read-only'
-grep -F "$DSH_MODULE_DIR" "$CASE/mounts.log" >/dev/null || fail 'custom module path was not masked'
+grep -F "$DSH_MODULE_DIR" "$CASE/helper.log" >/dev/null || fail 'custom module path was not read-only bound'
 [ -d "$DSH_ROOTFS_DIR/var/tmp" ] || fail 'disk-backed guest TMPDIR was not created'
 grep -F "1777 $DSH_ROOTFS_DIR/var/tmp" "$CASE/chmod.log" >/dev/null || fail 'disk-backed guest TMPDIR was not made 1777'
 grep -q 'TMPDIR=/var/tmp' "$CASE/chroot.log" || fail 's6 did not receive the disk-backed TMPDIR'
@@ -344,7 +346,8 @@ set -e
 unset DSH_SELINUXFS_MODE
 [ "$rc" -ne 0 ] || fail "invalid SELinuxFS mode was accepted"
 
-grep -q 'tmpfs .*dev/block' "$CASE/mounts.log" || fail "default /dev/block mask missing"
+grep -q -- '--rbind .*dev/block' "$CASE/helper.log" || fail "default /dev/block bind missing"
+grep -q -- '--remount-ro .*dev/block' "$CASE/helper.log" || fail "default /dev/block read-only bind missing"
 export DSH_BLOCK_ACCESS=full
 before=$(grep -c 'dev/block' "$CASE/mounts.log" || true)
 start_ok
@@ -360,7 +363,7 @@ rc=$?
 set -e
 unset DSH_TEST_BLOCK_LINK
 [ "$rc" -ne 0 ] || fail "symlink /dev/block was accepted"
-grep -q 'refusing to mask a /dev/block symlink' "$DSH_ROOT/logs/nsinit.log" || fail "symlink guard did not fail safely"
+grep -q 'refusing to read-only bind a /dev/block symlink' "$DSH_ROOT/logs/nsinit.log" || fail "symlink guard did not fail safely"
 "$DSH_CTL" stop >/dev/null
 export DSH_BLOCK_ACCESS=invalid
 set +e
@@ -378,6 +381,21 @@ set -e
 unset DSH_TEST_BAKED_DSH
 [ "$rc" -ne 0 ] || fail "start accepted a missing DSH executable"
 grep -q 'DSH executable is missing from host and baked runtimes' "$DSH_ROOT/logs/nsinit.log" || fail "missing runtime was not reported"
+"$DSH_CTL" stop >/dev/null
+
+# P2-2: a rootfs /etc symlink must not redirect resolv.conf/hosts writes into
+# the host. The fake ext4 mount plants /etc -> host-etc after the rootfs mount.
+export DSH_TEST_ROOTFS_ETC_LINK=1
+set +e
+out=$("$DSH_CTL" start --apply 2>&1)
+rc=$?
+set -e
+unset DSH_TEST_ROOTFS_ETC_LINK
+[ "$rc" -ne 0 ] || fail 'rootfs /etc symlink was accepted'
+assert_eq "$(cat "$CASE/host-etc/marker")" 'host-marker'
+[ ! -e "$CASE/host-etc/resolv.conf" ] || fail 'rootfs symlink wrote resolv.conf into host'
+[ ! -e "$CASE/host-etc/hosts" ] || fail 'rootfs symlink wrote hosts into host'
+grep -q 'refusing symlinked /etc' "$DSH_ROOT/logs/nsinit.log" || fail 'rootfs symlink guard did not fail safely'
 "$DSH_CTL" stop >/dev/null
 
 printf 'test_lifecycle: ok\n'

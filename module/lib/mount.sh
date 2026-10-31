@@ -10,12 +10,55 @@ dsh_mount_log() {
   dsh_log "mount: $*"
 }
 
+# Return success only when $1 resolves inside $2. The deepest existing
+# ancestor is resolved with readlink -f; missing suffixes are then safe to
+# create *under that ancestor*. This catches a rootfs symlink such as
+# /etc -> /etc before mkdir/write follows it into the host.
+dsh_mount_realpath_under() {
+  _candidate=$1
+  _base=$2
+  [ -n "$_candidate" ] && [ -n "$_base" ] || return 1
+  _base_real=$(readlink -f "$_base" 2>/dev/null || true)
+  [ -n "$_base_real" ] || return 1
+  _probe=$_candidate
+  while [ ! -e "$_probe" ] && [ "$_probe" != "/" ]; do
+    _probe=${_probe%/*}
+    [ -n "$_probe" ] || _probe=/
+  done
+  _probe_real=$(readlink -f "$_probe" 2>/dev/null || true)
+  [ -n "$_probe_real" ] || return 1
+  case $_probe_real in
+  "$_base_real" | "$_base_real"/*) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
 dsh_mount_prepare_point() {
   _p=$1
+  if [ -n "${DSH_ROOTFS_DIR:-}" ]; then
+    case $_p in
+    "$DSH_ROOTFS_DIR" | "$DSH_ROOTFS_DIR"/*)
+      dsh_mount_realpath_under "$_p" "$DSH_ROOTFS_DIR" || {
+        dsh_err "mountpoint escapes rootfs: $_p"
+        return 1
+      }
+      ;;
+    esac
+  fi
   [ -d "$_p" ] || mkdir -p "$_p" || {
     dsh_err "cannot create mountpoint: $_p"
     return 1
   }
+  if [ -n "${DSH_ROOTFS_DIR:-}" ]; then
+    case $_p in
+    "$DSH_ROOTFS_DIR" | "$DSH_ROOTFS_DIR"/*)
+      dsh_mount_realpath_under "$_p" "$DSH_ROOTFS_DIR" || {
+        dsh_err "mountpoint escapes rootfs after creation: $_p"
+        return 1
+      }
+      ;;
+    esac
+  fi
 }
 
 dsh_mount_push() {
@@ -79,6 +122,14 @@ dsh_mount_bind() {
   fi
 }
 
+dsh_mount_bind_ro_path() {
+  _src=$1
+  _dst=$2
+  [ -e "$_src" ] || return 0
+  dsh_mount_rbind "$_src" "$_dst" || return 1
+  dsh_mount_ro_recursive "$_dst"
+}
+
 dsh_mount_bind_ro_file() {
   _src=$1
   _dst=$2
@@ -92,6 +143,16 @@ dsh_mount_bind_ro_file() {
     return 1
   fi
   _parent=${_dst%/*}
+  if [ -n "${DSH_ROOTFS_DIR:-}" ]; then
+    case $_dst in
+    "$DSH_ROOTFS_DIR" | "$DSH_ROOTFS_DIR"/*)
+      dsh_mount_realpath_under "$_dst" "$DSH_ROOTFS_DIR" || {
+        dsh_err "file bind target escapes rootfs: $_dst"
+        return 1
+      }
+      ;;
+    esac
+  fi
   [ -d "$_parent" ] || mkdir -p "$_parent" || return 1
   if [ ! -e "$_dst" ]; then
     : >"$_dst" || return 1
