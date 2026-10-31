@@ -45,6 +45,7 @@ fun SystemPage(
     onDoctor: () -> Unit,
     onCopyDiagnostics: () -> Unit,
     onAction: (RiskRequest) -> Unit,
+    busy: Boolean = false,
 ) {
     val palette = consolePalette()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
@@ -55,7 +56,17 @@ fun SystemPage(
                 onStop = onStop,
                 onOpenDsh = onOpenDsh,
                 onLogs = onLogs,
+                busy = busy,
             )
+        }
+        if (busy) {
+            item {
+                Text(
+                    "上一个操作还在进行：完成后按钮才会恢复，结果在顶部任务条里。",
+                    color = palette.faint, fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
         }
         val advice = recommendations(status, doctor)
         if (advice.isNotEmpty()) {
@@ -117,8 +128,8 @@ fun SystemPage(
                     }
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f)) { GhostButton("运行体检", onDoctor) }
-                        Box(Modifier.weight(1f)) { GhostButton("复制诊断包", onCopyDiagnostics) }
+                        Box(Modifier.weight(1f)) { GhostButton("运行体检", onClick = onDoctor) }
+                        Box(Modifier.weight(1f)) { GhostButton("复制诊断包", onClick = onCopyDiagnostics) }
                     }
                 }
             }
@@ -147,6 +158,7 @@ private fun StateCard(
     onStop: () -> Unit,
     onOpenDsh: () -> Unit,
     onLogs: () -> Unit,
+    busy: Boolean,
 ) {
     val palette = consolePalette()
     val tint = stateTint(status.state, palette)
@@ -171,12 +183,13 @@ private fun StateCard(
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(Modifier.weight(1f)) {
-                    if (running) PrimaryButton("停止", onStop, tint = palette.warning) else PrimaryButton("启动", onStart)
+                    if (running) PrimaryButton("停止", onStop, tint = palette.warning, enabled = !busy)
+                    else PrimaryButton("启动", onStart, enabled = !busy)
                 }
                 Box(Modifier.weight(1f)) {
-                    if (running) GhostButton("打开 DSH", onOpenDsh)
-                    else if (status.state == "stopped") GhostButton("看日志", onLogs)
-                    else GhostButton("看日志", onLogs)
+                    if (running) GhostButton("打开 DSH", onClick = onOpenDsh)
+                    else if (status.state == "stopped") GhostButton("看日志", onClick = onLogs)
+                    else GhostButton("看日志", onClick = onLogs)
                 }
             }
         }
@@ -262,6 +275,7 @@ fun SoftwarePage(
     onAction: (RiskRequest) -> Unit,
     onLogs: () -> Unit,
     onPending: (String) -> Unit,
+    busy: Boolean = false,
 ) {
     val palette = consolePalette()
     val live = status.state == "running"
@@ -409,10 +423,36 @@ fun DevicePage(
                 }
             }
         }
+        if (status.diskFreeMb in 0..5119) {
+            item {
+                GlassCard {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("空间不足", color = palette.warning, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "只剩 " + status.diskFreeMb + " MB。先删旧快照或换更大的镜像，再继续装东西。",
+                            color = palette.sub, fontSize = 12.sp,
+                        )
+                    }
+                }
+            }
+        }
         item { SectionTitle("空间") }
         item {
             GlassCard {
                 Column(Modifier.padding(vertical = 4.dp)) {
+                    val used = paths.filter { it.bytes > 0 }.sortedByDescending { it.bytes }.take(3)
+                    val freeBytes = status.diskFreeMb.coerceAtLeast(0).toLong() * 1024L * 1024L
+                    val palette = consolePalette()
+                    val colors = listOf(palette.accent, palette.warning, palette.success)
+                    if (used.isNotEmpty() || freeBytes > 0) {
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            SpaceBar(
+                                used.mapIndexed { index, entry ->
+                                    Triple(pathLabel(entry.name), entry.bytes, colors[index % colors.size])
+                                } + listOf(Triple("剩余", freeBytes, palette.faint)),
+                            )
+                        }
+                    }
                     InfoLine("镜像文件", ConsoleRepo.humanBytes(status.imageBytes))
                     InfoLine("剩余空间", if (status.diskFreeMb < 0) "—" else status.diskFreeMb.toString() + " MB")
                     InfoLine("快照", if (status.snapshotCount < 0) "—" else status.snapshotCount.toString() + " 个")

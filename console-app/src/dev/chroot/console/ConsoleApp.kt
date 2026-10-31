@@ -78,6 +78,9 @@ fun ConsoleRoot() {
     var nextTaskId by remember { mutableIntStateOf(1) }
     var banner by remember { mutableStateOf("") }
 
+    // 同一时刻只允许一个写任务：其余会写盘的按钮全部置灰。
+    val busy = task?.state == "running"
+
     fun route(value: String) {
         if (stack.lastOrNull() != value) stack.add(value)
     }
@@ -107,7 +110,7 @@ fun ConsoleRoot() {
         while (true) {
             refresh()
             if (snaps.isEmpty()) loadSnapshots()
-            delay(5000)
+            delay(if (busy) 1000 else 3000)
         }
     }
     LaunchedEffect(Unit) {
@@ -190,6 +193,9 @@ fun ConsoleRoot() {
                 loading = loading,
                 onBack = { back() },
             )
+            task?.let { running ->
+                TaskBar(running, now, onOpen = { taskOpen = true })
+            }
             Box(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                 when (current) {
                     "system" -> SystemPage(
@@ -210,6 +216,7 @@ fun ConsoleRoot() {
                         },
                         onCopyDiagnostics = { copy(diagnostics(), "诊断包") },
                         onAction = { request -> explain = request },
+                        busy = busy,
                     )
                     "software" -> SoftwarePage(
                         status = status,
@@ -218,6 +225,7 @@ fun ConsoleRoot() {
                         onAction = { request -> explain = request },
                         onLogs = { route("logs") },
                         onPending = { what -> banner = what + " 还没实现；这一步先只记录在 docs/console-design.md。" },
+                        busy = busy,
                     )
                     "device" -> DevicePage(
                         status = status,
@@ -253,6 +261,7 @@ fun ConsoleRoot() {
                         snaps = snaps,
                         onLoad = { scope.launch { loadSnapshots() } },
                         onRestore = { name -> explain = riskSnapshotRestore(name) },
+                        busy = busy,
                         onCreate = {
                             explain = riskSnapshotCreate("snap-" + java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date()))
                         },
@@ -273,9 +282,6 @@ fun ConsoleRoot() {
                         onAction = { request -> explain = request },
                     )
                 }
-            }
-            task?.let { running ->
-                TaskBar(running, now, onOpen = { taskOpen = true })
             }
             if (current in tabs) {
                 ConsoleBottomBar(current) { route(it) }

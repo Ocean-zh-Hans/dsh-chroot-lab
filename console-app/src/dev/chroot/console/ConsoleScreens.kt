@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -192,7 +191,7 @@ internal fun RecommendationCard(item: Recommendation, onAction: (RiskRequest) ->
                 if (item.request != null) {
                     Box(Modifier.weight(1f)) { PrimaryButton(item.actionLabel, { onAction(item.request) }, tint = palette.warning) }
                 }
-                Box(Modifier.weight(1f)) { GhostButton("查看日志", onLogs) }
+                Box(Modifier.weight(1f)) { GhostButton("查看日志", onClick = onLogs) }
             }
         }
     }
@@ -265,8 +264,8 @@ fun LogsScreen(logs: String, kind: String, onKind: (String) -> Unit, onRefresh: 
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.weight(1f)) { GhostButton("刷新", onRefresh) }
-            Box(Modifier.weight(1f)) { GhostButton("复制", onCopy) }
+            Box(Modifier.weight(1f)) { GhostButton("刷新", onClick = onRefresh) }
+            Box(Modifier.weight(1f)) { GhostButton("复制", onClick = onCopy) }
         }
     }
 }
@@ -279,6 +278,7 @@ fun SnapshotsScreen(
     onLoad: () -> Unit,
     onRestore: (String) -> Unit,
     onCreate: () -> Unit,
+    busy: Boolean = false,
 ) {
     val palette = consolePalette()
     LaunchedEffect(Unit) { onLoad() }
@@ -290,7 +290,7 @@ fun SnapshotsScreen(
                         Text("快照", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         Text("镜像 + state 的一份副本；恢复前自动保留上一份", color = palette.faint, fontSize = 11.sp)
                     }
-                    PrimaryButton("新建快照", onCreate)
+                    PrimaryButton("新建快照", onCreate, enabled = !busy)
                 }
             }
         }
@@ -306,7 +306,7 @@ fun SnapshotsScreen(
                     }
                     Text(snap.created.ifBlank { "—" } + " · " + ConsoleRepo.humanBytes(snap.bytes), color = palette.faint, fontSize = 11.sp)
                     Spacer(Modifier.height(8.dp))
-                    GhostButton("恢复此快照") { onRestore(snap.name) }
+                    GhostButton("恢复此快照", enabled = !busy) { onRestore(snap.name) }
                 }
             }
         }
@@ -450,7 +450,6 @@ private fun InfoRow(label: String, value: String) {
 @Composable
 fun RiskExplainScreen(request: RiskRequest, onBack: () -> Unit, onConfirm: (RiskRequest) -> Unit) {
     val palette = consolePalette()
-    var checked by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(palette.background).systemBarsPadding().padding(horizontal = 16.dp)) {
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
@@ -477,20 +476,13 @@ fun RiskExplainScreen(request: RiskRequest, onBack: () -> Unit, onConfirm: (Risk
         }
         Spacer(Modifier.height(10.dp))
         if (request.destructive) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = checked, onCheckedChange = { checked = it })
-                Text("我已了解后果，并已备份重要数据", color = palette.sub, fontSize = 12.sp)
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.weight(1f)) { GhostButton("取消", onBack) }
-            Box(Modifier.weight(1f)) {
-                PrimaryButton(
-                    "确认执行",
-                    { if (!request.destructive || checked) onConfirm(request) },
-                    tint = if (request.destructive) palette.danger else palette.accent,
-                    enabled = !request.destructive || checked,
-                )
+            SlideToConfirm("滑动确认执行（不可撤销）", palette.danger) { onConfirm(request) }
+            Spacer(Modifier.height(8.dp))
+            GhostButton("取消", onClick = onBack)
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.weight(1f)) { GhostButton("取消", onClick = onBack) }
+                Box(Modifier.weight(1f)) { PrimaryButton("确认执行", { onConfirm(request) }) }
             }
         }
     }

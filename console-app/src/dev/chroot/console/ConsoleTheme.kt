@@ -265,19 +265,19 @@ fun PrimaryButton(text: String, onClick: () -> Unit, tint: Color? = null, enable
 }
 
 @Composable
-fun GhostButton(text: String, onClick: () -> Unit) {
+fun GhostButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     val palette = consolePalette()
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(18.dp))
-            .background(palette.text.copy(alpha = 0.06f))
-            .clickable(onClick = onClick)
+            .background(palette.text.copy(alpha = if (enabled) 0.06f else 0.03f))
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         androidx.compose.material3.Text(
             text = text,
-            color = palette.text,
+            color = if (enabled) palette.text else palette.faint,
             fontSize = 15.sp,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
         )
