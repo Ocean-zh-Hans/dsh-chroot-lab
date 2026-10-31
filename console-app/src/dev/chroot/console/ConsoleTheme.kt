@@ -1,8 +1,8 @@
 package dev.chroot.console
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -33,7 +32,7 @@ import io.github.suqi8.coui.kmp.basic.Text
 import io.github.suqi8.coui.kmp.theme.COUITheme
 
 data class ConsolePalette(
-    val background: Brush,
+    val background: Color,
     val card: Color,
     val cardStroke: Color,
     val text: Color,
@@ -56,9 +55,10 @@ fun consolePalette(): ConsolePalette {
     val dark = isSystemInDarkTheme()
     return if (dark) {
         ConsolePalette(
-            background = Brush.verticalGradient(listOf(Color(0xFF070B10), Color(0xFF0C141C), Color(0xFF0A1017))),
-            card = Color(0xFF121B24).copy(alpha = 0.92f),
-            cardStroke = Color.White.copy(alpha = 0.06f),
+            // §9：纯色背景 + 单层卡片，不再用大面积渐变光斑与玻璃拟态。
+            background = Color(0xFF0A0D12),
+            card = Color(0xFF121821),
+            cardStroke = Color.White.copy(alpha = 0.07f),
             text = Color(0xFFF2F5F8),
             sub = Color(0xFF9AA6B2),
             faint = Color(0xFF6B7885),
@@ -70,9 +70,9 @@ fun consolePalette(): ConsolePalette {
         )
     } else {
         ConsolePalette(
-            background = Brush.verticalGradient(listOf(Color(0xFFF2F6FC), Color(0xFFE8EFF8), Color(0xFFF7FAFD))),
-            card = Color.White.copy(alpha = 0.86f),
-            cardStroke = Color(0xFF0B1B33).copy(alpha = 0.06f),
+            background = Color(0xFFF5F7FA),
+            card = Color.White,
+            cardStroke = Color(0xFF0B1B33).copy(alpha = 0.08f),
             text = Color(0xFF0B1B2B),
             sub = Color(0xFF5C6B7A),
             faint = Color(0xFF93A0AD),
@@ -88,35 +88,13 @@ fun consolePalette(): ConsolePalette {
 @Composable
 fun ConsoleBackdrop(content: @Composable () -> Unit) {
     val palette = consolePalette()
-    Box(modifier = Modifier.fillMaxSize().background(palette.background)) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(palette.accent.copy(alpha = if (palette.isDark) 0.16f else 0.10f), Color.Transparent),
-                    center = Offset(size.width * 0.92f, size.height * 0.02f),
-                    radius = size.minDimension * 0.7f,
-                ),
-                radius = size.minDimension * 0.7f,
-                center = Offset(size.width * 0.92f, size.height * 0.02f),
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(Color(0xFF5AC8FF).copy(alpha = if (palette.isDark) 0.08f else 0.06f), Color.Transparent),
-                    center = Offset(size.width * 0.05f, size.height * 0.92f),
-                    radius = size.minDimension * 0.6f,
-                ),
-                radius = size.minDimension * 0.6f,
-                center = Offset(size.width * 0.05f, size.height * 0.92f),
-            )
-        }
-        content()
-    }
+    Box(modifier = Modifier.fillMaxSize().background(palette.background)) { content() }
 }
 
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    shape: Int = 26,
+    shape: Int = 22,
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {

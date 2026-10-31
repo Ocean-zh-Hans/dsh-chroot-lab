@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -35,8 +37,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -106,11 +115,27 @@ fun ConsoleRoot() {
 
     fun diagnostics(): String = diagnosticsText(status, doctor, paths, device)
 
+    // §8.3：退到后台就停止拉取，回来立刻刷一次，避免锁屏时还在跑 su。
+    var resumed by remember { mutableStateOf(true) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> resumed = true
+                Lifecycle.Event.ON_PAUSE -> resumed = false
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     LaunchedEffect(Unit) {
         while (true) {
-            refresh()
-            if (snaps.isEmpty()) loadSnapshots()
-            delay(if (busy) 1000 else 3000)
+            if (resumed) {
+                refresh()
+                if (snaps.isEmpty()) loadSnapshots()
+            }
+            delay(if (!resumed) 2000 else if (busy) 1000 else 3000)
         }
     }
     LaunchedEffect(Unit) {
@@ -453,11 +478,18 @@ private fun ConsoleBottomBar(selected: String, onSelect: (String) -> Unit) {
             Column(
                 modifier = Modifier
                     .weight(1f)
+                    // §10：点击区 ≥ 48dp、整条 ≥ 56dp，字体放大到 1.3× 也不截断。
+                    .heightIn(min = 56.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .background(if (active) palette.accent.copy(alpha = 0.12f) else Color.Transparent)
                     .clickable { onSelect(key) }
+                    .semantics {
+                        contentDescription = label
+                        role = Role.Tab
+                    }
                     .padding(vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
                 LineIcon(icon, if (active) palette.accent else palette.faint, 22)
                 Spacer(Modifier.height(2.dp))
