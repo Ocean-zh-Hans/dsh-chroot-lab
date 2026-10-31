@@ -97,224 +97,208 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
 .toggle{position:fixed;right:20px;top:20px;z-index:9}
 .toggle button{background:var(--card);color:var(--text);border:1px solid var(--stroke);border-radius:999px;
   padding:8px 14px;font-size:12px;cursor:pointer}
+
+.stack{display:flex;gap:1px;background:var(--stroke);border-radius:14px;overflow:hidden;margin:10px 0}
+.layer{flex:1;background:var(--card);padding:9px 10px;display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--sub)}
+.layer.on{background:var(--card2);color:var(--text)}
+.dep{display:flex;align-items:center;gap:8px;font-size:12px;padding:10px 14px;border-radius:14px;
+  background:var(--card2);border:1px solid var(--stroke);margin:10px 0;color:var(--sub)}
+.dep b{color:var(--text);font-weight:600}
+.dep .go{margin-left:auto;color:var(--accent);font-weight:600}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:8px 10px;font-size:12px;margin-top:6px}
+.kv .k{color:var(--faint)}
+.kv .v{font-family:ui-monospace,Menlo,monospace;font-size:11.5px}
+.kv .v.bad{color:var(--bad)} .kv .v.warn{color:var(--warn)} .kv .v.ok{color:var(--ok)}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.fact{background:var(--card);border:1px solid var(--stroke);border-radius:16px;padding:12px 14px}
+.fact .k{font-size:11px;color:var(--faint)} .fact .v{font-size:15px;font-weight:600;margin-top:3px}
+.fact.bad .v{color:var(--bad)} .fact.warn .v{color:var(--warn)} .fact.ok .v{color:var(--ok)}
+.tag{font-size:11px;padding:4px 9px;border-radius:8px;background:var(--card2);border:1px solid var(--stroke);color:var(--sub)}
+.tag.ok{color:var(--ok);border-color:#22a06b44}
 </style>
 <div class="toggle"><button onclick="document.documentElement.classList.toggle('light')">切换深/浅色</button></div>
-<h1>Chroot Console — 设计稿 v1</h1>
-<p class="lede">四个一级 tab + 任务条 + 风险 sheet。这是静态原型，用来判断信息层级和手感，不代表最终像素。手机上也直接打开这个文件看。</p>
+<h1>Chroot Console — 设计稿 v2（层模型）</h1>
+<p class="lede">按"设备 / 系统 / 软件"三层切 tab，左侧自下而上：硬件托着系统，系统托着软件。日志跟着层走，不再单独一个 tab。手机上也直接打开这个文件看。</p>
 
 <div class="frames">
-
-  <!-- 机器 -->
   <div class="frame">
     <div class="phone">
       <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
       <div class="body">
+        <div class="stack">
+          <div class="layer"><span class="dot ok"></span>设备</div>
+          <div class="layer on"><span class="dot ok"></span>系统</div>
+          <div class="layer"><span class="dot warn"></span>软件</div>
+        </div>
+        <div class="card hero">
+          <div class="row"><span class="dot ok"></span><div>
+            <div class="state">运行中</div>
+            <div class="meta">2 小时 13 分 · holder 28471 · loop7</div>
+          </div></div>
+          <div class="actions">
+            <div class="btn primary">停止</div>
+            <div class="btn ghost" style="padding:0 18px">打开 DSH</div>
+          </div>
+        </div>
+        <div class="card suggest">
+          <div class="title">rootfs 只读挂载已生效</div>
+          <div class="sub">检测到 guest 内 /etc 曾指向宿主，已在启动时拒绝并改用干净副本。</div>
+          <div class="act"><span class="chip">看 nsinit 日志</span></div>
+        </div>
+        <div class="card">
+          <div class="spread"><div class="title">快照</div><span class="sub">全部 ›</span></div>
+          <div class="snap"><div><span class="mono">s3</span><span class="badge">last-good</span><div class="sub">今天 11:05</div></div><span class="chip">恢复</span></div>
+          <div class="snap"><div><span class="mono">s2</span><div class="sub">昨天 20:12</div></div><span class="chip">恢复</span></div>
+          <div class="snap"><div><span class="mono">s1</span><div class="sub">10-28 09:31</div></div><span class="chip">恢复</span></div>
+        </div>
+        <div class="facts">
+          <div class="fact ok"><div class="k">镜像</div><div class="v">8.0 GB</div></div>
+          <div class="fact ok"><div class="k">loop</div><div class="v">loop7</div></div>
+          <div class="fact ok"><div class="k">rootfs 挂载</div><div class="v">ro ✓</div></div>
+          <div class="fact warn"><div class="k">看门狗</div><div class="v">未启动</div></div>
+        </div>
+        <div class="card">
+          <div class="spread"><div class="title">最近日志</div><span class="sub">全部 ›</span></div>
+          <div class="log" style="margin-top:10px"><span class="d">12:04:12</span> loop7 backed by ubuntu-rootfs
+<span class="w">12:04:13 WARN /data/adb masked inside guest</span>
+12:04:14 starting s6-svscan</div>
+        </div>
+      </div>
+      <div class="tabbar"><div class="tab"><span class="glyph"></span>设备</div><div class="tab on"><span class="glyph"></span>系统</div><div class="tab"><span class="glyph"></span>软件</div><div class="tab"><span class="glyph"></span>设置</div></div>
+    </div>
+    <div class="caption">系统页：状态卡 + 固定主动作 + 建议 + 快照 + 运行时事实（异常项变橙）</div>
+  </div>
+  <div class="frame">
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="body">
+        <div class="stack">
+          <div class="layer"><span class="dot ok"></span>设备</div>
+          <div class="layer"><span class="dot ok"></span>系统</div>
+          <div class="layer on"><span class="dot warn"></span>软件</div>
+        </div>
+        <div class="dep"><span class="dot ok"></span><b>chroot 运行中</b><span>· 健康</span><span class="go">切换 →</span></div>
         <div class="card hero">
           <div class="spread">
-            <div class="row"><span class="dot ok"></span><div>
-              <div class="state">运行中</div>
-              <div class="meta">2 小时 13 分 · holder 28471 · loop7</div>
-            </div></div>
+            <div><div class="state" style="font-size:22px">DSH 0.3.4</div>
+              <div class="meta">运行 41 分 · 权限预设 approval-guard</div></div>
+            <span class="tag ok">健康</span>
           </div>
-          <div class="actions">
-            <div class="btn primary">打开 DSH</div>
-            <div class="btn ghost" style="padding:0 18px">停止</div>
-          </div>
+          <div class="actions"><div class="btn primary">打开 DSH</div><div class="btn ghost" style="padding:0 16px">重启</div></div>
         </div>
-
         <div class="card">
-          <div class="spread">
-            <div>
-              <div class="title">DSH 0.3.4</div>
-              <div class="sub mono">127.0.0.1:7421 · hooks full · ttyd 关</div>
-            </div>
-            <div class="chip">复制</div>
-          </div>
+          <div class="spread"><div><div class="title mono" style="font-size:13px">http://127.0.0.1:7421</div>
+            <div class="sub">只监听本机回环</div></div><span class="chip">复制</span></div>
+          <div class="row" style="gap:8px;margin-top:12px"><span class="tag">hooks: full</span><span class="tag">ttyd: 关</span><span class="tag">端口 7421</span></div>
         </div>
-
-        <div class="card suggest">
-          <div class="title">loop 记录与内核不一致</div>
-          <div class="sub">上次 stop 时 loop7 未释放。启动前建议先清理，否则会拒绝启动。</div>
-          <div class="act"><span class="chip">释放 loop</span><span class="chip">看日志</span></div>
-        </div>
-
-        <div class="metrics">
-          <div class="metric"><div class="k">镜像</div><div class="v">8.0<small>GB</small></div></div>
-          <div class="metric"><div class="k">快照</div><div class="v">3<small>个 · 6.1GB</small></div></div>
-          <div class="metric"><div class="k">剩余空间</div><div class="v">41<small>GB</small></div></div>
-          <div class="metric"><div class="k">看门狗</div><div class="v" style="color:var(--ok)">在跑</div></div>
-        </div>
-
         <div class="card">
-          <div class="title">最近操作</div>
-          <ul class="tl">
-            <li><time>14:02</time><span>启动成功 · 52s</span></li>
-            <li><time>13:40</time><span>恢复快照 s2 · 18s</span></li>
-            <li><time>11:05</time><span>创建快照 s3 · 9s</span></li>
-          </ul>
+          <div class="title">健康检查</div>
+          <div class="kv"><div class="k">最近探活</div><div class="v ok">200 · 84ms</div>
+            <div class="k">连续失败</div><div class="v">0</div>
+            <div class="k">启动耗时</div><div class="v">6.2s</div></div>
+        </div>
+        <div class="card">
+          <div class="spread"><div class="title">dsh.log</div><span class="sub">全部 ›</span></div>
+          <div class="log" style="margin-top:10px">12:04:15 dsh-run: hooks mode=full
+12:04:16 listening on 127.0.0.1:7421
+<span class="w">12:04:16 WARN ttyd disabled by config</span></div>
         </div>
       </div>
-      <div class="tabbar">
-        <div class="tab on"><span class="glyph"></span>机器</div>
-        <div class="tab"><span class="glyph"></span>数据</div>
-        <div class="tab"><span class="glyph"></span>日志</div>
-        <div class="tab"><span class="glyph"></span>设置</div>
-      </div>
+      <div class="tabbar"><div class="tab"><span class="glyph"></span>设备</div><div class="tab"><span class="glyph"></span>系统</div><div class="tab on"><span class="glyph"></span>软件</div><div class="tab"><span class="glyph"></span>设置</div></div>
     </div>
-    <div class="caption">机器页：主按钮固定、状态一眼可读、建议与指标都在首屏</div>
+    <div class="caption">软件页：顶部依赖条说明"下层是否健康"，地址/模式/健康/日志都在这一页</div>
   </div>
-
-  <!-- 数据 -->
   <div class="frame">
     <div class="phone">
       <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
       <div class="body">
-        <div class="card">
-          <div class="spread"><div class="title">磁盘构成</div><div class="sub">共 64GB · 已用 23GB</div></div>
-          <div class="bar">
-            <i style="width:34%;background:var(--accent)"></i>
-            <i style="width:26%;background:#8B7BFF"></i>
-            <i style="width:14%;background:#3FBFB0"></i>
-            <i style="width:8%;background:var(--warn)"></i>
-          </div>
-          <div class="legend">
-            <span><b>镜像</b> 8.0GB</span><span><b>快照</b> 6.1GB</span>
-            <span><b>state</b> 3.2GB</span><span><b>workspace</b> 1.9GB</span>
-          </div>
+        <div class="stack">
+          <div class="layer on"><span class="dot ok"></span>设备</div>
+          <div class="layer"><span class="dot ok"></span>系统</div>
+          <div class="layer"><span class="dot warn"></span>软件</div>
         </div>
-
+        <div class="card">
+          <div class="spread"><div class="title">这台机器</div><span class="chip">复制</span></div>
+          <div class="kv"><div class="k">机型</div><div class="v">PJZ110</div>
+            <div class="k">系统</div><div class="v">Android 15 · API 35</div>
+            <div class="k">内核</div><div class="v">6.6.66-android15</div>
+            <div class="k">Root</div><div class="v">KernelSU 1.x</div>
+            <div class="k">模块</div><div class="v">chroot 0.2.3</div></div>
+        </div>
+        <div class="card">
+          <div class="spread"><div class="title">磁盘构成</div><div class="sub">已用 23 / 64 GB</div></div>
+          <div class="bar"><i style="width:34%;background:var(--accent)"></i><i style="width:26%;background:#8B7BFF"></i>
+            <i style="width:14%;background:#3FBFB0"></i><i style="width:8%;background:var(--warn)"></i></div>
+          <div class="legend"><span><b>镜像</b> 8.0GB</span><span><b>快照</b> 6.1GB</span>
+            <span><b>state</b> 3.2GB</span><span><b>workspace</b> 1.9GB</span></div>
+        </div>
         <div class="card">
           <div class="title">镜像</div>
-          <div class="sub mono">/data/media/0/ubuntu-rootfs · 8.0GB · 10-30 21:14</div>
-          <div class="act" style="margin-top:12px;display:flex;gap:8px">
-            <span class="chip">替换镜像</span><span class="chip">校验</span>
-          </div>
+          <div class="kv"><div class="k">路径</div><div class="v">/data/media/0/ubuntu-rootfs</div>
+            <div class="k">大小</div><div class="v">8.0 GB · 稀疏 5.2 GB</div>
+            <div class="k">修改时间</div><div class="v">10-30 21:14</div>
+            <div class="k">占用状态</div><div class="v ok">loop7 正在使用</div></div>
+          <div class="act" style="margin-top:12px;display:flex;gap:8px"><span class="chip">替换镜像</span><span class="chip">校验</span></div>
         </div>
-
-        <div class="card">
-          <div class="title">快照</div>
-          <div class="snap"><div><span class="mono">s3</span><span class="badge">last-good</span><div class="sub">2.1GB · 今天 11:05</div></div>
-            <div class="row"><span class="chip">恢复</span></div></div>
-          <div class="snap"><div><span class="mono">s2</span><div class="sub">2.0GB · 昨天 20:12</div></div>
-            <div class="row"><span class="chip">恢复</span><span class="chip">删除</span></div></div>
-          <div class="snap"><div><span class="mono">s1</span><div class="sub">2.0GB · 10-28 09:31</div></div>
-            <div class="row"><span class="chip">恢复</span><span class="chip">删除</span></div></div>
-        </div>
-
         <div class="card">
           <div class="title">关键路径</div>
-          <div class="sub mono" style="margin-top:6px">/data/adb/chroot/state<br>/data/adb/chroot/workspace<br>/data/adb/chroot/logs</div>
+          <div class="kv"><div class="k">state</div><div class="v">/data/adb/chroot/state</div>
+            <div class="k">workspace</div><div class="v">/data/adb/chroot/workspace</div>
+            <div class="k">日志</div><div class="v">/data/adb/chroot/logs</div></div>
         </div>
       </div>
-      <div class="tabbar">
-        <div class="tab"><span class="glyph"></span>机器</div>
-        <div class="tab on"><span class="glyph"></span>数据</div>
-        <div class="tab"><span class="glyph"></span>日志</div>
-        <div class="tab"><span class="glyph"></span>设置</div>
-      </div>
+      <div class="tabbar"><div class="tab on"><span class="glyph"></span>设备</div><div class="tab"><span class="glyph"></span>系统</div><div class="tab"><span class="glyph"></span>软件</div><div class="tab"><span class="glyph"></span>设置</div></div>
     </div>
-    <div class="caption">数据页：一眼看出谁在占空间；快照恢复/删除就在行内</div>
+    <div class="caption">设备页：排障头（机型/内核/KSU）+ 磁盘构成 + 镜像 + 路径</div>
   </div>
-
-  <!-- 日志 -->
-  <div class="frame">
-    <div class="phone">
-      <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
-      <div class="body">
-        <div class="seg">
-          <span class="chip on">全部</span><span class="chip">nsinit</span><span class="chip">DSH</span>
-          <span class="chip">boot</span><span class="chip">看门狗</span>
-        </div>
-        <div class="srch">搜索关键字…</div>
-        <div class="row" style="justify-content:space-between;margin:4px 2px 8px">
-          <span class="sub">跟随最新</span><span class="sw"><i></i></span>
-        </div>
-        <div class="log"><span class="d">== nsinit.log ==</span>
-12:04:11 mounting rootfs ro
-12:04:12 loop7 backed by ubuntu-rootfs
-<span class="w">12:04:13 WARN /data/adb masked inside guest</span>
-12:04:14 starting s6-svscan
-<span class="d">== dsh.log ==</span>
-12:04:15 dsh-run: hooks mode=full
-<span class="e">12:04:31 ERROR health probe timeout (3/3)</span>
-12:04:32 dsh-run: exit 1</div>
-        <div class="card" style="margin-top:12px">
-          <div class="title">定位建议</div>
-          <div class="sub">DSH 起来了但健康检查不通。先看是否端口被占用，再看 hooks patch 是否加载失败。</div>
-          <div class="act" style="margin-top:10px;display:flex;gap:8px">
-            <span class="chip">检查端口</span><span class="chip">导出日志</span>
-          </div>
-        </div>
-      </div>
-      <div class="tabbar">
-        <div class="tab"><span class="glyph"></span>机器</div>
-        <div class="tab"><span class="glyph"></span>数据</div>
-        <div class="tab on"><span class="glyph"></span>日志</div>
-        <div class="tab"><span class="glyph"></span>设置</div>
-      </div>
-    </div>
-    <div class="caption">日志页：分段 + 着色 + 跟随；错误旁边直接给下一步</div>
-  </div>
-
-  <!-- 设置 -->
   <div class="frame">
     <div class="phone">
       <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
       <div class="body">
         <div class="card">
-          <div class="title">行为</div>
+          <div class="title">开机与自愈</div>
           <div class="set"><div><div>开机自启</div><div class="sub">boot 完成后自动启动 chroot</div></div><span class="sw"><i></i></span></div>
           <div class="set"><div><div>看门狗</div><div class="sub">异常时自动恢复并记录原因</div></div><span class="sw"><i></i></span></div>
-          <div class="set"><div><div>允许外部访问 DSH</div><div class="sub">默认只监听 127.0.0.1</div></div><span class="sw off"><i></i></span></div>
+          <div class="set"><div><div>恢复后强制只读</div><div class="sub">回滚到 last-good 后先只读挂载检查</div></div><span class="sw off"><i></i></span></div>
         </div>
         <div class="card">
-          <div class="title">危险操作</div>
-          <div class="set"><div><div>确认策略</div><div class="sub">R0 不打扰 · R1 行内 · R3 半屏滑动</div></div><span class="chip">默认</span></div>
-          <div class="set"><div><div>system-rw</div><div class="sub">把 /system 重挂为可写，重启失效</div></div><span class="chip">执行</span></div>
+          <div class="title">访问与确认</div>
+          <div class="set"><div><div>允许外部访问 DSH</div><div class="sub">默认只监听 127.0.0.1</div></div><span class="sw off"><i></i></span></div>
+          <div class="set"><div><div>危险操作确认</div><div class="sub">R0 不打扰 · R1 行内 · R3 半屏滑动</div></div><span class="chip">默认</span></div>
         </div>
         <div class="card">
           <div class="title">关于</div>
-          <div class="set"><div><div>模块</div><div class="sub mono">chroot 0.2.3</div></div><span class="sub">检查更新</span></div>
-          <div class="set"><div><div>控制台</div><div class="sub mono">0.3.0 (12)</div></div><span class="sub">›</span></div>
+          <div class="set"><div><div>模块版本</div><div class="sub mono">chroot 0.2.3</div></div><span class="sub">检查更新</span></div>
+          <div class="set"><div><div>控制台版本</div><div class="sub mono">0.3.0 (12)</div></div><span class="sub">›</span></div>
+          <div class="set"><div><div>设计稿</div><div class="sub">console-design.md v2</div></div><span class="sub">›</span></div>
         </div>
       </div>
-      <div class="tabbar">
-        <div class="tab"><span class="glyph"></span>机器</div>
-        <div class="tab"><span class="glyph"></span>数据</div>
-        <div class="tab"><span class="glyph"></span>日志</div>
-        <div class="tab on"><span class="glyph"></span>设置</div>
-      </div>
+      <div class="tabbar"><div class="tab"><span class="glyph"></span>设备</div><div class="tab"><span class="glyph"></span>系统</div><div class="tab"><span class="glyph"></span>软件</div><div class="tab on"><span class="glyph"></span>设置</div></div>
     </div>
-    <div class="caption">设置页：开关带一句"这会发生什么"，不写空泛名词</div>
+    <div class="caption">设置页：跨层开关，每个开关带一句"会发生什么"</div>
   </div>
-
-  <!-- 任务条 + 风险 sheet -->
   <div class="frame">
     <div class="phone">
       <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
       <div class="body">
-        <div class="card hero" style="opacity:.55">
+        <div class="card hero" style="opacity:.5">
           <div class="row"><span class="dot warn"></span><div>
             <div class="state">已停止</div>
-            <div class="meta">loop7 仍被占用 · 上次 13:41 停止未清理</div>
+            <div class="meta">loop7 仍被占用 · 上次停止未清理</div>
           </div></div>
           <div class="actions"><div class="btn primary">启动</div><div class="btn ghost" style="padding:0 18px">体检</div></div>
-        </div>
-      </div>
-      <div class="taskbar">
-        <span class="spin"></span>
+        </div></div>
+      <div class="taskbar"><span class="spin"></span>
         <div style="flex:1"><div class="title" style="font-size:13px">启动中… 正在挂载 rootfs</div>
-          <div class="sub">已 12 秒 · 点这里看步骤</div></div>
-        <span style="color:var(--faint)">×</span>
-      </div>
+          <div class="sub">已 12 秒 · 点这里看步骤</div></div><span style="color:var(--faint)">×</span></div>
       <div class="scrim"></div>
       <div class="sheet">
         <div class="grab"></div>
         <div class="spread"><div class="title" style="font-size:17px">释放被占用的 loop7</div><div class="chip">R3</div></div>
-        <div class="sect"><div class="k">是什么</div><div class="sub">把内核里 loop7 设备拆掉，不动镜像文件本身。</div></div>
+        <div class="sect"><div class="k">是什么</div><div class="sub">把内核里的 loop7 拆掉，不动镜像文件本身。</div></div>
         <div class="sect"><div class="k">什么时候用</div><div class="sub">上次停止没清理干净、启动被拒绝时。</div></div>
         <div class="sect"><div class="k">可能的后果</div><div class="sub">若仍有进程在使用该镜像，正在写的数据会丢失。</div></div>
-        <div class="sect"><div class="k">怎么恢复</div><div class="sub">重新启动即可再次挂载；镜像内容不受影响。</div></div>
+        <div class="sect"><div class="k">怎么恢复</div><div class="sub">重新启动即可再次挂载，镜像内容不受影响。</div></div>
         <div class="slide">→ 向右滑动执行</div>
       </div>
     </div>
