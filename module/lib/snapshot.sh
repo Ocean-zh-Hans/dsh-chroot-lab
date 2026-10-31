@@ -379,6 +379,31 @@ dsh_snapshot_promote() {
 }
 
 dsh_snapshot_list() {
+  _json=0
+  case ${1:-} in
+  --json) _json=1 ;;
+  esac
+  _good=$(dsh_read_line "$DSH_LAST_GOOD_FILE" 2>/dev/null || true)
+  if [ "$_json" -eq 1 ]; then
+    printf '{"last_good":"%s","snapshots":[' "$(dsh_json_escape "$_good")"
+    _first=1
+    for _img in "$DSH_IMAGE_SNAPSHOT_DIR"/rootfs-*.img; do
+      [ -f "$_img" ] || continue
+      _name=${_img##*/rootfs-}
+      _name=${_name%.img}
+      _bytes=$(stat -c %s "$_img" 2>/dev/null || printf 0)
+      _mtime=$(date -r "$_img" '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || true)
+      [ "$_first" -eq 1 ] || printf ','
+      _first=0
+      printf '{"name":"%s","file":"%s","bytes":%s,"created":"%s","last_good":%s}' \
+        "$(dsh_json_escape "$_name")" "$(dsh_json_escape "$_img")" \
+        "$(dsh_is_uint "$_bytes" && printf '%s' "$_bytes" || printf 0)" \
+        "$(dsh_json_escape "$_mtime")" \
+        "$([ "$_name" = "$_good" ] && printf true || printf false)"
+    done
+    printf ']}\n'
+    return 0
+  fi
   printf 'image snapshots: %s\n' "$DSH_IMAGE_SNAPSHOT_DIR"
   if [ -d "$DSH_IMAGE_SNAPSHOT_DIR" ]; then
     ls -1t "$DSH_IMAGE_SNAPSHOT_DIR"/rootfs-*.img 2>/dev/null || true
@@ -387,7 +412,7 @@ dsh_snapshot_list() {
   if [ -d "$DSH_SNAPSHOT_DIR" ]; then
     ls -1t "$DSH_SNAPSHOT_DIR"/state-*.tar.gz 2>/dev/null || true
   fi
-  printf 'last-good: %s\n' "$(dsh_read_line "$DSH_LAST_GOOD_FILE" 2>/dev/null || printf none)"
+  printf 'last-good: %s\n' "${_good:-none}"
 }
 
 dsh_snapshot_state_rollback() {

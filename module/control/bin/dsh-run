@@ -166,7 +166,9 @@ dsh_run_hooks_prepare || {
 # mcp-phone is part of the module install and must not depend on the
 # audit-hook plugins being present. Apply the runtime overlay unconditionally;
 # the audit/permission hook patch is layered on top only when available.
-set -- web --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open
+# Launcher options must precede app arguments: "dsh web ... --patch" is parsed
+# by the web app and rejected. --patch is a launcher flag (repeatable).
+set -- --profile web
 if [ -f "$DSH_RUNTIME_PATCH" ]; then
   set -- "$@" --patch "$DSH_RUNTIME_PATCH"
 else
@@ -175,6 +177,7 @@ fi
 if [ -n "$_hooks_selected" ]; then
   set -- "$@" --patch "$_hooks_selected"
 fi
+set -- "$@" --host 127.0.0.1 --port "$DSH_WEB_PORT" --no-open
 "$DSH_BIN" "$@" >>"$LOG" 2>&1 &
 CHILD=$!
 

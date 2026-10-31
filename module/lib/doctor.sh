@@ -6,20 +6,27 @@ DSH_DOC_PASS=0
 DSH_DOC_WARN=0
 DSH_DOC_FAIL=0
 DSH_DOC_STRICT=0
+DSH_DOC_JSON=${DSH_DOC_JSON:-0}
+DSH_DOC_JSON_FILE=${DSH_DOC_JSON_FILE:-}
+
+dsh_doc_record() {
+  [ "$DSH_DOC_JSON" -eq 1 ] && [ -n "$DSH_DOC_JSON_FILE" ] || return 0
+  printf '%s\t%s\n' "$1" "$(printf '%s' "$2" | tr '\n\t' '  ')" >>"$DSH_DOC_JSON_FILE"
+}
 
 dsh_doc_pass() {
   DSH_DOC_PASS=$((DSH_DOC_PASS + 1))
-  printf '[PASS] %s\n' "$*"
+  if [ "$DSH_DOC_JSON" -eq 1 ]; then dsh_doc_record PASS "$*"; else printf '[PASS] %s\n' "$*"; fi
 }
 
 dsh_doc_warn() {
   DSH_DOC_WARN=$((DSH_DOC_WARN + 1))
-  printf '[WARN] %s\n' "$*"
+  if [ "$DSH_DOC_JSON" -eq 1 ]; then dsh_doc_record WARN "$*"; else printf '[WARN] %s\n' "$*"; fi
 }
 
 dsh_doc_fail() {
   DSH_DOC_FAIL=$((DSH_DOC_FAIL + 1))
-  printf '[FAIL] %s\n' "$*"
+  if [ "$DSH_DOC_JSON" -eq 1 ]; then dsh_doc_record FAIL "$*"; else printf '[FAIL] %s\n' "$*"; fi
 }
 
 dsh_doc_required() {
@@ -402,6 +409,7 @@ dsh_doctor_run() {
   for _arg in "$@"; do
     case $_arg in
     --for-apply) DSH_DOC_STRICT=1 ;;
+    --json) DSH_DOC_JSON=1 ;;
     --image-source=*) DSH_DOC_IMAGE=${_arg#--image-source=} ;;
     -h | --help)
       dsh_doctor_help
@@ -414,13 +422,17 @@ dsh_doctor_run() {
     esac
   done
 
-  printf 'DSH Ubuntu Chroot doctor %s\n' "$DSH_VERSION"
-  if [ "$DSH_DOC_STRICT" -eq 1 ]; then
-    printf 'Mode: apply-readiness (missing apply dependencies are FAIL)\n'
+  if [ "$DSH_DOC_JSON" -eq 1 ]; then
+    DSH_DOC_JSON_FILE=$(mktemp "${TMPDIR:-/tmp}/dsh-doctor-json.XXXXXX") || return 2
   else
-    printf 'Mode: static/read-only (missing apply dependencies are WARN)\n'
+    printf 'DSH Ubuntu Chroot doctor %s\n' "$DSH_VERSION"
+    if [ "$DSH_DOC_STRICT" -eq 1 ]; then
+      printf 'Mode: apply-readiness (missing apply dependencies are FAIL)\n'
+    else
+      printf 'Mode: static/read-only (missing apply dependencies are WARN)\n'
+    fi
+    printf 'Device root: %s\n\n' "$DSH_ROOT"
   fi
-  printf 'Device root: %s\n\n' "$DSH_ROOT"
 
   dsh_config_check_paths || dsh_doc_fail "configuration paths are invalid"
   dsh_doc_check_root
@@ -435,7 +447,20 @@ dsh_doctor_run() {
   dsh_doc_check_guest
   dsh_doc_check_ksu
 
-  printf '\nSummary: %d pass, %d warn, %d fail\n' "$DSH_DOC_PASS" "$DSH_DOC_WARN" "$DSH_DOC_FAIL"
+  if [ "$DSH_DOC_JSON" -eq 1 ]; then
+    printf '{"summary":{"pass":%d,"warn":%d,"fail":%d},"checks":[' "$DSH_DOC_PASS" "$DSH_DOC_WARN" "$DSH_DOC_FAIL"
+    _doc_first=1
+    while IFS="$(printf '\t')" read -r _doc_lvl _doc_msg; do
+      [ -n "$_doc_lvl" ] || continue
+      [ "$_doc_first" -eq 1 ] || printf ','
+      _doc_first=0
+      printf '{"level":"%s","message":"%s"}' "$_doc_lvl" "$(dsh_json_escape "$_doc_msg")"
+    done <"$DSH_DOC_JSON_FILE"
+    printf ']}\n'
+    rm -f "$DSH_DOC_JSON_FILE"
+  else
+    printf '\nSummary: %d pass, %d warn, %d fail\n' "$DSH_DOC_PASS" "$DSH_DOC_WARN" "$DSH_DOC_FAIL"
+  fi
   if [ "$DSH_DOC_FAIL" -gt 0 ]; then
     return 4
   fi
@@ -450,6 +475,7 @@ Checks never mount, unshare, or change Android state. A temporary executable
 probe is created and removed under DSH_TMP.
 
   --for-apply       treat missing apply dependencies as FAIL
+  --json            emit machine-readable JSON (summary + checks)
   --image-source    inspect this image for installation, not an existing target
 EOF
 }

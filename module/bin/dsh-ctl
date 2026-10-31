@@ -35,6 +35,7 @@ Read-only:
   doctor [--for-apply]   environment checks
   plan [--check]         print mount/lifecycle plan; never executes
   status [--json]        holder/status check
+  paths [--json]         key path locations and sizes
   config                 resolved paths/knobs
   risk issue|check|status issue a one-time R2/R3/R4 token, dry-run gate, or inspect tokens
 
@@ -114,8 +115,15 @@ _image-claimed)
 help | -h | --help)
   dsh_usage
   ;;
+paths)
+  dsh_paths_run "$@"
+  ;;
 version | -V | --version)
-  printf '%s %s\n' "$DSH_PROG" "$DSH_VERSION"
+  if [ "${1:-}" = --json ]; then
+    dsh_version_run --json
+  else
+    printf '%s %s\n' "$DSH_PROG" "$DSH_VERSION"
+  fi
   ;;
 doctor)
   dsh_doctor_run "$@"
@@ -172,7 +180,7 @@ snapshot)
   if [ "$#" -gt 0 ]; then shift; fi
   case $_sub in
   create) dsh_snapshot_create "$@" ;;
-  list) dsh_snapshot_list ;;
+  list) shift; dsh_snapshot_list "$@" ;;
   restore) dsh_snapshot_restore "$@" ;;
   restore-last-good) dsh_snapshot_restore_last_good "$@" ;;
   promote) dsh_snapshot_promote "$@" ;;
