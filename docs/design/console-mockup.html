@@ -1,0 +1,324 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chroot Console — 设计稿 v1 静态原型</title>
+<style>
+:root{
+  --bg:#070B10; --bg2:#0C141C; --card:#121B24; --card2:#16202B; --stroke:#FFFFFF14;
+  --text:#F2F5F8; --sub:#9AA6B2; --faint:#6B7885; --accent:#5C9DFF;
+  --ok:#22A06B; --warn:#FF9F0A; --bad:#E5484D; --radius:22px;
+}
+html.light{
+  --bg:#F2F6FC; --bg2:#E8EFF8; --card:#FFFFFF; --card2:#F6F9FF; --stroke:#0B1B3310;
+  --text:#0B1B2B; --sub:#5C6B7A; --faint:#93A0AD; --accent:#3482FF;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:32px 20px 64px;background:linear-gradient(180deg,var(--bg),var(--bg2));
+  color:var(--text);font:14px/1.45 -apple-system,"Noto Sans SC","PingFang SC",system-ui,sans-serif}
+h1{font-size:20px;font-weight:650;margin:0 0 4px}
+.lede{color:var(--sub);font-size:13px;margin:0 0 24px;max-width:900px}
+.frames{display:flex;gap:28px;overflow-x:auto;padding-bottom:12px;align-items:flex-start}
+.frame{flex:0 0 auto;width:390px}
+.caption{font-size:12px;color:var(--faint);margin:10px 2px 0;letter-spacing:.02em}
+.phone{width:390px;height:844px;border-radius:38px;background:var(--bg);border:1px solid var(--stroke);
+  overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 24px 60px #0008}
+.statusbar{height:38px;display:flex;justify-content:space-between;align-items:center;padding:0 20px;
+  font-size:12px;color:var(--sub);flex:0 0 auto}
+.body{flex:1;overflow:hidden;padding:4px 16px 8px}
+.tabbar{height:64px;flex:0 0 auto;display:flex;border-top:1px solid var(--stroke);background:var(--card);
+  padding-bottom:6px}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:11px;color:var(--faint)}
+.tab.on{color:var(--accent)}
+.glyph{width:20px;height:20px;border:1.6px solid currentColor;border-radius:6px;opacity:.9}
+.card{background:var(--card);border:1px solid var(--stroke);border-radius:var(--radius);padding:18px;margin:10px 0}
+.hero{padding:20px 18px 16px}
+.row{display:flex;align-items:center;gap:10px}
+.spread{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.dot.ok{background:var(--ok);box-shadow:0 0 0 4px #22a06b22}
+.dot.bad{background:var(--bad);box-shadow:0 0 0 4px #e5484d22}
+.dot.warn{background:var(--warn);box-shadow:0 0 0 4px #ff9f0a22}
+.dot.off{background:var(--faint)}
+.state{font-size:28px;font-weight:650;letter-spacing:-.01em}
+.meta{font-size:13px;color:var(--sub);margin-top:6px}
+.btn{display:flex;align-items:center;justify-content:center;border-radius:16px;height:52px;
+  font-size:16px;font-weight:600;border:1px solid transparent}
+.btn.primary{background:var(--accent);color:#04121F}
+.btn.ghost{background:transparent;border-color:var(--stroke);color:var(--text);height:44px;font-size:14px;font-weight:500}
+.btn.danger{background:transparent;border-color:#e5484d55;color:var(--bad)}
+.actions{display:flex;gap:10px;margin-top:18px}
+.actions .btn.primary{flex:1}
+.title{font-size:15px;font-weight:600;margin:0 0 2px}
+.sub{font-size:12px;color:var(--sub)}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--stroke);border-radius:var(--radius);overflow:hidden;margin:10px 0}
+.metric{background:var(--card);padding:14px 16px}
+.metric .k{font-size:11px;color:var(--faint)}
+.metric .v{font-size:19px;font-weight:600;margin-top:4px;letter-spacing:-.01em}
+.metric .v small{font-size:12px;color:var(--sub);font-weight:400;margin-left:3px}
+.suggest{border-left:3px solid var(--warn)}
+.suggest .act{margin-top:10px;display:flex;gap:8px}
+.chip{border:1px solid var(--stroke);border-radius:999px;padding:6px 12px;font-size:12px;color:var(--text)}
+.chip.on{background:var(--accent);color:#04121F;border-color:transparent;font-weight:600}
+.tl{list-style:none;margin:6px 0 0;padding:0}
+.tl li{display:flex;gap:10px;font-size:12px;color:var(--sub);padding:7px 0;border-bottom:1px solid var(--stroke)}
+.tl li:last-child{border:0}
+.tl time{color:var(--faint);font-variant-numeric:tabular-nums;flex:0 0 44px}
+.seg{display:flex;gap:6px;margin:12px 0 6px;overflow:hidden}
+.bar{height:14px;border-radius:7px;overflow:hidden;display:flex;margin:12px 0 10px;background:var(--card2)}
+.bar i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--sub)}
+.legend b{font-weight:600;color:var(--text)}
+.snap{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--stroke)}
+.snap:last-child{border:0}
+.badge{font-size:10px;padding:2px 7px;border-radius:999px;background:#22a06b22;color:var(--ok);margin-left:8px;vertical-align:1px}
+.log{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.65;white-space:pre-wrap;
+  background:var(--card2);border-radius:14px;padding:12px;border:1px solid var(--stroke)}
+.log .e{color:var(--bad)} .log .w{color:var(--warn)} .log .d{color:var(--faint)}
+.srch{height:40px;border-radius:12px;background:var(--card2);border:1px solid var(--stroke);
+  display:flex;align-items:center;padding:0 12px;color:var(--faint);font-size:13px;margin:12px 0}
+.set{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--stroke)}
+.set:last-child{border:0}
+.sw{width:44px;height:26px;border-radius:999px;background:var(--accent);position:relative;flex:0 0 auto}
+.sw i{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:#fff}
+.sw.off{background:#ffffff22}.sw.off i{right:auto;left:3px}
+.taskbar{position:absolute;left:12px;right:12px;top:44px;background:var(--card2);border:1px solid var(--stroke);
+  border-radius:16px;padding:12px 14px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 30px #0006}
+.spin{width:16px;height:16px;border-radius:50%;border:2px solid #5c9dff33;border-top-color:var(--accent)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:26px 26px 0 0;
+  border-top:1px solid var(--stroke);padding:10px 18px 22px;box-shadow:0 -20px 50px #0009}
+.grab{width:36px;height:4px;border-radius:2px;background:var(--faint);margin:6px auto 14px;opacity:.5}
+.sect{margin:10px 0}
+.sect .k{font-size:11px;color:var(--faint);letter-spacing:.04em;margin-bottom:3px}
+.slide{height:52px;border-radius:16px;background:#e5484d18;border:1px solid #e5484d55;color:var(--bad);
+  display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;margin-top:14px}
+.scrim{position:absolute;inset:0;background:#0009}
+.toggle{position:fixed;right:20px;top:20px;z-index:9}
+.toggle button{background:var(--card);color:var(--text);border:1px solid var(--stroke);border-radius:999px;
+  padding:8px 14px;font-size:12px;cursor:pointer}
+</style>
+<div class="toggle"><button onclick="document.documentElement.classList.toggle('light')">切换深/浅色</button></div>
+<h1>Chroot Console — 设计稿 v1</h1>
+<p class="lede">四个一级 tab + 任务条 + 风险 sheet。这是静态原型，用来判断信息层级和手感，不代表最终像素。手机上也直接打开这个文件看。</p>
+
+<div class="frames">
+
+  <!-- 机器 -->
+  <div class="frame">
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="body">
+        <div class="card hero">
+          <div class="spread">
+            <div class="row"><span class="dot ok"></span><div>
+              <div class="state">运行中</div>
+              <div class="meta">2 小时 13 分 · holder 28471 · loop7</div>
+            </div></div>
+          </div>
+          <div class="actions">
+            <div class="btn primary">打开 DSH</div>
+            <div class="btn ghost" style="padding:0 18px">停止</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="spread">
+            <div>
+              <div class="title">DSH 0.3.4</div>
+              <div class="sub mono">127.0.0.1:7421 · hooks full · ttyd 关</div>
+            </div>
+            <div class="chip">复制</div>
+          </div>
+        </div>
+
+        <div class="card suggest">
+          <div class="title">loop 记录与内核不一致</div>
+          <div class="sub">上次 stop 时 loop7 未释放。启动前建议先清理，否则会拒绝启动。</div>
+          <div class="act"><span class="chip">释放 loop</span><span class="chip">看日志</span></div>
+        </div>
+
+        <div class="metrics">
+          <div class="metric"><div class="k">镜像</div><div class="v">8.0<small>GB</small></div></div>
+          <div class="metric"><div class="k">快照</div><div class="v">3<small>个 · 6.1GB</small></div></div>
+          <div class="metric"><div class="k">剩余空间</div><div class="v">41<small>GB</small></div></div>
+          <div class="metric"><div class="k">看门狗</div><div class="v" style="color:var(--ok)">在跑</div></div>
+        </div>
+
+        <div class="card">
+          <div class="title">最近操作</div>
+          <ul class="tl">
+            <li><time>14:02</time><span>启动成功 · 52s</span></li>
+            <li><time>13:40</time><span>恢复快照 s2 · 18s</span></li>
+            <li><time>11:05</time><span>创建快照 s3 · 9s</span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab on"><span class="glyph"></span>机器</div>
+        <div class="tab"><span class="glyph"></span>数据</div>
+        <div class="tab"><span class="glyph"></span>日志</div>
+        <div class="tab"><span class="glyph"></span>设置</div>
+      </div>
+    </div>
+    <div class="caption">机器页：主按钮固定、状态一眼可读、建议与指标都在首屏</div>
+  </div>
+
+  <!-- 数据 -->
+  <div class="frame">
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="body">
+        <div class="card">
+          <div class="spread"><div class="title">磁盘构成</div><div class="sub">共 64GB · 已用 23GB</div></div>
+          <div class="bar">
+            <i style="width:34%;background:var(--accent)"></i>
+            <i style="width:26%;background:#8B7BFF"></i>
+            <i style="width:14%;background:#3FBFB0"></i>
+            <i style="width:8%;background:var(--warn)"></i>
+          </div>
+          <div class="legend">
+            <span><b>镜像</b> 8.0GB</span><span><b>快照</b> 6.1GB</span>
+            <span><b>state</b> 3.2GB</span><span><b>workspace</b> 1.9GB</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="title">镜像</div>
+          <div class="sub mono">/data/media/0/ubuntu-rootfs · 8.0GB · 10-30 21:14</div>
+          <div class="act" style="margin-top:12px;display:flex;gap:8px">
+            <span class="chip">替换镜像</span><span class="chip">校验</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="title">快照</div>
+          <div class="snap"><div><span class="mono">s3</span><span class="badge">last-good</span><div class="sub">2.1GB · 今天 11:05</div></div>
+            <div class="row"><span class="chip">恢复</span></div></div>
+          <div class="snap"><div><span class="mono">s2</span><div class="sub">2.0GB · 昨天 20:12</div></div>
+            <div class="row"><span class="chip">恢复</span><span class="chip">删除</span></div></div>
+          <div class="snap"><div><span class="mono">s1</span><div class="sub">2.0GB · 10-28 09:31</div></div>
+            <div class="row"><span class="chip">恢复</span><span class="chip">删除</span></div></div>
+        </div>
+
+        <div class="card">
+          <div class="title">关键路径</div>
+          <div class="sub mono" style="margin-top:6px">/data/adb/chroot/state<br>/data/adb/chroot/workspace<br>/data/adb/chroot/logs</div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><span class="glyph"></span>机器</div>
+        <div class="tab on"><span class="glyph"></span>数据</div>
+        <div class="tab"><span class="glyph"></span>日志</div>
+        <div class="tab"><span class="glyph"></span>设置</div>
+      </div>
+    </div>
+    <div class="caption">数据页：一眼看出谁在占空间；快照恢复/删除就在行内</div>
+  </div>
+
+  <!-- 日志 -->
+  <div class="frame">
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="body">
+        <div class="seg">
+          <span class="chip on">全部</span><span class="chip">nsinit</span><span class="chip">DSH</span>
+          <span class="chip">boot</span><span class="chip">看门狗</span>
+        </div>
+        <div class="srch">搜索关键字…</div>
+        <div class="row" style="justify-content:space-between;margin:4px 2px 8px">
+          <span class="sub">跟随最新</span><span class="sw"><i></i></span>
+        </div>
+        <div class="log"><span class="d">== nsinit.log ==</span>
+12:04:11 mounting rootfs ro
+12:04:12 loop7 backed by ubuntu-rootfs
+<span class="w">12:04:13 WARN /data/adb masked inside guest</span>
+12:04:14 starting s6-svscan
+<span class="d">== dsh.log ==</span>
+12:04:15 dsh-run: hooks mode=full
+<span class="e">12:04:31 ERROR health probe timeout (3/3)</span>
+12:04:32 dsh-run: exit 1</div>
+        <div class="card" style="margin-top:12px">
+          <div class="title">定位建议</div>
+          <div class="sub">DSH 起来了但健康检查不通。先看是否端口被占用，再看 hooks patch 是否加载失败。</div>
+          <div class="act" style="margin-top:10px;display:flex;gap:8px">
+            <span class="chip">检查端口</span><span class="chip">导出日志</span>
+          </div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><span class="glyph"></span>机器</div>
+        <div class="tab"><span class="glyph"></span>数据</div>
+        <div class="tab on"><span class="glyph"></span>日志</div>
+        <div class="tab"><span class="glyph"></span>设置</div>
+      </div>
+    </div>
+    <div class="caption">日志页：分段 + 着色 + 跟随；错误旁边直接给下一步</div>
+  </div>
+
+  <!-- 设置 -->
+  <div class="frame">
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="body">
+        <div class="card">
+          <div class="title">行为</div>
+          <div class="set"><div><div>开机自启</div><div class="sub">boot 完成后自动启动 chroot</div></div><span class="sw"><i></i></span></div>
+          <div class="set"><div><div>看门狗</div><div class="sub">异常时自动恢复并记录原因</div></div><span class="sw"><i></i></span></div>
+          <div class="set"><div><div>允许外部访问 DSH</div><div class="sub">默认只监听 127.0.0.1</div></div><span class="sw off"><i></i></span></div>
+        </div>
+        <div class="card">
+          <div class="title">危险操作</div>
+          <div class="set"><div><div>确认策略</div><div class="sub">R0 不打扰 · R1 行内 · R3 半屏滑动</div></div><span class="chip">默认</span></div>
+          <div class="set"><div><div>system-rw</div><div class="sub">把 /system 重挂为可写，重启失效</div></div><span class="chip">执行</span></div>
+        </div>
+        <div class="card">
+          <div class="title">关于</div>
+          <div class="set"><div><div>模块</div><div class="sub mono">chroot 0.2.3</div></div><span class="sub">检查更新</span></div>
+          <div class="set"><div><div>控制台</div><div class="sub mono">0.3.0 (12)</div></div><span class="sub">›</span></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><span class="glyph"></span>机器</div>
+        <div class="tab"><span class="glyph"></span>数据</div>
+        <div class="tab"><span class="glyph"></span>日志</div>
+        <div class="tab on"><span class="glyph"></span>设置</div>
+      </div>
+    </div>
+    <div class="caption">设置页：开关带一句"这会发生什么"，不写空泛名词</div>
+  </div>
+
+  <!-- 任务条 + 风险 sheet -->
+  <div class="frame">
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="body">
+        <div class="card hero" style="opacity:.55">
+          <div class="row"><span class="dot warn"></span><div>
+            <div class="state">已停止</div>
+            <div class="meta">loop7 仍被占用 · 上次 13:41 停止未清理</div>
+          </div></div>
+          <div class="actions"><div class="btn primary">启动</div><div class="btn ghost" style="padding:0 18px">体检</div></div>
+        </div>
+      </div>
+      <div class="taskbar">
+        <span class="spin"></span>
+        <div style="flex:1"><div class="title" style="font-size:13px">启动中… 正在挂载 rootfs</div>
+          <div class="sub">已 12 秒 · 点这里看步骤</div></div>
+        <span style="color:var(--faint)">×</span>
+      </div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="spread"><div class="title" style="font-size:17px">释放被占用的 loop7</div><div class="chip">R3</div></div>
+        <div class="sect"><div class="k">是什么</div><div class="sub">把内核里 loop7 设备拆掉，不动镜像文件本身。</div></div>
+        <div class="sect"><div class="k">什么时候用</div><div class="sub">上次停止没清理干净、启动被拒绝时。</div></div>
+        <div class="sect"><div class="k">可能的后果</div><div class="sub">若仍有进程在使用该镜像，正在写的数据会丢失。</div></div>
+        <div class="sect"><div class="k">怎么恢复</div><div class="sub">重新启动即可再次挂载；镜像内容不受影响。</div></div>
+        <div class="slide">→ 向右滑动执行</div>
+      </div>
+    </div>
+    <div class="caption">慢任务条（可离开）+ R3 风险 sheet（是什么/何时用/后果/恢复 + 滑动确认）</div>
+  </div>
+
+</div>

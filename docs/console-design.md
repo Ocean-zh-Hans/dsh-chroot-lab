@@ -3,6 +3,7 @@
 状态：**设计模式，未实现**。本文是控制台重做的唯一依据；与代码冲突时以本文为准，实现落回之后再把本文标为"已实现"。
 范围：`console-app`（Compose，`dev.chroot.console`）。Agent APK 不在本文范围。
 前置：`plan-v2.md` 的读写模型（R0–R4）、`dsh-ctl` 的只读 JSON 接口。
+静态原型：`docs/design/console-mockup.html`（单文件、无依赖，手机浏览器可直接打开；右上角可切深浅色）。
 
 ---
 
