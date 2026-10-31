@@ -24,7 +24,8 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
   overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 24px 60px #0008}
 .statusbar{height:38px;display:flex;justify-content:space-between;align-items:center;padding:0 20px;
   font-size:12px;color:var(--sub);flex:0 0 auto}
-.body{flex:1;overflow:hidden;padding:4px 16px 8px}
+.body{flex:1;overflow-y:auto;padding:4px 16px 8px;scrollbar-width:none}
+.body::-webkit-scrollbar{display:none}
 .tabbar{height:64px;flex:0 0 auto;display:flex;border-top:1px solid var(--stroke);background:var(--card);
   padding-bottom:6px}
 .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
@@ -158,6 +159,11 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
           <div class="fact warn"><div class="k">看门狗</div><div class="v">未启动</div></div>
         </div>
         <div class="card">
+          <div class="spread"><div class="title">诊断</div><span class="sub">R0</span></div>
+          <div class="sub" style="margin-top:6px">体检全部项、生成一段可复制的诊断包（机型/内核/loop/挂载/最近日志）。</div>
+          <div class="act" style="margin-top:10px;display:flex;gap:8px"><span class="chip">体检</span><span class="chip">复制诊断包</span></div>
+        </div>
+        <div class="card">
           <div class="spread"><div class="title">最近日志</div><span class="sub">全部 ›</span></div>
           <div class="log" style="margin-top:10px"><span class="d">12:04:12</span> loop7 backed by ubuntu-rootfs
 <span class="w">12:04:13 WARN /data/adb masked inside guest</span>
@@ -172,11 +178,6 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
     <div class="phone">
       <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
       <div class="body">
-        <div class="stack">
-          <div class="layer"><span class="dot ok"></span>设备</div>
-          <div class="layer"><span class="dot ok"></span>系统</div>
-          <div class="layer on"><span class="dot warn"></span>软件</div>
-        </div>
         <div class="dep"><span class="dot ok"></span><b>chroot 运行中</b><span>· 健康</span><span class="go">切换 →</span></div>
         <div class="card hero">
           <div class="spread">
@@ -192,21 +193,38 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
           <div class="row" style="gap:8px;margin-top:12px"><span class="tag">hooks: full</span><span class="tag">ttyd: 关</span><span class="tag">端口 7421</span></div>
         </div>
         <div class="card">
-          <div class="title">健康检查</div>
-          <div class="kv"><div class="k">最近探活</div><div class="v ok">200 · 84ms</div>
-            <div class="k">连续失败</div><div class="v">0</div>
-            <div class="k">启动耗时</div><div class="v">6.2s</div></div>
+          <div class="spread"><div class="title">终端</div><span class="sub">guest shell</span></div>
+          <div class="sub" style="margin-top:6px">进 chroot 开交互 shell，带 Tab / Ctrl / 方向键工具条。</div>
+          <div class="act" style="margin-top:10px;display:flex;gap:8px"><span class="chip">打开终端</span><span class="chip">常用命令 ›</span></div>
         </div>
         <div class="card">
-          <div class="spread"><div class="title">dsh.log</div><span class="sub">全部 ›</span></div>
-          <div class="log" style="margin-top:10px">12:04:15 dsh-run: hooks mode=full
+          <div class="spread"><div class="title">版本</div><span class="sub">node 22.11 · pnpm 9.12</span></div>
+          <div class="set"><div><div class="mono">dsh</div><div class="sub">0.3.4 · 可用 0.3.6</div></div><span class="chip">升级</span></div>
+          <div class="set"><div><div class="mono">dsh-hooks-claude-code</div><div class="sub">0.8.1 · 已锁定</div></div><span class="chip">改版本</span></div>
+          <div class="set"><div><div class="mono">dsh-permission-presets</div><div class="sub">0.4.0 · 最新</div></div><span class="chip">改版本</span></div>
+          <div class="set"><div><div>回滚</div><div class="sub">回到上一个 lockfile 时点</div></div><span class="chip">回滚</span></div>
+        </div>
+        <div class="card">
+          <div class="spread"><div class="title">插件</div><span class="sub">3 个启用</span></div>
+          <div class="set"><div><div class="mono">hooks-claude-code</div><div class="sub">full · 审计 + 拦截</div></div><span class="sw"><i></i></span></div>
+          <div class="set"><div><div class="mono">permission-presets</div><div class="sub">approval-guard</div></div><span class="sw"><i></i></span></div>
+          <div class="set"><div><div class="mono">mcp-phone</div><div class="sub">转发 phone.* 到 Agent</div></div><span class="sw"><i></i></span></div>
+          <div class="set"><div><div class="mono">ttyd</div><div class="sub">网页终端 · 当前关闭</div></div><span class="sw off"><i></i></span></div>
+          <div class="act" style="margin-top:12px;display:flex;gap:8px"><span class="chip">安装插件</span></div>
+        </div>
+        <div class="card">
+          <div class="spread"><div class="title">服务与日志</div><span class="sub">全部 ›</span></div>
+          <div class="kv"><div class="k">dsh-run</div><div class="v ok">running · pid 8123</div>
+            <div class="k">探活</div><div class="v ok">200 · 84ms</div>
+            <div class="k">s6 服务</div><div class="v">5/5 up</div></div>
+          <div class="log" style="margin-top:12px">12:04:15 dsh-run: hooks mode=full
 12:04:16 listening on 127.0.0.1:7421
 <span class="w">12:04:16 WARN ttyd disabled by config</span></div>
         </div>
-      </div>
+</div>
       <div class="tabbar"><div class="tab"><span class="glyph"></span>设备</div><div class="tab"><span class="glyph"></span>系统</div><div class="tab on"><span class="glyph"></span>软件</div><div class="tab"><span class="glyph"></span>设置</div></div>
     </div>
-    <div class="caption">软件页：顶部依赖条说明"下层是否健康"，地址/模式/健康/日志都在这一页</div>
+    <div class="caption">软件页：依赖条 + 终端 / 版本升降 / 插件开关 / 服务日志，全部围绕"装了什么、什么版本"</div>
   </div>
   <div class="frame">
     <div class="phone">
