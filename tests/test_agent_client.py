@@ -5,7 +5,17 @@ import threading
 import unittest
 from pathlib import Path
 
-from agent.dsh_agent import AgentClient, AgentError, _request_timeout
+# v2 客户端已归档到 docs/archive/agent-v2/（目录名含连字符无法常规导入），
+# 测试仍保留其线上格式回归；用 importlib 按路径加载。
+import importlib.util as _ilu
+from pathlib import Path as _Path
+_spec = _ilu.spec_from_file_location("dsh_agent", _Path(__file__).resolve().parent.parent / "docs/archive/agent-v2/dsh_agent.py")
+_mod = _ilu.module_from_spec(_spec)
+assert _spec.loader is not None
+_spec.loader.exec_module(_mod)
+AgentClient = _mod.AgentClient
+AgentError = _mod.AgentError
+_request_timeout = _mod._request_timeout
 
 
 class MockAgent:
