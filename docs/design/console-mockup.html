@@ -19,6 +19,7 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
 .lede{color:var(--sub);font-size:13px;margin:0 0 24px;max-width:900px}
 .frames{display:flex;gap:28px;overflow-x:auto;padding-bottom:12px;align-items:flex-start}
 .frame{flex:0 0 auto;width:390px}
+.note{font-size:12px;color:var(--sub);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 14px;line-height:1.5}
 .caption{font-size:12px;color:var(--faint);margin:10px 2px 0;letter-spacing:.02em}
 .phone{width:390px;height:844px;border-radius:38px;background:var(--bg);border:1px solid var(--stroke);
   overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 24px 60px #0008}
@@ -121,7 +122,8 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
 <h1>Chroot Console — 设计稿 v2（层模型）</h1>
 <p class="lede">按"设备 / 系统 / 软件"三层切 tab，左侧自下而上：硬件托着系统，系统托着软件。日志跟着层走，不再单独一个 tab。手机上也直接打开这个文件看。</p>
 
-<div class="frames">
+<div class="note">同步状态：本原型对应 0.2.0 已实现版本（C0–C4）。视觉按实现收口：纯色背景、卡片 22dp、按钮 18dp、块 10dp，字阶 26/20/17/15/13/12/11；不再画渐变与光斑。</div>
+    <div class="frames">
   <div class="frame">
     <div class="phone">
       <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
@@ -172,7 +174,7 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
       </div>
       <div class="tabbar"><div class="tab"><span class="glyph"></span>设备</div><div class="tab on"><span class="glyph"></span>系统</div><div class="tab"><span class="glyph"></span>软件</div><div class="tab"><span class="glyph"></span>设置</div></div>
     </div>
-    <div class="caption">系统页：状态卡 + 固定主动作 + 建议 + 快照 + 运行时事实（异常项变橙）</div>
+    <div class="caption">系统页：状态卡 + 固定主动作 + 建议 + 快照 + 运行时事实（异常项变橙）+ 诊断（体检 / 一键复制诊断包）</div>
   </div>
   <div class="frame">
     <div class="phone">
@@ -202,7 +204,7 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
           <div class="set"><div><div class="mono">dsh</div><div class="sub">0.3.4 · 可用 0.3.6</div></div><span class="chip">升级</span></div>
           <div class="set"><div><div class="mono">dsh-hooks-claude-code</div><div class="sub">0.8.1 · 已锁定</div></div><span class="chip">改版本</span></div>
           <div class="set"><div><div class="mono">dsh-permission-presets</div><div class="sub">0.4.0 · 最新</div></div><span class="chip">改版本</span></div>
-          <div class="set"><div><div>回滚</div><div class="sub">回到上一个 lockfile 时点</div></div><span class="chip">回滚</span></div>
+          <div class="set"><div><div>commander</div><div class="sub">^12.0.0 · 点一行改范围</div></div><span class="chip">改版本</span></div>
         </div>
         <div class="card">
           <div class="spread"><div class="title">插件</div><span class="sub">3 个启用</span></div>
@@ -224,7 +226,7 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
 </div>
       <div class="tabbar"><div class="tab"><span class="glyph"></span>设备</div><div class="tab"><span class="glyph"></span>系统</div><div class="tab on"><span class="glyph"></span>软件</div><div class="tab"><span class="glyph"></span>设置</div></div>
     </div>
-    <div class="caption">软件页：依赖条 + 终端 / 版本升降 / 插件开关 / 服务日志，全部围绕"装了什么、什么版本"</div>
+    <div class="caption">软件页：依赖条 + DSH 卡（打开走系统浏览器 / 安装新版本 / 回滚）+ 终端 + 依赖与插件（依赖行可改范围、hooks 两个开关、ttyd）+ 服务与日志</div>
   </div>
   <div class="frame">
     <div class="phone">
@@ -320,7 +322,7 @@ h1{font-size:20px;font-weight:650;margin:0 0 4px}
         <div class="slide">→ 向右滑动执行</div>
       </div>
     </div>
-    <div class="caption">慢任务条（可离开）+ R3 风险 sheet（是什么/何时用/后果/恢复 + 滑动确认）</div>
+    <div class="caption">慢任务条（可离开、输出流式、可复制）+ R3 风险 sheet（是什么 / 何时用 / 后果 / 恢复 + 滑动到 82% 确认）</div>
   </div>
 
 </div>

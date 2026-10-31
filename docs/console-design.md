@@ -152,7 +152,7 @@
 
 - **基调**：深色优先、跟随系统；去掉大面积渐变光斑与玻璃拟态，改纯色背景 + 单层卡片（`#121821` 深 / `#FFFFFF` 浅），仅保留 1px 描边。
 - **强调色**：单一系统蓝（深色 `#5C9DFF` / 浅色 `#3482FF`）；状态色只用于状态元素（绿 `#22A06B`、橙 `#FF9F0A`、红 `#E5484D`）。
-- **字阶**：28 / 20 / 15 / 13 / 11 sp；行高 1.35–1.45；正文不用全大写、不加字距。
+- **字阶**：26 / 20 / 17 / 15 / 13 / 12 / 11 sp，统一由 `ConsoleType` 提供（`display/title/headline/body/label/small/hint`），页面里不再出现裸 `sp`；行高 1.35–1.45；正文不用全大写、不加字距。
 - **圆角与间距**：卡片 22dp，按钮 16dp，页面左右 16dp，卡片内 18dp，块间距 12dp。
 - **动效**：状态切换 200ms 交叉淡入；任务条展开 220ms；列表不做逐项入场。
 - **图标**：单一线性图标集，24dp，与文字基线对齐；不用 emoji 当图标。
@@ -223,6 +223,9 @@
 | 依赖改版本 | 已实现（`app pin`，R2，需已停）：原子改 `package.json`，留 `pin-bak.<epoch>` 只保最近 3 个；装包另用 `app apply`（R2，需运行中，进 guest 跑 `pnpm install`） | 用 rootfs 里的 node 改 JSON（`DSH_APP_NODE` 可覆盖）；格式化会按 2 空格重排整个文件 |
 | 插件启停 | 已实现（`app plugin <hooks|hooks-full|ttyd> on/off --apply`，R2） | 只覆盖控制面：hooks 两个 patch 用改名开关（`*.disabled`），ttyd 复用服务开关；`@deepseek-ai` 作用域插件仍只读，需要真机确认是否走 pnpm patch |
 | 快照删除 | 已实现（last-good 行按钮置灰） | — |
+| 字阶/圆角收敛（`ConsoleType`、`ConsoleShape`） | 已实现 | 页面里 0 处裸 `sp`；圆角统一 22/18/10 |
+| 首屏骨架屏 | 已实现 | `ConsoleTheme.kt` `SkeletonCard`，三页在"无数据且加载中"时先出骨架 |
+| HTML 原型同步 | 已实现 | `docs/design/console-mockup.html` 顶部标注同步状态，软件页/任务条文案按实现改写 |
 
 未实现入口一律用 banner 明确说明"还没实现"，不假装可用。
 

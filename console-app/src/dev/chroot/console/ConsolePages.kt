@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun SystemPage(
     status: ConsoleStatus,
+    loading: Boolean = false,
     doctor: DoctorReport?,
     snaps: List<SnapshotEntry>,
     onStart: () -> Unit,
@@ -54,6 +55,13 @@ fun SystemPage(
     busy: Boolean = false,
 ) {
     val palette = consolePalette()
+    if (loading && status.state.isBlank()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SkeletonCard(3)
+            SkeletonCard(4)
+        }
+        return
+    }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
         item {
             StateCard(
@@ -69,7 +77,7 @@ fun SystemPage(
             item {
                 Text(
                     "上一个操作还在进行：完成后按钮才会恢复，结果在顶部任务条里。",
-                    color = palette.faint, fontSize = 11.sp,
+                    color = palette.faint, fontSize = ConsoleType.hint,
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
             }
@@ -85,7 +93,7 @@ fun SystemPage(
                 Column(Modifier.padding(vertical = 4.dp)) {
                     if (snaps.isEmpty()) {
                         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                            Text("还没有快照；升级或改系统文件前先做一个。", color = palette.faint, fontSize = 12.sp)
+                            Text("还没有快照；升级或改系统文件前先做一个。", color = palette.faint, fontSize = ConsoleType.small)
                         }
                     }
                     snaps.take(3).forEach { snap ->
@@ -97,14 +105,14 @@ fun SystemPage(
                             Column(Modifier.weight(1f)) {
                                 Text(
                                     snap.name + if (snap.lastGood) "  · 上一份良好" else "",
-                                    color = palette.text, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                    color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium,
                                 )
                                 Text(
                                     ConsoleRepo.humanBytes(snap.bytes) + " · " + snap.created,
-                                    color = palette.faint, fontSize = 11.sp,
+                                    color = palette.faint, fontSize = ConsoleType.hint,
                                 )
                             }
-                            Text("恢复 ›", color = palette.accent, fontSize = 12.sp)
+                            Text("恢复 ›", color = palette.accent, fontSize = ConsoleType.small)
                         }
                     }
                     Row(
@@ -112,8 +120,8 @@ fun SystemPage(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("全部快照与新建", color = palette.sub, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        Text("›", color = palette.faint, fontSize = 16.sp)
+                        Text("全部快照与新建", color = palette.sub, fontSize = ConsoleType.label, modifier = Modifier.weight(1f))
+                        Text("›", color = palette.faint, fontSize = ConsoleType.body)
                     }
                 }
             }
@@ -128,8 +136,8 @@ fun SystemPage(
                         ?: "还没体检"
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(summary, color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text("体检只读；诊断包是可直接贴到 issue 的纯文本", color = palette.faint, fontSize = 11.sp)
+                            Text(summary, color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
+                            Text("体检只读；诊断包是可直接贴到 issue 的纯文本", color = palette.faint, fontSize = ConsoleType.hint)
                         }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -144,13 +152,13 @@ fun SystemPage(
             GlassCard(onClick = onLogs) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("最近日志", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text("最近日志", color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
                         Text(
                             if (status.note.isBlank()) "nsinit / boot / dsh / watchdog" else status.note,
-                            color = palette.faint, fontSize = 11.sp,
+                            color = palette.faint, fontSize = ConsoleType.hint,
                         )
                     }
-                    Text("全部 ›", color = palette.sub, fontSize = 12.sp)
+                    Text("全部 ›", color = palette.sub, fontSize = ConsoleType.small)
                 }
             }
         }
@@ -174,7 +182,7 @@ private fun StateCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(tint))
                 Spacer(Modifier.width(8.dp))
-                Text(ConsoleSupport.stateLabel(status.state), color = palette.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text(ConsoleSupport.stateLabel(status.state), color = palette.text, fontSize = ConsoleType.body, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
                 StatusPill(
                     if (status.moduleVersion.isBlank()) "模块" else "v" + status.moduleVersion,
@@ -184,7 +192,7 @@ private fun StateCard(
             Spacer(Modifier.height(6.dp))
             Text(
                 statusLine(status),
-                color = palette.sub, fontSize = 12.sp,
+                color = palette.sub, fontSize = ConsoleType.small,
             )
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -254,11 +262,11 @@ private fun FactsGrid(facts: List<Fact>) {
                     Box(Modifier.fillMaxWidth().height(1.dp).background(palette.cardStroke))
                 }
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(fact.label, color = palette.faint, fontSize = 12.sp, modifier = Modifier.width(64.dp))
+                    Text(fact.label, color = palette.faint, fontSize = ConsoleType.small, modifier = Modifier.width(64.dp))
                     Text(
                         fact.value,
                         color = if (fact.warn) palette.warning else palette.text,
-                        fontSize = 13.sp,
+                        fontSize = ConsoleType.label,
                         fontFamily = FontFamily.Monospace,
                     )
                 }
@@ -276,6 +284,7 @@ private fun FactsGrid(facts: List<Fact>) {
 @Composable
 fun SoftwarePage(
     status: ConsoleStatus,
+    loading: Boolean = false,
     runtime: RuntimeInfo,
     app: AppInfo,
     plugins: List<AppPlugin>,
@@ -296,6 +305,13 @@ fun SoftwarePage(
     busy: Boolean = false,
 ) {
     val palette = consolePalette()
+    if (loading && status.state.isBlank()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SkeletonCard(2)
+            SkeletonCard(3)
+        }
+        return
+    }
     var installOpen by remember { mutableStateOf(false) }
     val live = status.state == "running"
     val stopped = !live
@@ -320,12 +336,12 @@ fun SoftwarePage(
                         Column(Modifier.weight(1f)) {
                             Text(
                                 "版本 " + version.ifBlank { "未知" },
-                                color = palette.text, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                                color = palette.text, fontSize = ConsoleType.body, fontWeight = FontWeight.Medium,
                             )
                             Text(
                                 (if (currentName.isBlank()) "未记录 current" else "current → " + currentName) +
                                     if (app.previous.isBlank()) "" else " · previous → " + app.previous.substringAfterLast('/'),
-                                color = palette.faint, fontSize = 11.sp,
+                                color = palette.faint, fontSize = ConsoleType.hint,
                             )
                         }
                         StatusPill(
@@ -346,7 +362,7 @@ fun SoftwarePage(
                     GhostButton("安装新版本", enabled = live && !busy) { installOpen = true }
                     if (live) {
                         Spacer(Modifier.height(8.dp))
-                        Text("切换版本要先停止 chroot：运行中的 DSH 用的是旧 inode。", color = palette.faint, fontSize = 11.sp)
+                        Text("切换版本要先停止 chroot：运行中的 DSH 用的是旧 inode。", color = palette.faint, fontSize = ConsoleType.hint)
                     }
                     if (installOpen) {
                         InstallSheet(busy = busy, onDismiss = { installOpen = false }) { source, version, target, sha ->
@@ -437,12 +453,12 @@ fun SoftwarePage(
             GlassCard {
                 Column(Modifier.padding(16.dp)) {
                     if (packages.name.isBlank() && packages.deps.isEmpty()) {
-                        Text("还没有读到依赖信息", color = palette.faint, fontSize = 12.sp)
+                        Text("还没有读到依赖信息", color = palette.faint, fontSize = ConsoleType.small)
                     } else {
                         val title = packages.name.ifBlank { "dsh" } + " " + packages.version
-                        Text(title, color = palette.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text(title, color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
                         if (packages.pnpmRoot.isNotBlank()) {
-                            Text("pnpm root · " + packages.pnpmRoot, color = palette.faint, fontSize = 11.sp)
+                            Text("pnpm root · " + packages.pnpmRoot, color = palette.faint, fontSize = ConsoleType.hint)
                         }
                         packages.deps.take(8).forEach { dep ->
                             Row(
@@ -450,20 +466,20 @@ fun SoftwarePage(
                                     .clickable(enabled = !busy && stopped) { onPin(dep.first, dep.second) }
                                     .padding(vertical = 7.dp),
                             ) {
-                                Text(dep.first, color = palette.sub, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                                Text(dep.second, color = palette.faint, fontSize = 12.sp)
+                                Text(dep.first, color = palette.sub, fontSize = ConsoleType.small, modifier = Modifier.weight(1f))
+                                Text(dep.second, color = palette.faint, fontSize = ConsoleType.small)
                                 Spacer(Modifier.width(6.dp))
                                 LineIcon("chevron", palette.faint, 12)
                             }
                         }
-                        Text("点一行改版本范围（需先停止 chroot）", color = palette.faint, fontSize = 11.sp)
+                        Text("点一行改版本范围（需先停止 chroot）", color = palette.faint, fontSize = ConsoleType.hint)
                         if (packages.plugins.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
-                            Text("作用域插件 · " + packages.plugins.joinToString("、"), color = palette.faint, fontSize = 11.sp)
+                            Text("作用域插件 · " + packages.plugins.joinToString("、"), color = palette.faint, fontSize = ConsoleType.hint)
                         }
                         if (!live) {
                             Spacer(Modifier.height(6.dp))
-                            Text("依赖信息需要 chroot 运行；改版本还没实现。", color = palette.warning, fontSize = 11.sp)
+                            Text("依赖信息需要 chroot 运行；改版本还没实现。", color = palette.warning, fontSize = ConsoleType.hint)
                         }
                     }
                 }
@@ -474,13 +490,13 @@ fun SoftwarePage(
             GlassCard(onClick = onLogs) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("dsh.log · s6 服务", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text("dsh.log · s6 服务", color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
                         Text(
                             if (status.healthAge >= 0) "健康心跳 " + status.healthAge + "s 前" else "没有健康心跳",
-                            color = if (status.healthAge < 0) palette.warning else palette.faint, fontSize = 11.sp,
+                            color = if (status.healthAge < 0) palette.warning else palette.faint, fontSize = ConsoleType.hint,
                         )
                     }
-                    Text("全部 ›", color = palette.sub, fontSize = 12.sp)
+                    Text("全部 ›", color = palette.sub, fontSize = ConsoleType.small)
                 }
             }
         }
@@ -502,7 +518,7 @@ fun TerminalScreen(
             Column(Modifier.padding(16.dp)) {
                 Text(
                     if (live) "命令在 guest 内执行，输出进顶部任务条" else "需要先启动 chroot",
-                    color = if (live) palette.faint else palette.warning, fontSize = 12.sp,
+                    color = if (live) palette.faint else palette.warning, fontSize = ConsoleType.small,
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -512,11 +528,11 @@ fun TerminalScreen(
                             onValueChange = { input = it },
                             enabled = live,
                             singleLine = true,
-                            textStyle = androidx.compose.ui.text.TextStyle(color = palette.text, fontSize = 13.sp),
+                            textStyle = androidx.compose.ui.text.TextStyle(color = palette.text, fontSize = ConsoleType.label),
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             decorationBox = { inner ->
                                 if (input.isEmpty()) {
-                                    Text("输入命令…", color = palette.faint, fontSize = 13.sp)
+                                    Text("输入命令…", color = palette.faint, fontSize = ConsoleType.label)
                                 }
                                 inner()
                             },
@@ -552,10 +568,10 @@ fun TerminalScreen(
             GlassCard {
                 Column(Modifier.padding(12.dp)) {
                     task.lines.takeLast(30).forEach { line ->
-                        Text(line, color = if (line.startsWith("#step")) palette.accent else palette.sub, fontSize = 12.sp)
+                        Text(line, color = if (line.startsWith("#step")) palette.accent else palette.sub, fontSize = ConsoleType.small)
                     }
                     if (task.lines.isEmpty()) {
-                        Text("（还没有输出）", color = palette.faint, fontSize = 12.sp)
+                        Text("（还没有输出）", color = palette.faint, fontSize = ConsoleType.small)
                     }
                 }
             }
@@ -577,13 +593,13 @@ private fun DependencyBar(status: ConsoleStatus, runtime: RuntimeInfo) {
                 Spacer(Modifier.width(8.dp))
                 Text(
                     if (ok) "下层健康：chroot 运行中 · 模块 v" + status.moduleVersion else "下层未就绪：" + ConsoleSupport.stateLabel(status.state),
-                    color = palette.text, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                    color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium,
                 )
             }
             Spacer(Modifier.height(4.dp))
             Text(
                 "软件层的操作都发生在 chroot 里；下层不健康时先回系统页处理。",
-                color = palette.faint, fontSize = 11.sp,
+                color = palette.faint, fontSize = ConsoleType.hint,
             )
         }
     }
@@ -599,10 +615,10 @@ private fun LinkRow(title: String, detail: String, enabled: Boolean, onClick: ()
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = if (enabled) palette.text else palette.faint, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            Text(detail, color = palette.faint, fontSize = 11.sp)
+            Text(title, color = if (enabled) palette.text else palette.faint, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
+            Text(detail, color = palette.faint, fontSize = ConsoleType.hint)
         }
-        Text("›", color = palette.faint, fontSize = 16.sp)
+        Text("›", color = palette.faint, fontSize = ConsoleType.body)
     }
 }
 
@@ -611,12 +627,20 @@ private fun LinkRow(title: String, detail: String, enabled: Boolean, onClick: ()
 @Composable
 fun DevicePage(
     status: ConsoleStatus,
+    loading: Boolean = false,
     paths: List<PathEntry>,
     device: List<Pair<String, String>>,
     onLoad: () -> Unit,
     onCopy: (String, String) -> Unit,
 ) {
     val palette = consolePalette()
+    if (loading && status.state.isBlank()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SkeletonCard(2)
+            SkeletonCard(5)
+        }
+        return
+    }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
         item { SectionTitle("这台机器") }
         item {
@@ -624,7 +648,7 @@ fun DevicePage(
                 Column(Modifier.padding(vertical = 4.dp)) {
                     if (device.isEmpty()) {
                         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                            Text("读取中…（只用 getprop / uname）", color = palette.faint, fontSize = 12.sp)
+                            Text("读取中…（只用 getprop / uname）", color = palette.faint, fontSize = ConsoleType.small)
                         }
                     }
                     device.forEach { (label, value) ->
@@ -637,10 +661,10 @@ fun DevicePage(
             item {
                 GlassCard {
                     Column(Modifier.padding(16.dp)) {
-                        Text("空间不足", color = palette.warning, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("空间不足", color = palette.warning, fontSize = ConsoleType.label, fontWeight = FontWeight.SemiBold)
                         Text(
                             "只剩 " + status.diskFreeMb + " MB。先删旧快照或换更大的镜像，再继续装东西。",
-                            color = palette.sub, fontSize = 12.sp,
+                            color = palette.sub, fontSize = ConsoleType.small,
                         )
                     }
                 }
@@ -677,7 +701,7 @@ fun DevicePage(
                         Row(
                             Modifier.fillMaxWidth().clickable(onClick = onLoad)
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
-                        ) { Text("加载路径列表", color = palette.accent, fontSize = 13.sp) }
+                        ) { Text("加载路径列表", color = palette.accent, fontSize = ConsoleType.label) }
                     }
                     paths.forEach { entry ->
                         Row(
@@ -685,10 +709,10 @@ fun DevicePage(
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text(pathLabel(entry.name), color = palette.text, fontSize = 13.sp)
+                                Text(pathLabel(entry.name), color = palette.text, fontSize = ConsoleType.label)
                                 Text(
                                     entry.path + if (entry.bytes > 0) " · " + ConsoleRepo.humanBytes(entry.bytes) else "",
-                                    color = palette.faint, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                                    color = palette.faint, fontSize = ConsoleType.hint, fontFamily = FontFamily.Monospace,
                                 )
                             }
                         }
@@ -714,8 +738,8 @@ fun DevicePage(
 private fun InfoLine(label: String, value: String) {
     val palette = consolePalette()
     Row(Modifier.padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = palette.faint, fontSize = 12.sp, modifier = Modifier.width(88.dp))
-        Text(value, color = palette.text, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Text(label, color = palette.faint, fontSize = ConsoleType.small, modifier = Modifier.width(88.dp))
+        Text(value, color = palette.text, fontSize = ConsoleType.small, fontFamily = FontFamily.Monospace)
     }
 }
 

@@ -66,7 +66,7 @@ fun TaskBar(task: ConsoleTask, now: Long, onOpen: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(ConsoleShape.card))
             .background(palette.card)
             .clickable(onClick = onOpen)
             .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -81,13 +81,13 @@ fun TaskBar(task: ConsoleTask, now: Long, onOpen: () -> Unit) {
                     "failed" -> " · 失败"
                     else -> " · 进行中"
                 },
-                color = palette.text, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium,
             )
-            Text(task.lastLine, color = palette.faint, fontSize = 11.sp, maxLines = 1)
+            Text(task.lastLine, color = palette.faint, fontSize = ConsoleType.hint, maxLines = 1)
         }
-        Text(task.elapsedSeconds(now).toString() + "s", color = palette.faint, fontSize = 11.sp)
+        Text(task.elapsedSeconds(now).toString() + "s", color = palette.faint, fontSize = ConsoleType.hint)
         Spacer(Modifier.width(8.dp))
-        Text("›", color = palette.faint, fontSize = 16.sp)
+        Text("›", color = palette.faint, fontSize = ConsoleType.body)
     }
 }
 
@@ -99,7 +99,7 @@ fun TaskSheet(task: ConsoleTask, now: Long, onDismiss: () -> Unit, onCopy: (Stri
         GlassCard(shape = 24) {
             Column(Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(task.title, color = palette.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text(task.title, color = palette.text, fontSize = ConsoleType.body, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.width(8.dp))
                     StatusPill(
                         when (task.state) {
@@ -114,17 +114,17 @@ fun TaskSheet(task: ConsoleTask, now: Long, onDismiss: () -> Unit, onCopy: (Stri
                         },
                     )
                     Spacer(Modifier.weight(1f))
-                    Text(task.elapsedSeconds(now).toString() + "s", color = palette.faint, fontSize = 11.sp)
+                    Text(task.elapsedSeconds(now).toString() + "s", color = palette.faint, fontSize = ConsoleType.hint)
                 }
                 if (task.steps.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     task.steps.forEach { (index, name, finished) ->
                         Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (finished) "✓" else "·", color = if (finished) palette.success else palette.faint, fontSize = 12.sp)
+                            Text(if (finished) "✓" else "·", color = if (finished) palette.success else palette.faint, fontSize = ConsoleType.small)
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 (index + 1).toString() + ". " + name,
-                                color = if (finished) palette.sub else palette.text, fontSize = 12.sp,
+                                color = if (finished) palette.sub else palette.text, fontSize = ConsoleType.small,
                             )
                         }
                     }
@@ -133,18 +133,18 @@ fun TaskSheet(task: ConsoleTask, now: Long, onDismiss: () -> Unit, onCopy: (Stri
                 val tail = task.lines.filter { it.isNotBlank() }.takeLast(400)
                 Box(
                     Modifier.fillMaxWidth().heightIn(min = 80.dp, max = 260.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(ConsoleShape.chip))
                         .background(palette.text.copy(alpha = 0.04f)),
                 ) {
                     if (tail.isEmpty()) {
-                        Text("等待输出…", color = palette.faint, fontSize = 11.sp, modifier = Modifier.padding(12.dp))
+                        Text("等待输出…", color = palette.faint, fontSize = ConsoleType.hint, modifier = Modifier.padding(12.dp))
                     } else {
                         LazyColumn(state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
                             items(tail) { line ->
                                 Text(
                                     if (line.startsWith("#step:")) line.removePrefix("#step:") else line,
                                     color = if (line.startsWith("#step:")) palette.accent else palette.sub,
-                                    fontSize = 11.sp,
+                                    fontSize = ConsoleType.hint,
                                     fontFamily = FontFamily.Monospace,
                                 )
                             }

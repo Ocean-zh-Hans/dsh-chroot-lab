@@ -68,7 +68,7 @@ fun SpaceBar(segments: List<Triple<String, Long, Color>>) {
                     Spacer(Modifier.width(5.dp))
                     Text(
                         label + " " + ConsoleRepo.humanBytes(bytes),
-                        color = palette.faint, fontSize = 11.sp, maxLines = 1,
+                        color = palette.faint, fontSize = ConsoleType.hint, maxLines = 1,
                     )
                 }
             }
@@ -97,7 +97,7 @@ fun SlideToConfirm(text: String, tint: Color, enabled: Boolean = true, onConfirm
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(ConsoleShape.button))
             .background(active.copy(alpha = 0.14f))
             .onGloballyPositioned { trackPx = it.size.width }
             .semantics { contentDescription = "滑动确认：" + text }
@@ -126,11 +126,11 @@ fun SlideToConfirm(text: String, tint: Color, enabled: Boolean = true, onConfirm
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(ConsoleShape.chip))
                     .background(active),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("→", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("→", color = Color.White, fontSize = ConsoleType.headline, fontWeight = FontWeight.Bold)
             }
         }
         Box(
@@ -140,7 +140,7 @@ fun SlideToConfirm(text: String, tint: Color, enabled: Boolean = true, onConfirm
             Text(
                 text = text,
                 color = active.copy(alpha = 0.55f + 0.45f * (1f - progress)),
-                fontSize = 13.sp,
+                fontSize = ConsoleType.label,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
             )
@@ -184,9 +184,9 @@ fun InstallSheet(
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         GlassCard {
             Column(Modifier.padding(18.dp)) {
-                Text("安装 DSH 版本", color = palette.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("安装 DSH 版本", color = palette.text, fontSize = ConsoleType.headline, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
-                Text("装进 versions/<版本>，不会自动切换；装完可在版本列表里点切换。", color = palette.faint, fontSize = 12.sp)
+                Text("装进 versions/<版本>，不会自动切换；装完可在版本列表里点切换。", color = palette.faint, fontSize = ConsoleType.small)
                 Spacer(Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     installSources.forEach { entry ->
@@ -198,7 +198,7 @@ fun InstallSheet(
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                Text(hint, color = palette.faint, fontSize = 11.sp)
+                Text(hint, color = palette.faint, fontSize = ConsoleType.hint)
                 Spacer(Modifier.height(12.dp))
                 SheetField("版本号", version, "例如 1.5.0", !busy) { version = it }
                 when (source) {
@@ -233,18 +233,18 @@ fun InstallSheet(
 private fun SheetField(label: String, value: String, placeholder: String, enabled: Boolean, onChange: (String) -> Unit) {
     val palette = consolePalette()
     Column {
-        Text(label, color = palette.sub, fontSize = 11.sp)
+        Text(label, color = palette.sub, fontSize = ConsoleType.hint)
         Box(Modifier.fillMaxWidth().padding(top = 4.dp)) {
             androidx.compose.foundation.text.BasicTextField(
                 value = value,
                 onValueChange = onChange,
                 enabled = enabled,
                 singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(color = palette.text, fontSize = 13.sp),
+                textStyle = androidx.compose.ui.text.TextStyle(color = palette.text, fontSize = ConsoleType.label),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 decorationBox = { inner ->
                     if (value.isEmpty()) {
-                        Text(placeholder, color = palette.faint, fontSize = 13.sp)
+                        Text(placeholder, color = palette.faint, fontSize = ConsoleType.label)
                     }
                     inner()
                 },
@@ -266,22 +266,22 @@ fun PinDialog(
     Dialog(onDismissRequest = onDismiss) {
         GlassCard {
             Column(Modifier.padding(20.dp)) {
-                Text("改依赖版本", color = palette.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("改依赖版本", color = palette.text, fontSize = ConsoleType.headline, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
-                Text(name, color = palette.sub, fontSize = 13.sp)
+                Text(name, color = palette.sub, fontSize = ConsoleType.label)
                 Spacer(Modifier.height(14.dp))
                 OutlinedTextField(
                     value = range,
                     onValueChange = { range = it },
                     singleLine = true,
-                    label = { Text("版本范围", fontSize = 12.sp) },
+                    label = { Text("版本范围", fontSize = ConsoleType.small) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "当前 " + current + "。只改构建清单，不装包；装包要在 chroot 运行时执行 pnpm install。",
                     color = palette.faint,
-                    fontSize = 11.sp,
+                    fontSize = ConsoleType.hint,
                 )
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

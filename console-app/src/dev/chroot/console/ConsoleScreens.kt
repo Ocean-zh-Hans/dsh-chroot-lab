@@ -75,7 +75,7 @@ private fun LifecycleStrip(state: String) {
                         else -> "停止中"
                     },
                     color = if (index == active) palette.text else palette.faint,
-                    fontSize = 11.sp,
+                    fontSize = ConsoleType.hint,
                     fontWeight = if (index == active) FontWeight.SemiBold else FontWeight.Normal,
                 )
                 if (index < lifecycleSteps.lastIndex) {
@@ -182,10 +182,10 @@ internal fun RecommendationCard(item: Recommendation, onAction: (RiskRequest) ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(palette.warning))
                 Spacer(Modifier.width(8.dp))
-                Text(item.title, color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(item.title, color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(4.dp))
-            Text(item.detail, color = palette.sub, fontSize = 12.sp)
+            Text(item.detail, color = palette.sub, fontSize = ConsoleType.small)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (item.request != null) {
@@ -210,9 +210,9 @@ fun DoctorScreen(report: DoctorReport?, onReload: (() -> Unit) -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text(
                             report?.let { it.pass.toString() + " 通过 · " + it.warn + " 注意 · " + it.fail + " 失败" } ?: "正在检查…",
-                            color = palette.text, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                            color = palette.text, fontSize = ConsoleType.body, fontWeight = FontWeight.Medium,
                         )
-                        Text("只读检查，不改系统", color = palette.faint, fontSize = 11.sp)
+                        Text("只读检查，不改系统", color = palette.faint, fontSize = ConsoleType.hint)
                     }
                     GhostButton("重查") { onReload {} }
                 }
@@ -229,7 +229,7 @@ fun DoctorScreen(report: DoctorReport?, onReload: (() -> Unit) -> Unit) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
                     Box(Modifier.padding(top = 5.dp).size(6.dp).clip(RoundedCornerShape(50)).background(tint))
                     Spacer(Modifier.width(8.dp))
-                    Text(check.message, color = palette.sub, fontSize = 12.sp)
+                    Text(check.message, color = palette.sub, fontSize = ConsoleType.small)
                 }
             }
         }
@@ -251,14 +251,14 @@ fun LogsScreen(logs: String, kind: String, onKind: (String) -> Unit, onRefresh: 
                         .background(if (active) palette.accent.copy(alpha = 0.14f) else palette.text.copy(alpha = 0.05f))
                         .clickable { onKind(key) }
                         .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) { Text(label, color = if (active) palette.accent else palette.sub, fontSize = 12.sp) }
+                ) { Text(label, color = if (active) palette.accent else palette.sub, fontSize = ConsoleType.small) }
             }
         }
         GlassCard {
             Column(Modifier.fillMaxSize().padding(12.dp)) {
                 Text(
                     logs.ifBlank { "点按刷新加载日志" },
-                    color = palette.sub, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                    color = palette.sub, fontSize = ConsoleType.hint, fontFamily = FontFamily.Monospace,
                     modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
                 )
             }
@@ -288,24 +288,24 @@ fun SnapshotsScreen(
             GlassCard {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("快照", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text("镜像 + state 的一份副本；恢复前自动保留上一份", color = palette.faint, fontSize = 11.sp)
+                        Text("快照", color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
+                        Text("镜像 + state 的一份副本；恢复前自动保留上一份", color = palette.faint, fontSize = ConsoleType.hint)
                     }
                     PrimaryButton("新建快照", onCreate, enabled = !busy)
                 }
             }
         }
         if (snaps.isEmpty()) {
-            item { GlassCard { Text("还没有快照", color = palette.faint, fontSize = 12.sp, modifier = Modifier.padding(16.dp)) } }
+            item { GlassCard { Text("还没有快照", color = palette.faint, fontSize = ConsoleType.small, modifier = Modifier.padding(16.dp)) } }
         }
         items(snaps) { snap ->
             GlassCard {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(snap.name, color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(snap.name, color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
                         if (snap.lastGood) { Spacer(Modifier.width(8.dp)); StatusPill("last-good", palette.success) }
                     }
-                    Text(snap.created.ifBlank { "—" } + " · " + ConsoleRepo.humanBytes(snap.bytes), color = palette.faint, fontSize = 11.sp)
+                    Text(snap.created.ifBlank { "—" } + " · " + ConsoleRepo.humanBytes(snap.bytes), color = palette.faint, fontSize = ConsoleType.hint)
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         GhostButton("恢复", enabled = !busy) { onRestore(snap.name) }
@@ -332,7 +332,7 @@ fun SettingsScreen(
         item {
             GlassCard {
                 Column(Modifier.padding(16.dp)) {
-                    Text("开机与确认", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text("开机与确认", color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
                     ToggleRow("开机自动启动", status.autostart) { checked ->
                         onAction(
                             RiskRequest(
@@ -373,10 +373,10 @@ fun SettingsScreen(
         item {
             GlassCard {
                 Column(Modifier.padding(16.dp)) {
-                    Text("运行时能力", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Text("hooks：" + hooksLabel(runtime), color = palette.sub, fontSize = 12.sp)
-                    Text("原因：" + runtime.hooksReason.ifBlank { "—" }, color = palette.faint, fontSize = 11.sp)
-                    Text("DSH：不读取、不修改 SELinux；块设备默认只读视图。", color = palette.faint, fontSize = 11.sp)
+                    Text("运行时能力", color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
+                    Text("hooks：" + hooksLabel(runtime), color = palette.sub, fontSize = ConsoleType.small)
+                    Text("原因：" + runtime.hooksReason.ifBlank { "—" }, color = palette.faint, fontSize = ConsoleType.hint)
+                    Text("DSH：不读取、不修改 SELinux；块设备默认只读视图。", color = palette.faint, fontSize = ConsoleType.hint)
                 }
             }
         }
@@ -389,18 +389,18 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("复制诊断包", color = palette.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            Text("机型 / 内核 / 模块 / loop / 挂载 / 体检，贴 issue 用", color = palette.faint, fontSize = 11.sp)
+                            Text("复制诊断包", color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
+                            Text("机型 / 内核 / 模块 / loop / 挂载 / 体检，贴 issue 用", color = palette.faint, fontSize = ConsoleType.hint)
                         }
-                        Text("复制", color = palette.accent, fontSize = 12.sp)
+                        Text("复制", color = palette.accent, fontSize = ConsoleType.small)
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth().clickable(onClick = onAbout)
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("关于", color = palette.text, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                        Text("›", color = palette.faint, fontSize = 16.sp)
+                        Text("关于", color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Text("›", color = palette.faint, fontSize = ConsoleType.body)
                     }
                 }
             }
@@ -416,7 +416,7 @@ fun AboutScreen(status: ConsoleStatus, runtime: RuntimeInfo) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         GlassCard {
             Column(Modifier.padding(16.dp)) {
-                Text("版本", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("版本", color = palette.text, fontSize = ConsoleType.label, fontWeight = FontWeight.Medium)
                 InfoRow("模块", runtime.module.ifBlank { status.moduleVersion.ifBlank { "—" } })
                 InfoRow("DSH", runtime.dshRuntime)
                 InfoRow("镜像", ConsoleRepo.humanBytes(status.imageBytes))
@@ -425,7 +425,7 @@ fun AboutScreen(status: ConsoleStatus, runtime: RuntimeInfo) {
         }
         GlassCard {
             Column(Modifier.padding(16.dp)) {
-                Text("Console 0.3.0 · 读全开、写分级", color = palette.faint, fontSize = 11.sp)
+                Text("Console 0.3.0 · 读全开、写分级", color = palette.faint, fontSize = ConsoleType.hint)
             }
         }
     }
@@ -442,8 +442,8 @@ internal fun ToggleRow(
     val palette = consolePalette()
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(label, color = if (enabled) palette.text else palette.faint, fontSize = 14.sp)
-            if (hint != null) Text(hint, color = palette.faint, fontSize = 11.sp)
+            Text(label, color = if (enabled) palette.text else palette.faint, fontSize = ConsoleType.label)
+            if (hint != null) Text(hint, color = palette.faint, fontSize = ConsoleType.hint)
         }
         Switch(checked = checked, enabled = enabled, onCheckedChange = onChange)
     }
@@ -453,8 +453,8 @@ internal fun ToggleRow(
 private fun InfoRow(label: String, value: String) {
     val palette = consolePalette()
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = palette.faint, fontSize = 12.sp, modifier = Modifier.width(72.dp))
-        Text(value, color = palette.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text(label, color = palette.faint, fontSize = ConsoleType.small, modifier = Modifier.width(72.dp))
+        Text(value, color = palette.text, fontSize = ConsoleType.label, modifier = Modifier.weight(1f))
     }
 }
 
@@ -466,24 +466,24 @@ fun RiskExplainScreen(request: RiskRequest, onBack: () -> Unit, onConfirm: (Risk
     Box(Modifier.fillMaxSize().background(palette.background).systemBarsPadding().padding(horizontal = 16.dp)) {
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-            Text(request.title, color = palette.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-            Text("执行前请先读完下面的说明。", color = palette.faint, fontSize = 12.sp)
+            Text(request.title, color = palette.text, fontSize = ConsoleType.display, fontWeight = FontWeight.SemiBold)
+            Text("执行前请先读完下面的说明。", color = palette.faint, fontSize = ConsoleType.small)
             Spacer(Modifier.height(14.dp))
             request.sections.forEach { (heading, body) ->
                 GlassCard {
                     Column(Modifier.padding(16.dp)) {
-                        Text(heading, color = palette.sub, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(heading, color = palette.sub, fontSize = ConsoleType.small, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(4.dp))
-                        Text(body, color = palette.text, fontSize = 13.sp)
+                        Text(body, color = palette.text, fontSize = ConsoleType.label)
                     }
                 }
                 Spacer(Modifier.height(10.dp))
             }
             GlassCard {
                 Column(Modifier.padding(16.dp)) {
-                    Text("将记录", color = palette.faint, fontSize = 11.sp)
-                    Text("原因：" + request.reason, color = palette.sub, fontSize = 12.sp)
-                    Text("影响：" + request.impact, color = palette.sub, fontSize = 12.sp)
+                    Text("将记录", color = palette.faint, fontSize = ConsoleType.hint)
+                    Text("原因：" + request.reason, color = palette.sub, fontSize = ConsoleType.small)
+                    Text("影响：" + request.impact, color = palette.sub, fontSize = ConsoleType.small)
                 }
             }
         }

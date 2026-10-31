@@ -1,5 +1,13 @@
 package dev.chroot.console
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
@@ -15,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -122,7 +131,7 @@ fun SectionTitle(text: String, trailing: String? = null) {
         androidx.compose.material3.Text(
             text = text,
             color = palette.sub,
-            fontSize = 13.sp,
+            fontSize = ConsoleType.label,
             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
             letterSpacing = 0.4.sp,
         )
@@ -130,7 +139,7 @@ fun SectionTitle(text: String, trailing: String? = null) {
             androidx.compose.material3.Text(
                 text = trailing,
                 color = palette.faint,
-                fontSize = 12.sp,
+                fontSize = ConsoleType.small,
             )
         }
     }
@@ -149,7 +158,7 @@ fun StatusPill(text: String, tint: Color) {
         androidx.compose.material3.Text(
             text = text,
             color = tint,
-            fontSize = 12.sp,
+            fontSize = ConsoleType.small,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
             modifier = Modifier.padding(start = 5.dp),
         )
@@ -231,7 +240,7 @@ fun PrimaryButton(text: String, onClick: () -> Unit, tint: Color? = null, enable
     val color = tint ?: palette.accent
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(ConsoleShape.button))
             .background(if (enabled) color else palette.faint.copy(alpha = 0.25f))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 14.dp),
@@ -240,7 +249,7 @@ fun PrimaryButton(text: String, onClick: () -> Unit, tint: Color? = null, enable
         androidx.compose.material3.Text(
             text = text,
             color = Color.White,
-            fontSize = 15.sp,
+            fontSize = ConsoleType.body,
             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -253,7 +262,7 @@ fun GhostButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     val palette = consolePalette()
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(ConsoleShape.button))
             .background(palette.text.copy(alpha = if (enabled) 0.06f else 0.03f))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 14.dp),
@@ -262,7 +271,7 @@ fun GhostButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
         androidx.compose.material3.Text(
             text = text,
             color = if (enabled) palette.text else palette.faint,
-            fontSize = 15.sp,
+            fontSize = ConsoleType.body,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
         )
     }
@@ -283,4 +292,62 @@ fun stateTint(state: String, palette: ConsolePalette): Color = when (state) {
     "degraded", "starting", "stopping", "stale" -> palette.warning
     "failed", "recovery-required", "rescue-needed" -> palette.danger
     else -> palette.faint
+}
+
+/**
+ * 字阶：一份字号表，页面里不再出现裸 `sp`。
+ * display 只给"已运行 2 小时"这种一眼要看到的值；hint 给辅助说明。
+ */
+object ConsoleType {
+    val display = 26.sp
+    val title = 20.sp
+    val headline = 17.sp
+    val body = 15.sp
+    val label = 13.sp
+    val small = 12.sp
+    val hint = 11.sp
+
+    val titleWeight = FontWeight.SemiBold
+    val bodyWeight = FontWeight.Normal
+    val mono = FontFamily.Monospace
+}
+
+/** 圆角与间距：卡片 22、行内小块 10、按钮 18。 */
+object ConsoleShape {
+    val card = 22.dp
+    val chip = 10.dp
+    val button = 18.dp
+}
+
+/** 骨架屏：只表示"在等数据"，不做夸张动效，避免启动时闪。 */
+@Composable
+fun SkeletonBlock(height: androidx.compose.ui.unit.Dp = 14.dp, widthFraction: Float = 1f) {
+    val palette = consolePalette()
+    val transition = rememberInfiniteTransition(label = "skeleton")
+    val alpha by transition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.5f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "skeleton-alpha",
+    )
+    Box(
+        Modifier
+            .fillMaxWidth(widthFraction)
+            .height(height)
+            .clip(RoundedCornerShape(ConsoleShape.chip))
+            .background(palette.faint.copy(alpha = alpha)),
+    )
+}
+
+/** 一组骨架行，用在首页还没有 status 的时候。 */
+@Composable
+fun SkeletonCard(lines: Int = 3) {
+    GlassCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SkeletonBlock(18.dp, 0.45f)
+            repeat(lines) { index ->
+                SkeletonBlock(12.dp, if (index % 2 == 0) 0.9f else 0.7f)
+            }
+        }
+    }
 }

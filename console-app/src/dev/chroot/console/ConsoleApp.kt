@@ -257,6 +257,7 @@ fun ConsoleRoot() {
                 when (current) {
                     "system" -> SystemPage(
                         status = status,
+                        loading = loading,
                         doctor = doctor,
                         snaps = snaps,
                         onStart = { explain = riskStart() },
@@ -277,6 +278,7 @@ fun ConsoleRoot() {
                     )
                     "software" -> SoftwarePage(
                         status = status,
+                        loading = loading,
                         runtime = runtime,
                         app = appInfo,
                         plugins = appPlugins,
@@ -312,6 +314,7 @@ fun ConsoleRoot() {
                     )
                     "device" -> DevicePage(
                         status = status,
+                        loading = loading,
                         paths = paths,
                         device = device,
                         onLoad = { scope.launch { loadPaths() } },
@@ -353,6 +356,7 @@ fun ConsoleRoot() {
                     "about" -> AboutScreen(status, runtime)
                     else -> SystemPage(
                         status = status,
+                        loading = loading,
                         doctor = doctor,
                         snaps = snaps,
                         onStart = { explain = riskStart() },
@@ -526,13 +530,13 @@ private fun ConsoleHeader(
                 modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50))
                     .background(palette.text.copy(alpha = 0.06f)).clickable(onClick = onBack),
                 contentAlignment = Alignment.Center,
-            ) { Text("‹", color = palette.text, fontSize = 22.sp) }
+            ) { Text("‹", color = palette.text, fontSize = ConsoleType.title) }
             Spacer(Modifier.width(10.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(title, color = palette.text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, color = palette.text, fontSize = ConsoleType.display, fontWeight = FontWeight.SemiBold)
             if (subtitle.isNotBlank()) {
-                Text(subtitle, color = palette.faint, fontSize = 11.sp)
+                Text(subtitle, color = palette.faint, fontSize = ConsoleType.hint)
             }
         }
         if (route == "system") {
@@ -540,7 +544,7 @@ private fun ConsoleHeader(
         }
         if (loading) {
             Spacer(Modifier.width(6.dp))
-            Text("…", color = palette.faint, fontSize = 14.sp)
+            Text("…", color = palette.faint, fontSize = ConsoleType.label)
         }
     }
 }
@@ -558,7 +562,7 @@ private fun ConsoleBottomBar(selected: String, onSelect: (String) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(26.dp))
+            .clip(RoundedCornerShape(ConsoleShape.card))
             .background(palette.card)
             .padding(horizontal = 6.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -571,7 +575,7 @@ private fun ConsoleBottomBar(selected: String, onSelect: (String) -> Unit) {
                     .weight(1f)
                     // §10：点击区 ≥ 48dp、整条 ≥ 56dp，字体放大到 1.3× 也不截断。
                     .heightIn(min = 56.dp)
-                    .clip(RoundedCornerShape(18.dp))
+                    .clip(RoundedCornerShape(ConsoleShape.button))
                     .background(if (active) palette.accent.copy(alpha = 0.12f) else Color.Transparent)
                     .clickable { onSelect(key) }
                     .semantics {
@@ -587,7 +591,7 @@ private fun ConsoleBottomBar(selected: String, onSelect: (String) -> Unit) {
                 Text(
                     label,
                     color = if (active) palette.accent else palette.faint,
-                    fontSize = 11.sp,
+                    fontSize = ConsoleType.hint,
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
@@ -600,7 +604,7 @@ private fun BannerDialog(text: String, onDismiss: () -> Unit) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         GlassCard {
             Column(Modifier.padding(20.dp)) {
-                Text(text, color = consolePalette().text, fontSize = 14.sp)
+                Text(text, color = consolePalette().text, fontSize = ConsoleType.label)
                 Spacer(Modifier.height(10.dp))
                 PrimaryButton("好", onDismiss)
             }
