@@ -49,6 +49,8 @@ android {
 
     buildFeatures {
         compose = true
+        // 诊断包要写"控制台版本"，没有这个就没有 VERSION_NAME。
+        buildConfig = true
     }
 
     compileOptions {

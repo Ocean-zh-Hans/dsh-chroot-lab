@@ -389,10 +389,10 @@ object ConsoleRepo {
     fun humanBytes(bytes: Long): String {
         if (bytes < 0) return "—"
         val gib = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
-        if (gib >= 1.0) return String.format("%.1f GB", gib)
+        if (gib >= 1.0) return String.format(java.util.Locale.US, "%.1f GB", gib)
         val mib = bytes.toDouble() / (1024.0 * 1024.0)
-        if (mib >= 1.0) return String.format("%.0f MB", mib)
-        return String.format("%.0f KB", bytes / 1024.0)
+        if (mib >= 1.0) return String.format(java.util.Locale.US, "%.0f MB", mib)
+        return String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
     }
 }
 
