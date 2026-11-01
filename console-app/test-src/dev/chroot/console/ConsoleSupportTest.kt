@@ -48,4 +48,13 @@ class ConsoleSupportTest {
         assertTrue(timeout.output.contains("后台操作可能仍在进行"))
         assertTrue(System.nanoTime() - started < 15_000_000_000L)
     }
+
+    @Test
+    fun normalisesVersionLabels() {
+        // node 报 v24.18.0，pnpm 报 10.34.9；同一张卡上必须长得一样。
+        assertEquals("v24.18.0", versionLabel("v24.18.0"))
+        assertEquals("v10.34.9", versionLabel("10.34.9"))
+        assertEquals("v1.4.2", versionLabel(" 1.4.2 "))
+        assertEquals("—", versionLabel(""))
+    }
 }

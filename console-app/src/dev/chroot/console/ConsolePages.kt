@@ -383,6 +383,9 @@ fun SoftwarePage(
                     if (live) {
                         Spacer(Modifier.height(8.dp))
                         Text("切换版本要先停止 chroot：运行中的 DSH 用的是旧 inode。", color = palette.faint, fontSize = ConsoleType.hint)
+                    } else if (app.previous.isBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("没有可回滚的版本：/opt/dsh 下还没记录 previous。", color = palette.faint, fontSize = ConsoleType.hint)
                     }
                     if (installOpen) {
                         InstallSheet(busy = busy, onDismiss = { installOpen = false }) { source, version, target, sha ->
@@ -413,8 +416,8 @@ fun SoftwarePage(
         item {
             GlassCard {
                 Column(Modifier.padding(vertical = 4.dp)) {
-                    InfoLine("node", app.node.ifBlank { "—" })
-                    InfoLine("pnpm", app.pnpm.ifBlank { "未安装" })
+                    InfoLine("node", if (app.node.isBlank()) "—" else versionLabel(app.node))
+                    InfoLine("pnpm", if (app.pnpm.isBlank()) "未安装" else versionLabel(app.pnpm))
                     InfoLine("hooks", app.hooks.ifBlank { "—" })
                     InfoLine("来源", if (app.current.isBlank()) "镜像烘焙" else "宿主 /data/adb/chroot/dsh")
                 }

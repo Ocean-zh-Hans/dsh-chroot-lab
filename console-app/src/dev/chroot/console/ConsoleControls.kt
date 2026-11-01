@@ -294,3 +294,24 @@ fun PinDialog(
         }
     }
 }
+
+/**
+ * 顶部警示条：只在控制台与模块的 status schema 对不上时出现。
+ *
+ * 为什么要拦：旧模块的 `status --json` 少字段，`optInt(..., 0)` 会把"不知道"读成
+ * "没有快照 / 没挂载"，界面于是给出错误结论。这里宁可摊牌，也不猜。
+ */
+@Composable
+internal fun SchemaBanner(text: String) {
+    val palette = consolePalette()
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(ConsoleShape.chip + 4.dp))
+            .background(palette.warning.copy(alpha = 0.14f))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text(text, color = palette.warning, fontSize = ConsoleType.small, lineHeight = ConsoleType.small * 1.35f)
+    }
+}

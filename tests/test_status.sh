@@ -32,7 +32,7 @@ assert_contains "$out" "state        : running"
 assert_contains "$out" "pid valid    : yes"
 
 json=$(DSH_PROC=/proc "$DSH_CTL" status --json)
-python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["state"]=="running"; assert d["pid_valid"] is True; assert d["note"]=="degraded-test"; assert d["url"]=="http://127.0.0.1:1234/?token=test"' "$json"
+python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["state"]=="running"; assert d["pid_valid"] is True; assert d["note"]=="degraded-test"; assert d["url"]=="http://127.0.0.1:1234/?token=test"; assert d["schema"]==1' "$json"
 # The loopback URL is the operator entry point, so it is printed as-is; masking
 # is the opt-in used when pasting status into public logs.
 out=$(DSH_PROC=/proc "$DSH_CTL" status)

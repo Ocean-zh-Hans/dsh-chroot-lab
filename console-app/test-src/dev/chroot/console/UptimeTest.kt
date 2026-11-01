@@ -31,4 +31,11 @@ class UptimeTest {
         assertEquals("刚刚启动", formatUptime("2026-10-31T12:35:06+0800", 1793421306L - 5))
         assertEquals("", formatUptime("junk", now))
     }
+
+    @Test
+    fun hidesDurationsUnderTwoSeconds() {
+        // 秒级以下的操作显示 "0s" 只是噪音。
+        assertEquals("", ConsoleTask(1, "x", 1_000L).elapsedLabel(1_900L))
+        assertEquals("2s", ConsoleTask(1, "x", 1_000L).elapsedLabel(3_400L))
+    }
 }

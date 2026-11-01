@@ -105,3 +105,14 @@ object ConsoleSupport {
         fun success(): Boolean = exitCode == 0
     }
 }
+
+/**
+ * Version strings arrive in two shapes from the guest: `node` reports `v24.18.0`
+ * while `pnpm` reports `10.34.9`. Show them the same way — a stray missing `v`
+ * reads like a truncated string, not like a formatting choice.
+ */
+internal fun versionLabel(value: String): String {
+    val trimmed = value.trim()
+    if (trimmed.isEmpty()) return "—"
+    return if (trimmed.first().isDigit()) "v" + trimmed else trimmed
+}

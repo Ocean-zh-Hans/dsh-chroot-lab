@@ -1,6 +1,10 @@
 # shellcheck shell=sh disable=SC3043
 # Read-only status. Never signals or cleans up.
 
+# Bump when the --json shape changes incompatibly. Console refuses to act on a
+# schema it does not know, instead of reading missing fields as 0/null.
+DSH_STATUS_SCHEMA=1
+
 dsh_status_file_value() {
   _key=$1
   [ -r "$DSH_STATUS_FILE" ] || return 1
@@ -196,6 +200,8 @@ dsh_status_run() {
 
   if [ "$_json" -eq 1 ]; then
     printf '{'
+    # schema 让调用方（Console）在字段变化时能摊牌，而不是把缺失字段当成 0/空。
+    printf '"schema":%s,' "$DSH_STATUS_SCHEMA"
     printf '"state":"%s",' "$(dsh_json_escape "$_state")"
     if dsh_is_uint "$_status_pid"; then
       printf '"pid":%s,' "$_status_pid"

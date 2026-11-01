@@ -52,6 +52,12 @@ data class ConsoleTask(
         get() = lines.lastOrNull { it.isNotBlank() && !it.startsWith("#step:") }?.take(60) ?: "已提交…"
 
     fun elapsedSeconds(now: Long): Long = ((now - startedAt) / 1000).coerceAtLeast(0)
+
+    /** 不到两秒的操作显示 "0s" 只是噪音；空串让 UI 直接省掉这一格。 */
+    fun elapsedLabel(now: Long): String {
+        val seconds = elapsedSeconds(now)
+        return if (seconds < 2) "" else seconds.toString() + "s"
+    }
 }
 
 @Composable
@@ -85,7 +91,7 @@ fun TaskBar(task: ConsoleTask, now: Long, onOpen: () -> Unit) {
             )
             Text(task.lastLine, color = palette.faint, fontSize = ConsoleType.hint, maxLines = 1)
         }
-        Text(task.elapsedSeconds(now).toString() + "s", color = palette.faint, fontSize = ConsoleType.hint)
+        Text(task.elapsedLabel(now), color = palette.faint, fontSize = ConsoleType.hint)
         Spacer(Modifier.width(8.dp))
         Text("›", color = palette.faint, fontSize = ConsoleType.body)
     }
@@ -114,7 +120,7 @@ fun TaskSheet(task: ConsoleTask, now: Long, onDismiss: () -> Unit, onCopy: (Stri
                         },
                     )
                     Spacer(Modifier.weight(1f))
-                    Text(task.elapsedSeconds(now).toString() + "s", color = palette.faint, fontSize = ConsoleType.hint)
+                    Text(task.elapsedLabel(now), color = palette.faint, fontSize = ConsoleType.hint)
                 }
                 if (task.steps.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))

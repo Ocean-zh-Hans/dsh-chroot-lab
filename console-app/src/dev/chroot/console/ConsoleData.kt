@@ -4,7 +4,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
+/** Console only acts on a status schema it knows; see DSH_STATUS_SCHEMA in module/lib/status.sh. */
+const val REQUIRED_STATUS_SCHEMA = 1
+
 data class ConsoleStatus(
+    val schema: Int = 0,
     val state: String = "",
     val pid: String = "",
     val url: String = "",
@@ -163,6 +167,7 @@ object ConsoleRepo {
                 lastGood = json.optString("last_good"),
                 healthAge = json.optInt("health_age", -1),
                 diskFreeMb = json.optLong("disk_free_mb", -1),
+                schema = json.optInt("schema", 0),
                 imageBytes = json.optLong("image_bytes", -1),
                 imageUsedBytes = json.optLong("image_used_bytes", -1),
                 snapshotCount = json.optInt("snapshot_count", -1),

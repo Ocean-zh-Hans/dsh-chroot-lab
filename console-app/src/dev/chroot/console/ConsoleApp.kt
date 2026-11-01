@@ -97,7 +97,8 @@ fun ConsoleRoot() {
     var packages by remember { mutableStateOf(AppPackages()) }
 
     // 同一时刻只允许一个写任务：其余会写盘的按钮全部置灰。
-    val busy = task?.state == "running"
+    val schemaMismatch = status.state.isNotBlank() && status.schema < REQUIRED_STATUS_SCHEMA
+    val busy = task?.state == "running" || schemaMismatch
 
     fun route(value: String) {
         if (stack.lastOrNull() != value) stack.add(value)
@@ -375,6 +376,13 @@ fun ConsoleRoot() {
                         snapsLoading = snapsLoading,
                     )
                 }
+            }
+            if (schemaMismatch) {
+                // 旧模块的 --json 缺少字段，控制台继续操作只会做出错误判断。
+                SchemaBanner(
+                    "模块版本过旧：status schema=${status.schema}，控制台需要 $REQUIRED_STATUS_SCHEMA。" +
+                        "请先在设备页复制诊断包并更新模块；在此之前写操作已禁用。",
+                )
             }
             if (current in tabs) {
                 ConsoleBottomBar(current) { route(it) }
