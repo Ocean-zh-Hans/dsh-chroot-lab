@@ -54,6 +54,13 @@ data class SnapshotEntry(
 
 data class PathEntry(val name: String, val path: String, val bytes: Long)
 
+/**
+ * Snapshot list plus why it is empty when it is. An empty list used to be
+ * indistinguishable from "dsh-ctl said nothing", which is exactly the state that
+ * hid a stale module for an hour, so the failure text travels with the data.
+ */
+data class SnapshotList(val entries: List<SnapshotEntry> = emptyList(), val error: String = "")
+
 data class RuntimeInfo(
     val module: String = "",
     val moduleCode: String = "",
@@ -209,27 +216,9 @@ object ConsoleRepo {
         }
     }
 
-    fun snapshots(): List<SnapshotEntry> {
+    fun snapshots(): SnapshotList {
         val result = ctl("snapshot", "list", "--json", timeout = 20)
-        if (!result.success()) return emptyList()
-        return try {
-            val json = JSONObject(result.output)
-            val array = json.optJSONArray("snapshots") ?: JSONArray()
-            val list = ArrayList<SnapshotEntry>(array.length())
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                list += SnapshotEntry(
-                    name = item.optString("name"),
-                    bytes = item.optLong("bytes", 0),
-                    usedBytes = item.optLong("used_bytes", -1),
-                    created = item.optString("created"),
-                    lastGood = item.optBoolean("last_good"),
-                )
-            }
-            list.sortedWith(compareByDescending<SnapshotEntry> { it.lastGood }.thenByDescending { it.created })
-        } catch (error: Exception) {
-            emptyList()
-        }
+        return parseSnapshotList(result.output, result.exitCode, result.success())
     }
 
     fun runtime(): RuntimeInfo {
@@ -406,3 +395,44 @@ object ConsoleRepo {
         return String.format("%.0f KB", bytes / 1024.0)
     }
 }
+
+/**
+ * `snapshot list --json` → list, or the reason it could not be read.
+ *
+ * Pure so it can be tested without a device: the interesting cases are the bad
+ * ones (empty stdout with exit 0 was the stale-module symptom).
+ */
+internal fun parseSnapshotList(output: String, exitCode: Int, ok: Boolean): SnapshotList {
+    if (!ok || output.isBlank()) {
+        val detail = output.trim().lines().firstOrNull { it.isNotBlank() }.orEmpty()
+        return SnapshotList(
+            error = if (detail.isBlank()) {
+                "读取失败：dsh-ctl 没有输出（exit " + exitCode + "）"
+            } else {
+                "读取失败：exit " + exitCode + " · " + detail.take(120)
+            },
+        )
+    }
+    return try {
+        val json = JSONObject(output)
+        val array = json.optJSONArray("snapshots") ?: JSONArray()
+        val list = ArrayList<SnapshotEntry>(array.length())
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            list += SnapshotEntry(
+                name = item.optString("name"),
+                bytes = item.optLong("bytes", 0),
+                usedBytes = item.optLong("used_bytes", -1),
+                created = item.optString("created"),
+                lastGood = item.optBoolean("last_good"),
+            )
+        }
+        SnapshotList(sortSnapshots(list))
+    } catch (error: Exception) {
+        SnapshotList(error = "解析失败：" + (error.message ?: error.javaClass.simpleName))
+    }
+}
+
+/** last-good 在前，其次按创建时间倒序；抽出来是为了能脱离 org.json 单测。 */
+internal fun sortSnapshots(list: List<SnapshotEntry>): List<SnapshotEntry> =
+    list.sortedWith(compareByDescending<SnapshotEntry> { it.lastGood }.thenByDescending { it.created })

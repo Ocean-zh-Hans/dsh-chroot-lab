@@ -79,6 +79,7 @@ fun ConsoleRoot() {
     var doctor by remember { mutableStateOf<DoctorReport?>(null) }
     var snaps by remember { mutableStateOf<List<SnapshotEntry>>(emptyList()) }
     var snapsLoading by remember { mutableStateOf(true) }
+    var snapsError by remember { mutableStateOf("") }
     var paths by remember { mutableStateOf<List<PathEntry>>(emptyList()) }
     var device by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var logs by remember { mutableStateOf("") }
@@ -130,7 +131,9 @@ fun ConsoleRoot() {
     }
 
     suspend fun loadSnapshots() {
-        snaps = withContext(Dispatchers.IO) { ConsoleRepo.snapshots() }
+        val loaded = withContext(Dispatchers.IO) { ConsoleRepo.snapshots() }
+        snaps = loaded.entries
+        snapsError = loaded.error
         snapsLoading = false
     }
 
@@ -374,6 +377,7 @@ fun ConsoleRoot() {
                         onCopyDiagnostics = { copy(diagnostics(), "诊断包") },
                         onAction = { request -> explain = request },
                         snapsLoading = snapsLoading,
+                        snapsError = snapsError,
                     )
                 }
             }

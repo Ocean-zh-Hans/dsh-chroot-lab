@@ -54,6 +54,7 @@ fun SystemPage(
     onAction: (RiskRequest) -> Unit,
     busy: Boolean = false,
     snapsLoading: Boolean = false,
+    snapsError: String = "",
 ) {
     val palette = consolePalette()
     if (loading && status.state.isBlank()) {
@@ -98,6 +99,7 @@ fun SystemPage(
                             val empty = when {
                                 // 刚进页面时列表还没回来，别急着报“读不出来”。
                                 snapsLoading && status.snapshotCount > 0 -> "正在读取快照…"
+                                snapsError.isNotBlank() -> snapsError
                                 status.snapshotCount > 0 -> "有 " + status.snapshotCount + " 个快照，但列表没读出来；点下面刷新一次。"
                                 else -> "还没有快照；升级或改系统文件前先做一个。"
                             }
