@@ -1,6 +1,6 @@
 # Console 设计稿 v2（层模型，2026-10-31）
 
-状态：**C0 已实现，C1–C4 未实现**（实现状态见 §12.1）。v2 按用户提出的"设备/系统/软件"三层重排信息架构；v1 的四 tab（机器/数据/日志/设置）作废。本文是控制台重做的唯一依据；与代码冲突时以本文为准，实现落回之后再把本文标为"已实现"。
+状态：**C0–C5 已实现**（实现状态见 §12.1）。v2 按用户提出的"设备/系统/软件"三层重排信息架构；v1 的四 tab（机器/数据/日志/设置）作废。本文是控制台重做的唯一依据；与代码冲突时以本文为准，实现落回之后再把本文标为"已实现"。
 范围：`console-app`（Compose，`dev.chroot.console`）。Agent APK 不在本文范围。
 前置：`plan-v2.md` 的读写模型（R0–R4）、`dsh-ctl` 的只读 JSON 接口。
 静态原型：`docs/design/console-mockup.html`（单文件、无依赖，手机浏览器可直接打开；右上角可切深浅色）。
@@ -212,7 +212,7 @@
 | 系统页快照（最近 3 个 + 全部） | 已实现 | `ConsolePages.kt` `SystemPage` |
 | 系统页运行时事实四格（镜像/loop/rootfs/看门狗） | 已实现 | `ConsolePages.kt` `factsOf`，异常项转橙 |
 | 系统页诊断（体检 + 复制诊断包） | 已实现 | `diagnosticsText`（纯函数，有单测 `console-app/test-src/.../DiagnosticsTest.kt`） |
-| 软件页依赖条 + 终端/DSH/依赖/插件/服务入口 | 已实现（入口未实现，点开提示） | `ConsolePages.kt` `SoftwarePage` |
+| 软件页依赖条 + 终端/DSH/依赖/插件/服务入口 | 已实现（终端、版本切换、依赖改范围、插件启停、ttyd 全部可用） | `ConsolePages.kt` `SoftwarePage` |
 | 设备页机器事实（getprop/uname）+ 空间 + 路径 + 模块 | 已实现 | `ConsolePages.kt` `DevicePage`，`ConsoleRepo.device()` |
 | 设置页（自启/确认模式/能力/复制诊断包/关于） | 已实现 | `ConsoleScreens.kt` `SettingsScreen` |
 | 快照页新建 + 恢复 | 已实现 | `SnapshotsScreen(onCreate=...)`，`riskSnapshotCreate` |
@@ -227,7 +227,7 @@
 | 首屏骨架屏 | 已实现 | `ConsoleTheme.kt` `SkeletonCard`，三页在"无数据且加载中"时先出骨架 |
 | HTML 原型同步 | 已实现 | `docs/design/console-mockup.html` 顶部标注同步状态，软件页/任务条文案按实现改写 |
 
-未实现入口一律用 banner 明确说明"还没实现"，不假装可用。
+没有实现的能力不要放进界面；将来若必须占位，用 banner 说明"还没实现"，不假装可用。
 
 ## 13. 已定（2026-10-31）
 

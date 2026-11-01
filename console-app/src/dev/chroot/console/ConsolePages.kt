@@ -323,7 +323,6 @@ fun SoftwarePage(
     onTtyd: (enable: Boolean) -> Unit,
     onPin: (name: String, current: String) -> Unit,
     onPlugin: (name: String, on: Boolean) -> Unit,
-    onPending: (String) -> Unit,
     busy: Boolean = false,
 ) {
     val palette = consolePalette()
@@ -504,7 +503,7 @@ fun SoftwarePage(
                         }
                         if (!live) {
                             Spacer(Modifier.height(6.dp))
-                            Text("依赖信息需要 chroot 运行；改版本还没实现。", color = palette.warning, fontSize = ConsoleType.hint)
+                            Text("依赖信息要 chroot 运行才能读；改版本范围需要先停止。", color = palette.warning, fontSize = ConsoleType.hint)
                         }
                     }
                 }

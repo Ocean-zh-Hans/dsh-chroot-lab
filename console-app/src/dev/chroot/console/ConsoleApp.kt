@@ -311,7 +311,6 @@ fun ConsoleRoot() {
                         )
                     },
                     onTtyd = { enable -> explain = riskTtyd(enable) },
-                        onPending = { what -> banner = what + " 还没实现；这一步先只记录在 docs/console-design.md。" },
                         busy = busy,
                     )
                     "terminal" -> TerminalScreen(
